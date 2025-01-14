@@ -311,7 +311,7 @@ class DelayedZap(Stimulus):
         post_delay: float,
         amplitude: float,
     ) -> CombinedStimulus:
-        """Create a DelayedYap stimulus from given time events and amplitude.
+        """Create a DelayedZap stimulus from given time events and amplitude.
 
         Args:
             dt: The time step of the stimulus.
