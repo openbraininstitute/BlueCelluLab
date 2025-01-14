@@ -649,7 +649,7 @@ class StimulusFactory:
         threshold_current: Optional[float] = None,
         threshold_percentage: Optional[float] = 60.0,
         amplitude: Optional[float] = None,
-        pre_delay: Optional[float] = 0,
+        pre_delay: float = 0,
     ) -> Stimulus:
         """Returns the SineSpec Stimulus object, a type of Zap stimulus.
 

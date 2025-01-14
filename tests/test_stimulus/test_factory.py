@@ -205,7 +205,6 @@ class TestStimulusFactory:
             self.factory.sinespec()
 
 
-
 def test_combined_stimulus():
     """Test combining Stimulus objects."""
     s1 = Step.amplitude_based(0.1, 0.55, 1, 2, 3)
