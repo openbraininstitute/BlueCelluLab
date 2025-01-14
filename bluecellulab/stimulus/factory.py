@@ -141,6 +141,23 @@ class Slope(Stimulus):
         return np.linspace(self.amplitude_start, self.amplitude_end, len(self.time))
 
 
+class Zap(Stimulus):
+    def __init__(self, dt: float, duration: float, amplitude: float) -> None:
+        super().__init__(dt)
+        self.duration = duration
+        self.amplitude = amplitude
+
+    @property
+    def time(self) -> np.ndarray:
+        return np.arange(0.0, self.duration, self.dt)
+
+    @property
+    def current(self) -> np.ndarray:
+        return self.amplitude * np.sin(
+            2.0 * np.pi * (1.0 + (1.0 / (5.15 - (self.time - 0.1)))) * (self.time - 0.1)
+        )
+
+
 class Step(Stimulus):
 
     def __init__(self):
@@ -262,6 +279,71 @@ class Ramp(Stimulus):
             pre_delay: The delay before the start of the ramp.
             duration: The duration of the ramp.
             post_delay: The time to wait after the end of the ramp.
+            threshold_current: The threshold current of the Cell.
+            threshold_percentage: Percentage of desired threshold_current amplification.
+        """
+        amplitude = threshold_current * threshold_percentage / 100
+        res = cls.amplitude_based(
+            dt,
+            pre_delay=pre_delay,
+            duration=duration,
+            post_delay=post_delay,
+            amplitude=amplitude,
+        )
+        return res
+
+
+class DelayedZap(Stimulus):
+
+    def __init__(self):
+        raise NotImplementedError(
+            "This class cannot be instantiated directly. "
+            "Please use the class methods 'amplitude_based' "
+            "or 'threshold_based' to create objects."
+        )
+
+    @classmethod
+    def amplitude_based(
+        cls,
+        dt: float,
+        pre_delay: float,
+        duration: float,
+        post_delay: float,
+        amplitude: float,
+    ) -> CombinedStimulus:
+        """Create a DelayedYap stimulus from given time events and amplitude.
+
+        Args:
+            dt: The time step of the stimulus.
+            pre_delay: The delay before the start of the step.
+            duration: The duration of the step.
+            post_delay: The time to wait after the end of the step.
+            amplitude: The amplitude of the step.
+        """
+        return (
+            Empty(dt, duration=pre_delay)
+            + Zap(dt, duration=duration, amplitude=amplitude)
+            + Empty(dt, duration=post_delay)
+        )
+
+    @classmethod
+    def threshold_based(
+        cls,
+        dt: float,
+        pre_delay: float,
+        duration: float,
+        post_delay: float,
+        threshold_current: float,
+        threshold_percentage: float,
+    ) -> CombinedStimulus:
+        """Creates a SineSpec stimulus with respect to the threshold current.
+
+        Args:
+
+            dt: The time step of the stimulus.
+            pre_delay: The delay before the start of the step.
+            duration: The duration of the step.
+            post_delay: The time to wait after the end of the step.
             threshold_current: The threshold current of the Cell.
             threshold_percentage: Percentage of desired threshold_current amplification.
         """
@@ -561,3 +643,47 @@ class StimulusFactory:
             + Empty(self.dt, duration=post_delay)
         )
         return result
+
+    def sinespec(
+        self,
+        threshold_current: Optional[float] = None,
+        threshold_percentage: Optional[float] = 60.0,
+        amplitude: Optional[float] = None,
+        pre_delay: Optional[float] = 0,
+    ) -> Stimulus:
+        """Returns the SineSpec Stimulus object, a type of Zap stimulus.
+
+        Args:
+            threshold_current: The threshold current of the Cell.
+            threshold_percentage: Percentage of desired threshold_current amplification.
+            amplitude: Raw amplitude of input current.
+            pre_delay: delay before the start of the stimulus
+        """
+        duration = 5000.0
+        post_delay = 0
+
+        if amplitude is not None:
+            if threshold_current is not None and threshold_current != 0 and threshold_percentage is not None:
+                logger.info(
+                    "amplitude, threshold_current and threshold_percentage are all set in sinespec."
+                    " Will only keep amplitude value."
+                )
+            return DelayedZap.amplitude_based(
+                self.dt,
+                pre_delay=pre_delay,
+                duration=duration,
+                post_delay=post_delay,
+                amplitude=amplitude,
+            )
+
+        if threshold_current is not None and threshold_current != 0 and threshold_percentage is not None:
+            return DelayedZap.threshold_based(
+                self.dt,
+                pre_delay=pre_delay,
+                duration=duration,
+                post_delay=post_delay,
+                threshold_current=threshold_current,
+                threshold_percentage=threshold_percentage,
+            )
+
+        raise TypeError("You have to give either threshold_current or amplitude")

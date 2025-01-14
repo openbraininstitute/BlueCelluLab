@@ -21,6 +21,7 @@ from bluecellulab.stimulus.factory import (
     Step,
     Ramp,
     StimulusFactory,
+    Zap,
 )
 
 
@@ -185,6 +186,24 @@ class TestStimulusFactory:
             self.factory.neg_cheops(threshold_current=0.0)
         with pytest.raises(TypeError, match="You have to give either threshold_current or amplitude"):
             self.factory.neg_cheops()
+
+    def test_create_sinespec(self):
+        s = self.factory.sinespec(threshold_current=1)
+        assert isinstance(s, CombinedStimulus)
+        assert s.stimulus_time == 5000.0
+
+        test_amp = 0.1
+        s = self.factory.sinespec(amplitude=test_amp)
+        assert isinstance(s, CombinedStimulus)
+        assert s.stimulus_time == 5000.0
+        assert np.max(np.abs(s.current)) <= test_amp
+        assert (s.current == Zap(dt=self.dt, duration=5000.0, amplitude=test_amp).current).all()
+
+        with pytest.raises(TypeError, match="You have to give either threshold_current or amplitude"):
+            self.factory.sinespec(threshold_current=0.0)
+        with pytest.raises(TypeError, match="You have to give either threshold_current or amplitude"):
+            self.factory.sinespec()
+
 
 
 def test_combined_stimulus():
