@@ -1,15 +1,19 @@
 """Module for analyzing cell simulation results."""
-import efel
+try:
+    import efel
+except ImportError:
+    efel = None
 import numpy as np
-from bluecellulab.stimulus import StimulusFactory
+import matplotlib.pyplot as plt
 
+from bluecellulab.stimulus import StimulusFactory
 from bluecellulab.tools import calculate_SS_voltage, calculate_input_resistance, search_threshold_current
 from bluecellulab.analysis.inject_sequence import run_stimulus
 
 
-def compute_iv_curve(cell, stim_start=100.0, duration=500.0, post_delay=100.0, threshold_voltage=-30, nb_bins=11):
-    """Compute the IV curve from a given cell by injecting a predefined range
-    of currents.
+def plot_iv_curve(cell, stim_start=100.0, duration=500.0, post_delay=100.0, threshold_voltage=-30, nb_bins=11):
+    """Compute and plot the IV curve from a given cell by injecting a
+    predefined range of currents.
 
     Args:
         cell (bluecellulab.cell.Cell): The initialized cell model.
@@ -88,5 +92,14 @@ def compute_iv_curve(cell, stim_start=100.0, duration=500.0, post_delay=100.0, t
         features_results = efel.get_feature_values([trace], ['steady_state_voltage_stimend'])
         steady_state = features_results[0]['steady_state_voltage_stimend']
         steady_states.append(steady_state)
+
+    # plot I-V curve
+    plt.figure(figsize=(10, 6))
+    plt.plot(steady_states, list_amp, marker='o', linestyle='-', color='b')
+    plt.title("I-V Curve")
+    plt.ylabel("Injected current [nA]")
+    plt.xlabel("Steady state voltage [mV]")
+    plt.tight_layout()
+    plt.show()
 
     return np.array(list_amp), np.array(steady_states)
