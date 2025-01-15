@@ -351,22 +351,3 @@ def check_empty_topology() -> bool:
         neuron.h.topology()
 
     return stdout == ['', '']
-
-
-def steady_state_voltage_stimend(stim_start, duration, voltage, t):
-    """Calculate the steady-state voltage at the end of the stimulation period.
-
-    Args:
-        stim_start (float): Start time of the stimulation (in ms).
-        duration (float): Duration of the stimulation (in ms).
-        voltage (np.ndarray): Voltage response (in mV).
-        t (np.ndarray): Time points corresponding to the voltage (in ms).
-
-    Returns:
-        float: The steady-state voltage (in mV).
-    """
-    stim_end = stim_start + duration
-    begin_time = stim_end - 0.1 * duration
-    end_time = stim_end
-    steady_state = np.mean(voltage[np.where((t < end_time) & (t >= begin_time))])
-    return steady_state
