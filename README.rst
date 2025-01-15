@@ -61,12 +61,12 @@ If you need to cite a specific version, please use the DOI provided by `Zenodo <
 Support
 =======
 
-We are providing support on `Gitter <https://gitter.im/BlueBrain/BlueCelluLab>`_. We suggest you create tickets on the `Github issue tracker <https://github.com/BlueBrain/BlueCelluLab/issues>`_ in case you encounter problems while using the software or if you have some suggestions.
+We are providing support on `Gitter <https://gitter.im/openbraininstitute/BlueCelluLab>`_. We suggest you create tickets on the `Github issue tracker <https://github.com/openbraininstitute/BlueCelluLab/issues>`_ in case you encounter problems while using the software or if you have some suggestions.
 
 Main dependencies
 =================
 
-* `Python 3.8+ <https://www.python.org/downloads/release/python-380/>`_
+* `Python 3.9+ <https://www.python.org/downloads/release/python-390/>`_
 * `Neuron 8.0.2+ <https://pypi.org/project/NEURON/>`_
 
 Installation
@@ -97,13 +97,13 @@ The following example shows how to create a cell, add a stimulus and run a simul
     time, voltage = cell.get_time(), cell.get_soma_voltage()
     # plotting time and voltage ...
 
-.. image:: https://raw.githubusercontent.com/BlueBrain/BlueCelluLab/main/docs/images/voltage-readme.png
+.. image:: https://raw.githubusercontent.com/openbraininstitute/BlueCelluLab/main/docs/images/voltage-readme.png
    :alt: Voltage plot
 
 Tutorial
 ========
 
-A more detailed explanation on how to use BlueCelluLab, as well as other examples can be found on the `examples page <https://github.com/BlueBrain/BlueCelluLab/blob/main/examples/README.rst>`_.
+A more detailed explanation on how to use BlueCelluLab, as well as other examples can be found on the `examples page <https://github.com/openbraininstitute/BlueCelluLab/blob/main/examples/README.rst>`_.
 
 API Documentation
 =================
@@ -125,7 +125,7 @@ Testing is set up using `tox`:
 Contributing
 ============
 
-We welcome contributions to BlueCelluLab! Please see the `CONTRIBUTING.rst <https://github.com/BlueBrain/BlueCelluLab/blob/main/CONTRIBUTING.rst>`_ for guidelines on how to contribute.
+We welcome contributions to BlueCelluLab! Please see the `CONTRIBUTING.rst <https://github.com/openbraininstitute/BlueCelluLab/blob/main/CONTRIBUTING.rst>`_ for guidelines on how to contribute.
 
 Funding & Acknowledgements
 ==========================
@@ -145,10 +145,10 @@ The licenses of the morphology files used in this repository are available on: h
 
 
 .. |license| image:: https://img.shields.io/badge/License-Apache%202.0-blue.svg
-                :target: https://github.com/BlueBrain/BlueCelluLab/blob/main/LICENSE
+                :target: https://github.com/openbraininstitute/BlueCelluLab/blob/main/LICENSE
 
-.. |tests| image:: https://github.com/BlueBrain/BlueCelluLab/actions/workflows/test.yml/badge.svg?branch=main
-   :target: https://github.com/BlueBrain/BlueCelluLab/actions/workflows/test.yml
+.. |tests| image:: https://github.com/openbraininstitute/BlueCelluLab/actions/workflows/test.yml/badge.svg?branch=main
+   :target: https://github.com/openbraininstitute/BlueCelluLab/actions/workflows/test.yml
    :alt: CI
 
 .. |pypi| image:: https://img.shields.io/pypi/v/bluecellulab.svg
@@ -159,13 +159,13 @@ The licenses of the morphology files used in this repository are available on: h
                :target: https://bluecellulab.readthedocs.io/
                :alt: latest documentation
 
-.. |coverage| image:: https://codecov.io/github/BlueBrain/BlueCelluLab/coverage.svg?branch=main
-                   :target: https://codecov.io/gh/BlueBrain/bluecellulab
+.. |coverage| image:: https://codecov.io/github/openbraininstitute/BlueCelluLab/coverage.svg?branch=main
+                   :target: https://codecov.io/gh/openbraininstitute/bluecellulab
                    :alt: coverage
 
 .. |gitter| image:: https://badges.gitter.im/Join%20Chat.svg
-                 :target: https://gitter.im/BlueBrain/BlueCelluLab
-                 :alt: Join the chat at https://gitter.im/BlueBrain/BlueCelluLab
+                 :target: https://gitter.im/openbraininstitute/BlueCelluLab
+                 :alt: Join the chat at https://gitter.im/openbraininstitute/BlueCelluLab
 
 .. |joss| image:: https://joss.theoj.org/papers/effd553ca48734a2966d9d7ace3b05ff/status.svg
                 :target: https://joss.theoj.org/papers/effd553ca48734a2966d9d7ace3b05ff
@@ -182,4 +182,4 @@ The licenses of the morphology files used in this repository are available on: h
     to skip content after the marker 'substitutions'.
 
 .. substitutions
-.. |banner| image:: https://raw.githubusercontent.com/BlueBrain/BlueCelluLab/main/docs/source/logo/BlueCelluLabBanner.jpg
+.. |banner| image:: https://raw.githubusercontent.com/openbraininstitute/BlueCelluLab/main/docs/source/logo/BlueCelluLabBanner.jpg

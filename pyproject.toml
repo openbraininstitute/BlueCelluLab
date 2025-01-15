@@ -38,10 +38,10 @@ dependencies = [
     "networkx>=3.1",
     "h5py>=3.8.0",
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 
 [project.urls]
-Homepage = "https://github.com/BlueBrain/BlueCelluLab"
+Homepage = "https://github.com/openbraininstitute/BlueCelluLab"
 Documentation = "https://bluecellulab.readthedocs.io/"
 
 [tool.setuptools_scm]
