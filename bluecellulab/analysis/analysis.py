@@ -4,7 +4,6 @@ try:
 except ImportError:
     efel = None
 import numpy as np
-import matplotlib.pyplot as plt
 
 from bluecellulab.stimulus import StimulusFactory
 from bluecellulab.tools import compute_max_thresh_current, search_threshold_current

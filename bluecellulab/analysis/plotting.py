@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 
 def plot_iv_curve(currents, voltages):
     """Plots the IV curve.
+
     Args:
         currents (iterable): The injected current levels (nA).
         voltages (iterable): The corresponding steady-state voltages (mV).

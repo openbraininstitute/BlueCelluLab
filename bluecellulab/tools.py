@@ -353,9 +353,9 @@ def check_empty_topology() -> bool:
 
     return stdout == ['', '']
 
+
 def compute_max_thresh_current(cell: Cell, threshold_voltage: float):
-    """
-    Calculate the upper bound threshold current.
+    """Calculate the upper bound threshold current.
 
     Args:
         cell (bluecellulab.cell.Cell): The initialized cell model.
