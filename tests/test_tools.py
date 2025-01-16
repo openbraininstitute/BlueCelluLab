@@ -17,15 +17,50 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from unittest.mock import MagicMock, patch
 
+from bluecellulab.cell import Cell
 from bluecellulab import CircuitSimulation
 from bluecellulab.cell.ballstick import create_ball_stick
 from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.circuit.node_id import create_cell_id
 from bluecellulab.exceptions import UnsteadyCellError
-from bluecellulab.tools import calculate_SS_voltage, calculate_SS_voltage_subprocess, calculate_input_resistance, detect_hyp_current, detect_spike, detect_spike_step, detect_spike_step_subprocess, holding_current, holding_current_subprocess, search_threshold_current, template_accepts_cvode, check_empty_topology
+from bluecellulab.tools import calculate_SS_voltage, calculate_SS_voltage_subprocess, calculate_input_resistance, detect_hyp_current, detect_spike, detect_spike_step, detect_spike_step_subprocess, holding_current, holding_current_subprocess, search_threshold_current, template_accepts_cvode, check_empty_topology, calculate_max_thresh_current, calculate_rheobase
+
 
 script_dir = Path(__file__).parent
+
+
+@pytest.fixture
+def mock_cell():
+    emodel_properties = EmodelProperties(
+        threshold_current=1.1433533430099487,
+        holding_current=1.4146618843078613,
+        AIS_scaler=1.4561502933502197,
+        soma_scaler=1.0
+    )
+    cell = Cell(
+        f"{script_dir}/examples/circuit_sonata_quick_scx/components/hoc/cADpyr_L2TPC.hoc",
+        f"{script_dir}/examples/circuit_sonata_quick_scx/components/morphologies/asc/rr110330_C3_idA.asc",
+        template_format="v6",
+        emodel_properties=emodel_properties
+    )
+    return cell
+
+
+@pytest.fixture
+def mock_calculate_SS_voltage():
+    return MagicMock(return_value=-65.0)
+
+
+@pytest.fixture
+def mock_calculate_input_resistance():
+    return MagicMock(return_value=100.0)
+
+
+@pytest.fixture
+def mock_search_threshold_current():
+    return MagicMock(return_value=0.1)
 
 
 @pytest.mark.v5
@@ -241,3 +276,30 @@ def test_check_empty_topology():
     assert check_empty_topology() is True
     cell = create_ball_stick()
     assert check_empty_topology() is False
+
+
+def test_calculate_max_thresh_current(mock_cell, mock_calculate_SS_voltage, mock_calculate_input_resistance):
+    """Test the calculate_max_thresh_current function."""
+    with patch('bluecellulab.tools.calculate_SS_voltage', mock_calculate_SS_voltage), \
+         patch('bluecellulab.tools.calculate_input_resistance', mock_calculate_input_resistance):
+
+        threshold_voltage = -30.0
+        upperbound_threshold_current = calculate_max_thresh_current(mock_cell, threshold_voltage)
+
+        assert upperbound_threshold_current == (threshold_voltage - mock_calculate_SS_voltage.return_value) / mock_calculate_input_resistance.return_value
+        assert upperbound_threshold_current == 0.35
+
+
+def test_calculate_rheobase(mock_cell, mock_calculate_SS_voltage, mock_calculate_input_resistance, mock_search_threshold_current):
+    """Test the calculate_rheobase function."""
+    with patch('bluecellulab.tools.calculate_SS_voltage', mock_calculate_SS_voltage), \
+         patch('bluecellulab.tools.calculate_input_resistance', mock_calculate_input_resistance), \
+         patch('bluecellulab.tools.search_threshold_current', mock_search_threshold_current):
+
+        threshold_voltage = -30.0
+        threshold_search_stim_start = 300.0
+        threshold_search_stim_stop = 1000.0
+
+        rheobase = calculate_rheobase(mock_cell, threshold_voltage, threshold_search_stim_start, threshold_search_stim_stop)
+
+        assert rheobase == mock_search_threshold_current.return_value

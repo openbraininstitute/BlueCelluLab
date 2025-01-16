@@ -6,7 +6,7 @@ except ImportError:
 import numpy as np
 
 from bluecellulab.stimulus import StimulusFactory
-from bluecellulab.tools import compute_max_thresh_current, search_threshold_current
+from bluecellulab.tools import calculate_rheobase
 from bluecellulab.analysis.inject_sequence import run_stimulus
 from bluecellulab.analysis.plotting import plot_iv_curve
 
@@ -27,24 +27,7 @@ def compute_plot_iv_curve(cell, stim_start=100.0, duration=500.0, post_delay=100
             - list_amp (np.ndarray): The predefined injected step current levels (nA).
             - steady_states (np.ndarray): The corresponding steady-state voltages (mV).
     """
-    threshold_search_stim_start = 300
-    threshold_search_stim_stop = 1000
-
-    upperbound_threshold_current = compute_max_thresh_current(cell, threshold_voltage)
-
-    # compute rheobase
-    rheobase = search_threshold_current(
-        template_name=cell.template_params.template_filepath,
-        morphology_path=cell.template_params.morph_filepath,
-        template_format=cell.template_params.template_format,
-        emodel_properties=cell.template_params.emodel_properties,
-        hyp_level=cell.template_params.emodel_properties.holding_current,
-        inj_start=threshold_search_stim_start,
-        inj_stop=threshold_search_stim_stop,
-        min_current=cell.template_params.emodel_properties.holding_current,
-        max_current=upperbound_threshold_current,
-        current_precision=0.005,
-    )
+    rheobase = calculate_rheobase(cell)
 
     list_amp = np.linspace(rheobase - 2, rheobase - 0.1, nb_bins)  # [nA]
 

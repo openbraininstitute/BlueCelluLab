@@ -61,7 +61,7 @@ def test_plot_iv_curve(mock_cell, mock_run_stimulus, mock_search_threshold_curre
     """Test the plot_iv_curve function."""
     with patch('bluecellulab.cell.core', mock_cell), \
          patch('bluecellulab.analysis.analysis.run_stimulus', mock_run_stimulus), \
-         patch('bluecellulab.analysis.analysis.search_threshold_current', mock_search_threshold_current), \
+         patch('bluecellulab.tools.search_threshold_current', mock_search_threshold_current), \
          patch('bluecellulab.analysis.analysis.efel', mock_efel):
 
         stim_start = 100.0
