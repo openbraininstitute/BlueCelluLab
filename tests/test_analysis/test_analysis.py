@@ -3,7 +3,7 @@
 from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
-from bluecellulab.analysis.analysis import plot_iv_curve
+from bluecellulab.analysis.analysis import compute_plot_iv_curve
 from pathlib import Path
 from bluecellulab.cell import Cell
 from bluecellulab.circuit.circuit_access import EmodelProperties
@@ -66,11 +66,11 @@ def test_plot_iv_curve(mock_cell, mock_run_stimulus, mock_search_threshold_curre
 
         stim_start = 100.0
         duration = 500.0
-        stim_delay = 100.0
+        post_delay = 100.0
         threshold_voltage = -30
         nb_bins = 11
 
-        list_amp, steady_states = plot_iv_curve(mock_cell, stim_start, duration, stim_delay, threshold_voltage, nb_bins)
+        list_amp, steady_states = compute_plot_iv_curve(mock_cell, stim_start, duration, post_delay, threshold_voltage, nb_bins)
 
         assert isinstance(list_amp, np.ndarray)
         assert isinstance(steady_states, np.ndarray)

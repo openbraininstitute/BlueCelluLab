@@ -23,6 +23,7 @@ import neuron
 import numpy as np
 
 import bluecellulab
+from bluecellulab.cell import Cell
 from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.exceptions import UnsteadyCellError
 from bluecellulab.simulation.parallel import IsolatedProcess
@@ -351,3 +352,37 @@ def check_empty_topology() -> bool:
         neuron.h.topology()
 
     return stdout == ['', '']
+
+def compute_max_thresh_current(cell: Cell, threshold_voltage: float):
+    """
+    Calculate the upper bound threshold current.
+
+    Args:
+        cell (bluecellulab.cell.Cell): The initialized cell model.
+        threshold_voltage (float): Voltage threshold for spike detection.
+
+    Returns:
+        float: The upper bound threshold current.
+    """
+    # Calculate resting membrane potential (rmp)
+    rmp = calculate_SS_voltage(
+        template_path=cell.template_params.template_filepath,
+        morphology_path=cell.template_params.morph_filepath,
+        template_format=cell.template_params.template_format,
+        emodel_properties=cell.template_params.emodel_properties,
+        step_level=0.0,
+    )
+
+    # Calculate input resistance (rin)
+    rin = calculate_input_resistance(
+        template_path=cell.template_params.template_filepath,
+        morphology_path=cell.template_params.morph_filepath,
+        template_format=cell.template_params.template_format,
+        emodel_properties=cell.template_params.emodel_properties,
+    )
+
+    # Calculate upperbound threshold current
+    upperbound_threshold_current = (threshold_voltage - rmp) / rin
+    upperbound_threshold_current = np.min([upperbound_threshold_current, 2.0])
+
+    return upperbound_threshold_current
