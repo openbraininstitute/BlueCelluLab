@@ -148,7 +148,7 @@ The licenses of the morphology files used in this repository are available on: h
 .. |license| image:: https://img.shields.io/badge/License-Apache%202.0-blue.svg
                 :target: https://github.com/openbraininstitute/BlueCelluLab/blob/main/LICENSE
 
-.. |tests| image:: https://github.com/openbraininstitute/BlueCelluLab/actions/workflows/test.yml/badge.svg?branch=main
+.. |tests| image:: https://github.com/openbraininstitute/BlueCelluLab/actions/workflows/test.yml/badge.svg
    :target: https://github.com/openbraininstitute/BlueCelluLab/actions/workflows/test.yml
    :alt: CI
 
