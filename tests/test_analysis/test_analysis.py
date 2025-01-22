@@ -16,6 +16,7 @@ class MockRecording:
     def __init__(self):
         self.time = [1, 2, 3]
         self.voltage = [-70, -55, -40]
+        self.spike = [1.5, 2.5]
 
 
 @pytest.fixture

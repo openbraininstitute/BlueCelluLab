@@ -1,7 +1,7 @@
 """Module for injecting a sequence of protocols to the cell."""
 from __future__ import annotations
 from enum import Enum, auto
-from typing import NamedTuple, Sequence, Dict
+from typing import NamedTuple, Sequence, Dict, Optional
 
 import neuron
 import numpy as np
@@ -24,13 +24,34 @@ class StimulusName(Enum):
 
 
 class Recording(NamedTuple):
-    """A tuple of the current, voltage and time recordings."""
+    """A tuple of the current, voltage and time recordings with optional spike
+    recordings."""
     current: np.ndarray
     voltage: np.ndarray
     time: np.ndarray
+    spike: np.ndarray | None
 
 
 StimulusRecordings = Dict[str, Recording]
+
+
+def prepare_cell(
+    template_params: TemplateParams,
+    stimulus: Stimulus,
+    section: str,
+    segment: float,
+    add_hypamp: bool,
+) -> Cell:
+    """Prepares the cell with the specified parameters."""
+    cell = Cell.from_template_parameters(template_params)
+    neuron_section = cell.sections[section]
+
+    if add_hypamp:
+        hyp_stim = Hyperpolarizing(target="", delay=0.0, duration=stimulus.stimulus_time)
+        cell.add_replay_hypamp(hyp_stim)
+
+    cell.add_voltage_recording(neuron_section, segment)
+    return cell
 
 
 def run_stimulus(
@@ -40,6 +61,8 @@ def run_stimulus(
     segment: float,
     cvode: bool = True,
     add_hypamp: bool = True,
+    enable_spike_detection: bool = False,
+    threshold_spike_detection: float = -10,
 ) -> Recording:
     """Creates a cell and stimulates it with a given stimulus.
 
@@ -49,32 +72,52 @@ def run_stimulus(
         section: Name of the section of cell where the stimulus is to be injected.
         segment: The segment of the section where the stimulus is to be injected.
         cvode: True to use variable time-steps. False for fixed time-steps.
+        add_hypamp: Whether to add a hyperpolarizing stimulus.
+        enable_spike_detection: Whether to enable spike detection.
+        threshold_spike_detection: The threshold for spike detection.
 
     Returns:
-        The voltage-time recording at the specified location.
+        A Recording object containing current, voltage, time, and spikes (if enabled).
 
     Raises:
         ValueError: If the time and voltage arrays are not the same length.
     """
-    cell = Cell.from_template_parameters(template_params)
+    spikes: Optional[np.ndarray] = None
+
+    # Prepare the cell
+    cell = prepare_cell(template_params, stimulus, section, segment, add_hypamp)
+
+    # Set up spike detection if enabled
+    if enable_spike_detection and section == "soma[0]":
+        cell.start_recording_spikes(None, location="soma", threshold=threshold_spike_detection)
+
+    # Inject the stimulus and run the simulation
     neuron_section = cell.sections[section]
-    if add_hypamp:
-        hyp_stim = Hyperpolarizing(target="", delay=0.0, duration=stimulus.stimulus_time)
-        cell.add_replay_hypamp(hyp_stim)
-    cell.add_voltage_recording(neuron_section, segment)
     iclamp, _ = cell.inject_current_waveform(
         stimulus.time, stimulus.current, section=neuron_section, segx=segment
     )
     current_vector = neuron.h.Vector()
     current_vector.record(iclamp._ref_i)
+
     simulation = Simulation(cell)
     simulation.run(stimulus.stimulus_time, cvode=cvode)
+
+    # Retrieve simulation results
     current = np.array(current_vector.to_python())
     voltage = cell.get_voltage_recording(neuron_section, segment)
     time = cell.get_time()
+
     if len(time) != len(voltage) or len(time) != len(current):
-        raise ValueError("Time, current and voltage arrays are not the same length")
-    return Recording(current, voltage, time)
+        raise ValueError("Time, current, and voltage arrays are not the same length")
+
+    if enable_spike_detection and section == "soma[0]":
+        results = cell.get_recorded_spikes(location="soma", threshold=threshold_spike_detection)
+        if results is not None:
+            spikes = np.array(results)
+        else:
+            spikes = None
+
+    return Recording(current=current, voltage=voltage, time=time, spike=spikes)
 
 
 def apply_multiple_stimuli(
