@@ -425,3 +425,24 @@ def calculate_rheobase(cell: Cell,
     )
 
     return rheobase
+
+
+def validate_section_and_segment(cell: Cell, section_name: str, segment_position: float) -> tuple:
+    """
+    Validate a single section and segment position.
+
+    Args:
+        cell: The cell model to validate against.
+        section_name: The name of the section to validate (e.g., 'soma', 'axon[1]').
+        segment_position: The position within the section (e.g., 0.5 for the middle).
+
+    Raises:
+        ValueError: If the section or position is invalid.
+    """
+    # Validate the section
+    if section_name not in cell.sections:
+        raise ValueError(f"Section '{section_name}' not found in the cell model.")
+
+    # Validate the segment position
+    if not (0.0 <= segment_position <= 1.0):
+        raise ValueError(f"Segment position must be between 0.0 and 1.0, got {segment_position}.")
