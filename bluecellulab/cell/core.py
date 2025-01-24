@@ -445,14 +445,32 @@ class Cell(InjectableMixin, PlottableMixin):
         Raises:
             ValueError: If the spike detection location is not 'soma' or 'AIS'.
         """
-        if location == "soma":
-            sec = public_hoc_cell(self.cell).soma[0]
-            source = sec(1)._ref_v
-        elif location == "AIS":
-            sec = public_hoc_cell(self.cell).axon[1]
-            source = sec(0.5)._ref_v
-        else:
-            raise ValueError("Spike detection location must be soma or AIS")
+        try:
+            if location == "soma":
+                sec = public_hoc_cell(self.cell).soma[0]
+                source = sec(1)._ref_v
+            elif location == "AIS":
+                sec = public_hoc_cell(self.cell).axon[1]
+                source = sec(0.5)._ref_v
+            else:
+                # Parse custom location (e.g., 'soma[0](0.3)')
+                if "(" in location:
+                    section_name, pos = location.split("(")
+                    pos = float(pos.strip(")"))  # Extract position as a float
+                else:
+                    section_name, pos = location, 0.5  # Default to middle of the section
+
+                # Handle section arrays (e.g., soma[0])
+                if "[" in section_name and "]" in section_name:
+                    base_name, index = section_name.split("[")
+                    index = int(index.strip("]"))  # Convert index to integer
+                    sec = getattr(public_hoc_cell(self.cell), base_name)[index]
+                else:
+                    sec = getattr(public_hoc_cell(self.cell), section_name)
+
+                source = sec(pos)._ref_v
+        except (AttributeError, ValueError) as e:
+            raise ValueError(f"Invalid spike detection location: {location}") from e
         netcon = neuron.h.NetCon(source, target, sec=sec)
         netcon.threshold = threshold
         return netcon

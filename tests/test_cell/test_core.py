@@ -297,13 +297,31 @@ class TestCellSpikes:
 
     @pytest.mark.v5
     def test_create_netcon_spikedetector(self):
-        """Cell: create_netcon_spikedetector."""
+        """Test creating a NetCon for spike detection."""
         threshold = -29.0
-        netcon = self.cell.create_netcon_spikedetector(None, "AIS", -29.0)
-        assert netcon.threshold == threshold
-        netcon = self.cell.create_netcon_spikedetector(None, "soma", -29.0)
+        netcon_ais = self.cell.create_netcon_spikedetector(None, "AIS", threshold)
+        netcon_soma = self.cell.create_netcon_spikedetector(None, "soma", threshold)
+        assert netcon_ais.threshold == threshold, "AIS NetCon threshold mismatch"
+        assert netcon_soma.threshold == threshold, "Soma NetCon threshold mismatch"
+
+        # Test invalid location
         with pytest.raises(ValueError):
-            self.cell.create_netcon_spikedetector(None, "Dendrite", -29.0)
+            self.cell.create_netcon_spikedetector(None, "Dendrite", threshold)
+
+    @pytest.mark.v5
+    def test_create_netcon_spikedetector_custom_location(self):
+        """Test creating a NetCon with a custom location."""
+        threshold = -30.0
+        # Add custom location (e.g., soma[0](0.5))
+        netcon_custom = self.cell.create_netcon_spikedetector(None, "soma[0](0.5)", threshold)
+        # Assert threshold and custom location are handled
+        assert netcon_custom.threshold == threshold, "Custom location NetCon threshold mismatch"
+
+    @pytest.mark.v5
+    def test_invalid_segment_position(self):
+        """Test NetCon creation with an invalid segment position."""
+        with pytest.raises(ValueError):
+            self.cell.create_netcon_spikedetector(None, "axon[1](1.5)", -30.0)
 
 
 @pytest.mark.v6
