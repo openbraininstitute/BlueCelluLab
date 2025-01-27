@@ -442,13 +442,18 @@ class Cell(InjectableMixin, PlottableMixin):
         Args:
             target: A NEURON point process object (e.g., synapse) that the NetCon connects to.
             location: The spike detection location. Acceptable formats include:
+
                 - `"soma"`: Detect spikes in the soma section at the distal end.
+
                 - `"AIS"`: Detect spikes in the axon initial segment at the midpoint.
+
                 - `"section[index](position)"`: Custom location specifying:
-                    - `section`: The name of the section (e.g., 'soma', 'axon').
-                    - `[index]` (optional): Segment index within a section array (e.g., 'soma[0]').
-                    - `(position)` (optional): Normalized position along the section length (0 to 1).
+
+                  - `section`: The name of the section (e.g., 'soma', 'axon').
+                  - `[index]` (optional): Segment index within a section array (e.g., 'soma[0]').
+                  - `(position)` (optional): Normalized position along the section length (0 to 1).
                     Defaults to 0.5 if not provided.
+
             threshold: The voltage threshold for spike detection (default: -30.0 mV).
 
         Returns:
@@ -456,9 +461,13 @@ class Cell(InjectableMixin, PlottableMixin):
 
         Raises:
             ValueError: If:
+
                 - The `location` is not 'soma', 'AIS', or a valid custom format.
+
                 - The specified section or segment index does not exist.
+
                 - The position is out of bounds (e.g., negative or greater than 1.0).
+
         """
 
         if location == "soma":
