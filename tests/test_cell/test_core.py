@@ -23,6 +23,7 @@ import uuid
 import neuron
 import numpy as np
 import pytest
+import re
 
 import bluecellulab
 from bluecellulab.circuit.circuit_access import EmodelProperties
@@ -312,16 +313,59 @@ class TestCellSpikes:
     def test_create_netcon_spikedetector_custom_location(self):
         """Test creating a NetCon with a custom location."""
         threshold = -30.0
-        # Add custom location (e.g., soma[0](0.5))
-        netcon_custom = self.cell.create_netcon_spikedetector(None, "soma[0](0.5)", threshold)
-        # Assert threshold and custom location are handled
-        assert netcon_custom.threshold == threshold, "Custom location NetCon threshold mismatch"
+        # Test valid custom locations
+        valid_locations = [
+            ("soma[0](0.5)", 0.5),
+            ("soma[0](1.0)", 1.0),
+            ("axon[1](0.3)", 0.3),
+        ]
+        for location, pos in valid_locations:
+            netcon_custom = self.cell.create_netcon_spikedetector(None, location, threshold)
+            assert netcon_custom.threshold == threshold, f"Threshold mismatch for location {location}"
+            # Additional checks for source voltage if accessible (not included in this context)
 
     @pytest.mark.v5
-    def test_invalid_segment_position(self):
-        """Test NetCon creation with an invalid segment position."""
-        with pytest.raises(ValueError):
-            self.cell.create_netcon_spikedetector(None, "axon[1](1.5)", -30.0)
+    def test_invalid_location_format(self):
+        """Test handling of invalid location formats."""
+        threshold = -30.0
+        invalid_locations = [
+            "soma[abc](0.5)",  # Non-integer in square brackets
+            "soma[0](abc)",    # Non-decimal in parentheses
+            "soma[0]abc",      # Missing parentheses
+            "soma()",          # Empty parentheses
+            "soma[0](1.5.3)",  # Invalid decimal format
+            "soma[0](1.5",     # Unmatched parentheses
+        ]
+        for location in invalid_locations:
+            with pytest.raises(ValueError, match=re.escape(f"Invalid location format: {location}")):
+                self.cell.create_netcon_spikedetector(None, location, threshold)
+
+    @pytest.mark.v5
+    def test_invalid_segment_or_section(self):
+        """Test creating a NetCon with an invalid segment index or section."""
+        threshold = -30.0
+
+        # Non-existent section name
+        with pytest.raises(ValueError, match="Invalid spike detection location:"):
+            self.cell.create_netcon_spikedetector(None, "invalid_section[0](0.5)", threshold)
+
+        # Out-of-bounds segment index
+        with pytest.raises(ValueError, match=re.escape("Invalid spike detection location: soma[999](0.5)")):
+            self.cell.create_netcon_spikedetector(None, "soma[999](0.5)", threshold)
+
+        # Invalid position (greater than 1.0 or negative)
+        with pytest.raises(ValueError, match=re.escape("Invalid spike detection location: soma[0](1.5)")):
+            self.cell.create_netcon_spikedetector(None, "soma[0](1.5)", threshold)
+        with pytest.raises(ValueError, match=re.escape("Invalid spike detection location: soma[0](-0.3)")):
+            self.cell.create_netcon_spikedetector(None, "soma[0](-0.3)", threshold)
+
+    @pytest.mark.v5
+    def test_default_position_in_custom_location(self):
+        """Test default position when parentheses are omitted in a valid custom location."""
+        threshold = -30.0
+        location = "soma[0]"  # No position specified; should default to 0.5
+        netcon = self.cell.create_netcon_spikedetector(None, location, threshold)
+        assert netcon.threshold == threshold, "Threshold mismatch for default position"
 
 
 @pytest.mark.v6
