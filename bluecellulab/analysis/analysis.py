@@ -21,8 +21,8 @@ def compute_plot_iv_curve(cell,
                           post_delay=100.0,
                           threshold_voltage=-30,
                           nb_bins=11):
-    """
-    Compute and plot the Current-Voltage (I-V) curve for a given cell by injecting a range of currents.
+    """Compute and plot the Current-Voltage (I-V) curve for a given cell by
+    injecting a range of currents.
 
     This function evaluates the relationship between the injected current amplitude and the resulting
     steady-state membrane potential of a neuronal cell model. Currents are injected at a specified section
@@ -112,8 +112,8 @@ def compute_plot_fi_curve(cell,
                           post_delay=100.0,
                           max_current=0.8,
                           nb_bins=11):
-    """
-    Compute and plot the Frequency-Current (F-I) curve for a given cell by injecting a range of currents.
+    """Compute and plot the Frequency-Current (F-I) curve for a given cell by
+    injecting a range of currents.
 
     This function evaluates the relationship between injected current amplitude and the firing rate
     of a neuronal cell model. Currents are injected at a specified section and segment, and the number

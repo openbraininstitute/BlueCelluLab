@@ -30,7 +30,6 @@ def plot_iv_curve(currents, voltages, injecting_section, injecting_segment, reco
     plt.show()
 
 
-
 def plot_fi_curve(currents, spike_count, injecting_section, injecting_segment, recording_section, recording_segment):
     """Plots the F-I (Frequency-Current) curve.
 

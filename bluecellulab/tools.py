@@ -427,9 +427,8 @@ def calculate_rheobase(cell: Cell,
     return rheobase
 
 
-def validate_section_and_segment(cell: Cell, section_name: str, segment_position: float) -> tuple:
-    """
-    Validate a single section and segment position.
+def validate_section_and_segment(cell: Cell, section_name: str, segment_position: float):
+    """Validate a single section and segment position.
 
     Args:
         cell: The cell model to validate against.

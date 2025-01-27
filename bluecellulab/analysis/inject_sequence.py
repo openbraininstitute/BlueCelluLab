@@ -48,8 +48,8 @@ def run_stimulus(
     enable_spike_detection: bool = False,
     threshold_spike_detection: float = -30,
 ) -> Recording:
-    """
-    Creates a cell from template parameters, applies a stimulus, and records the response.
+    """Creates a cell from template parameters, applies a stimulus, and records
+    the response.
 
     This function simulates the electrical activity of a neuronal cell model by injecting
     a stimulus into a specified section and segment, recording the voltage response, and
