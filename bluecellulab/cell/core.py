@@ -377,7 +377,11 @@ class Cell(InjectableMixin, PlottableMixin):
 
     def get_recording(self, var_name: str) -> np.ndarray:
         """Get recorded values."""
-        return np.array(self.recordings[var_name].to_python())
+        try:
+            res = np.array(self.recordings[var_name].to_python())
+        except KeyError as e:
+            raise ValueError(f"No recording for '{var_name}' was found.") from e
+        return res
 
     def add_replay_synapse(self,
                            synapse_id: SynapseID,
@@ -467,7 +471,6 @@ class Cell(InjectableMixin, PlottableMixin):
                 - The specified section or segment index does not exist.
 
                 - The position is out of bounds (e.g., negative or greater than 1.0).
-
         """
 
         if location == "soma":
