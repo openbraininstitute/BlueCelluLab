@@ -57,7 +57,7 @@ def compute_plot_iv_curve(cell,
         ValueError: If the cell object is invalid, the specified sections/segments are not found, or if
             the simulation results are inconsistent.
     """
-    rheobase = calculate_rheobase(cell)
+    rheobase = calculate_rheobase(cell=cell, section=injecting_section, segx=injecting_segment)
 
     list_amp = np.linspace(rheobase - 2, rheobase - 0.1, nb_bins)  # [nA]
 
@@ -146,11 +146,9 @@ def compute_plot_fi_curve(cell,
     Raises:
         ValueError: If the cell object is invalid or the specified sections/segments are not found.
     """
-
-    rheobase = calculate_rheobase(cell)
+    rheobase = calculate_rheobase(cell=cell, section=injecting_section, segx=injecting_segment)
 
     list_amp = np.linspace(rheobase, max_current, nb_bins)  # [nA]
-
     steps = []
     spikes = []
     # inject step current and record spike response
