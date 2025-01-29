@@ -1,7 +1,7 @@
 """Module for injecting a sequence of protocols to the cell."""
 from __future__ import annotations
 from enum import Enum, auto
-from typing import NamedTuple, Sequence, Dict
+from typing import NamedTuple, Sequence, Dict, Optional
 
 import neuron
 import numpy as np
@@ -11,6 +11,7 @@ from bluecellulab.simulation.parallel import IsolatedProcess
 from bluecellulab.simulation.simulation import Simulation
 from bluecellulab.stimulus.circuit_stimulus_definitions import Hyperpolarizing
 from bluecellulab.stimulus.factory import Stimulus, StimulusFactory
+from bluecellulab.tools import validate_section_and_segment
 
 
 class StimulusName(Enum):
@@ -24,10 +25,12 @@ class StimulusName(Enum):
 
 
 class Recording(NamedTuple):
-    """A tuple of the current, voltage and time recordings."""
+    """A tuple of the current, voltage and time recordings with optional spike
+    recordings."""
     current: np.ndarray
     voltage: np.ndarray
     time: np.ndarray
+    spike: np.ndarray | None
 
 
 StimulusRecordings = Dict[str, Recording]
@@ -40,41 +43,91 @@ def run_stimulus(
     segment: float,
     cvode: bool = True,
     add_hypamp: bool = True,
+    recording_section: str = "soma[0]",
+    recording_segment: float = 0.5,
+    enable_spike_detection: bool = False,
+    threshold_spike_detection: float = -30,
 ) -> Recording:
-    """Creates a cell and stimulates it with a given stimulus.
+    """Creates a cell from template parameters, applies a stimulus, and records
+    the response.
+
+    This function simulates the electrical activity of a neuronal cell model by injecting
+    a stimulus into a specified section and segment, recording the voltage response, and
+    optionally detecting spikes.
 
     Args:
-        template_params: The parameters to create the cell from a template.
-        stimulus: The input stimulus to inject into the cell.
-        section: Name of the section of cell where the stimulus is to be injected.
-        segment: The segment of the section where the stimulus is to be injected.
-        cvode: True to use variable time-steps. False for fixed time-steps.
+        template_params (TemplateParams): Parameters required to create the cell from a
+            specified template, including morphology and mechanisms.
+        stimulus (Stimulus): The stimulus waveform to inject, defined by time and current arrays.
+        section (str): Name of the section of the cell where the stimulus is applied.
+            (e.g. soma[0])
+        segment (float): The normalized position (0.0 to 1.0) along the injecting
+            section where the stimulus is applied.
+        cvode (bool, optional): Whether to use variable time-step integration. Defaults to True.
+        add_hypamp (bool, optional): If True, adds a hyperpolarizing stimulus before applying
+            the main stimulus. Defaults to True.
+        recording_section (str): Name of the section of the cell where voltage is recorded.
+        recording_segment (float): The normalized position (0.0 to 1.0) along the recording
+            section where voltage is recorded.
+        enable_spike_detection (bool, optional): If True, enables spike detection at the
+            recording location. Defaults to False.
+        threshold_spike_detection (float, optional): The voltage threshold (mV) for spike detection.
+            Defaults to -30 mV.
 
     Returns:
-        The voltage-time recording at the specified location.
+        Recording: A `Recording` object containing the following:
+            - `current` (np.ndarray): The injected current waveform (nA).
+            - `voltage` (np.ndarray): The recorded membrane potential (mV) over time.
+            - `time` (np.ndarray): The simulation time points (ms).
+            - `spike` (np.ndarray or None): The detected spikes, if spike detection is enabled.
 
     Raises:
-        ValueError: If the time and voltage arrays are not the same length.
+        ValueError: If the time, current, and voltage arrays do not have the same length,
+            or if the specified sections or segments are not found in the cell model.
     """
     cell = Cell.from_template_parameters(template_params)
-    neuron_section = cell.sections[section]
+
+    validate_section_and_segment(cell, section, segment)
+    validate_section_and_segment(cell, recording_section, recording_segment)
+
     if add_hypamp:
         hyp_stim = Hyperpolarizing(target="", delay=0.0, duration=stimulus.stimulus_time)
         cell.add_replay_hypamp(hyp_stim)
-    cell.add_voltage_recording(neuron_section, segment)
+
+    cell.add_voltage_recording(cell.sections[recording_section], recording_segment)
+
+    # Set up spike detection if enabled
+    spikes: Optional[np.ndarray] = None
+    if enable_spike_detection:
+        recording_location = f"{recording_section}({str(recording_segment)})"
+        cell.start_recording_spikes(None, location=recording_location, threshold=threshold_spike_detection)
+
+    # Inject the stimulus and run the simulation
     iclamp, _ = cell.inject_current_waveform(
-        stimulus.time, stimulus.current, section=neuron_section, segx=segment
+        stimulus.time, stimulus.current, section=cell.sections[section], segx=segment
     )
     current_vector = neuron.h.Vector()
     current_vector.record(iclamp._ref_i)
+
     simulation = Simulation(cell)
     simulation.run(stimulus.stimulus_time, cvode=cvode)
+
+    # Retrieve simulation results
     current = np.array(current_vector.to_python())
-    voltage = cell.get_voltage_recording(neuron_section, segment)
+    voltage = cell.get_voltage_recording(cell.sections[recording_section], recording_segment)
     time = cell.get_time()
+
     if len(time) != len(voltage) or len(time) != len(current):
-        raise ValueError("Time, current and voltage arrays are not the same length")
-    return Recording(current, voltage, time)
+        raise ValueError("Time, current, and voltage arrays are not the same length")
+
+    if enable_spike_detection:
+        results = cell.get_recorded_spikes(location=recording_location, threshold=threshold_spike_detection)
+        if results is not None:
+            spikes = np.array(results)
+        else:
+            spikes = None
+
+    return Recording(current=current, voltage=voltage, time=time, spike=spikes)
 
 
 def apply_multiple_stimuli(

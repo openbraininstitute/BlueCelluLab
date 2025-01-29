@@ -23,12 +23,15 @@ import uuid
 import neuron
 import numpy as np
 import pytest
+import re
 
 import bluecellulab
 from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.cell.template import NeuronTemplate, public_hoc_cell, shorten_and_hash_string
 from bluecellulab.exceptions import BluecellulabError
 from bluecellulab import CircuitSimulation
+from bluecellulab.cell.recording import section_to_voltage_recording_str
+
 
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
 warnings.filterwarnings("ignore", message="numpy.ndarray size changed")
@@ -297,13 +300,74 @@ class TestCellSpikes:
 
     @pytest.mark.v5
     def test_create_netcon_spikedetector(self):
-        """Cell: create_netcon_spikedetector."""
+        """Test creating a NetCon for spike detection."""
         threshold = -29.0
-        netcon = self.cell.create_netcon_spikedetector(None, "AIS", -29.0)
-        assert netcon.threshold == threshold
-        netcon = self.cell.create_netcon_spikedetector(None, "soma", -29.0)
+        netcon_ais = self.cell.create_netcon_spikedetector(None, "AIS", threshold)
+        netcon_soma = self.cell.create_netcon_spikedetector(None, "soma", threshold)
+        assert netcon_ais.threshold == threshold, "AIS NetCon threshold mismatch"
+        assert netcon_soma.threshold == threshold, "Soma NetCon threshold mismatch"
+
+        # Test invalid location
         with pytest.raises(ValueError):
-            self.cell.create_netcon_spikedetector(None, "Dendrite", -29.0)
+            self.cell.create_netcon_spikedetector(None, "Dendrite", threshold)
+
+    @pytest.mark.v5
+    def test_create_netcon_spikedetector_custom_location(self):
+        """Test creating a NetCon with a custom location."""
+        threshold = -30.0
+        # Test valid custom locations
+        valid_locations = [
+            ("soma[0](0.5)", 0.5),
+            ("soma[0](1.0)", 1.0),
+            ("axon[1](0.3)", 0.3),
+        ]
+        for location, pos in valid_locations:
+            netcon_custom = self.cell.create_netcon_spikedetector(None, location, threshold)
+            assert netcon_custom.threshold == threshold, f"Threshold mismatch for location {location}"
+            # Additional checks for source voltage if accessible (not included in this context)
+
+    @pytest.mark.v5
+    def test_invalid_location_format(self):
+        """Test handling of invalid location formats."""
+        threshold = -30.0
+        invalid_locations = [
+            "soma[abc](0.5)",  # Non-integer in square brackets
+            "soma[0](abc)",    # Non-decimal in parentheses
+            "soma[0]abc",      # Missing parentheses
+            "soma()",          # Empty parentheses
+            "soma[0](1.5.3)",  # Invalid decimal format
+            "soma[0](1.5",     # Unmatched parentheses
+        ]
+        for location in invalid_locations:
+            with pytest.raises(ValueError, match=re.escape(f"Invalid location format: {location}")):
+                self.cell.create_netcon_spikedetector(None, location, threshold)
+
+    @pytest.mark.v5
+    def test_invalid_segment_or_section(self):
+        """Test creating a NetCon with an invalid segment index or section."""
+        threshold = -30.0
+
+        # Non-existent section name
+        with pytest.raises(ValueError, match="Invalid spike detection location:"):
+            self.cell.create_netcon_spikedetector(None, "invalid_section[0](0.5)", threshold)
+
+        # Out-of-bounds segment index
+        with pytest.raises(ValueError, match=re.escape("Invalid spike detection location: soma[999](0.5)")):
+            self.cell.create_netcon_spikedetector(None, "soma[999](0.5)", threshold)
+
+        # Invalid position (greater than 1.0 or negative)
+        with pytest.raises(ValueError, match=re.escape("Invalid spike detection location: soma[0](1.5)")):
+            self.cell.create_netcon_spikedetector(None, "soma[0](1.5)", threshold)
+        with pytest.raises(ValueError, match=re.escape("Invalid spike detection location: soma[0](-0.3)")):
+            self.cell.create_netcon_spikedetector(None, "soma[0](-0.3)", threshold)
+
+    @pytest.mark.v5
+    def test_default_position_in_custom_location(self):
+        """Test default position when parentheses are omitted in a valid custom location."""
+        threshold = -30.0
+        location = "soma[0]"  # No position specified; should default to 0.5
+        netcon = self.cell.create_netcon_spikedetector(None, location, threshold)
+        assert netcon.threshold == threshold, "Threshold mismatch for default position"
 
 
 @pytest.mark.v6
@@ -442,6 +506,56 @@ class TestCellV6:
         """Unit test creating Cell from template_parameters."""
         new_cell = bluecellulab.Cell.from_template_parameters(self.cell.template_params)
         assert new_cell.template_params == self.cell.template_params
+
+    def test_get_voltage_recording_soma(self):
+        """Test get_voltage_recording for the soma section."""
+        # Add a voltage recording at the soma
+        self.cell.add_voltage_recording(self.cell.soma, segx=0.5)
+
+        self.cell.add_step(start_time=2.0, stop_time=22.0, level=1.0)
+        sim = bluecellulab.Simulation()
+        sim.add_cell(self.cell)
+        sim.run(24, cvode=False)
+
+        # Retrieve the voltage recording
+        voltage_soma_v1 = self.cell.get_voltage_recording(self.cell.soma, segx=0.5)
+        voltage_soma_v2 = self.cell.get_soma_voltage()
+
+        assert np.array_equal(voltage_soma_v1, voltage_soma_v2), "Arrays are not equal"
+
+        # Check the reference name is correct and the recording exists
+        reference_name = "self.soma(0.5)._ref_v"
+        assert reference_name in self.cell.recordings
+        assert isinstance(voltage_soma_v1, np.ndarray)
+
+    def test_get_voltage_recording_apical(self):
+        """Test get_voltage_recording for an apical section."""
+        apical_section = self.cell.apical[0]
+
+        # Add a voltage recording at an apical section
+        self.cell.add_voltage_recording(apical_section, segx=0.5)
+
+        self.cell.add_step(start_time=2.0, stop_time=22.0, level=1.0)
+        sim = bluecellulab.Simulation()
+        sim.add_cell(self.cell)
+        sim.run(24, cvode=False)
+
+        # Retrieve the voltage recording
+        voltage = self.cell.get_voltage_recording(apical_section, segx=0.5)
+        voltage_soma = self.cell.get_soma_voltage()
+
+        # Check the reference name is correct and the recording exists
+        reference_name = section_to_voltage_recording_str(apical_section, 0.5)
+
+        assert reference_name in self.cell.recordings
+        assert isinstance(voltage, np.ndarray)
+        assert not np.array_equal(voltage, voltage_soma), "Arrays should not be equal"
+
+    def test_get_voltage_recording_missing(self):
+        """Test the behavior of the `get_voltage_recording` method when
+        attempting to retrieve a voltage recording that was not previously added."""
+        with pytest.raises(BluecellulabError, match="get_voltage_recording: Voltage recording .* was not added previously using add_voltage_recording"):
+            self.cell.get_voltage_recording(self.cell.soma, segx=1.5)
 
 
 @pytest.mark.v6

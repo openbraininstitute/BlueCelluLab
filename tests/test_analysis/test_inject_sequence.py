@@ -15,8 +15,10 @@
 from __future__ import annotations
 from unittest.mock import MagicMock, patch
 import pytest
+import numpy as np
 from bluecellulab import create_ball_stick
-from bluecellulab.analysis.inject_sequence import StimulusName, apply_multiple_stimuli, run_stimulus
+from bluecellulab.analysis.inject_sequence import Recording, StimulusName, apply_multiple_stimuli, run_stimulus
+
 from bluecellulab.stimulus.factory import StimulusFactory
 
 
@@ -35,6 +37,14 @@ class MockRecording:
         self.time = [1, 2, 3]
         self.voltage = [-70, -55, -40]
         self.current = [0.1, 0.2, 0.3]
+
+
+class MockRecordingWithSpike:
+    def __init__(self):
+        self.time = [1, 2, 3]
+        self.voltage = [-70, -55, -40]
+        self.current = [0.1, 0.2, 0.3]
+        self.spike = [1.5, 2.5]
 
 
 @pytest.fixture
@@ -75,3 +85,113 @@ def test_apply_multiple_step_stimuli(mock_run_stimulus):
         res_thres = apply_multiple_stimuli(cell, stim, short_thres, n_processes=1)
         assert len(res) == len(short_amplitudes)
         assert len(res_thres) == len(short_thres)
+
+
+def test_run_stimulus_with_spike_detection(mock_run_stimulus):
+    """Test the run_stimulus_with_spike_detection function."""
+    template_params = create_ball_stick().template_params
+    stimulus = StimulusFactory(dt=1.0).idrest(threshold_current=0.1)
+
+    mock_recording = MockRecordingWithSpike()
+
+    with patch('bluecellulab.analysis.inject_sequence.run_stimulus', return_value=mock_recording), \
+         patch('bluecellulab.analysis.inject_sequence.Cell.get_recorded_spikes') as mock_get_recorded_spikes:
+
+        mock_get_recorded_spikes.return_value = [1.5, 2.5]
+
+        recording = run_stimulus(
+            template_params=template_params,
+            stimulus=stimulus,
+            section="soma[0]",
+            segment=0.5,
+            cvode=True,
+            add_hypamp=True,
+            enable_spike_detection=True,
+            threshold_spike_detection=-10,
+        )
+
+        assert len(recording.time) > 0
+        assert len(recording.time) == len(recording.voltage)
+        assert len(recording.time) == len(recording.current)
+        assert np.array_equal(recording.spike, np.array([1.5, 2.5]))
+        mock_get_recorded_spikes.assert_called_once_with(location="soma[0](0.5)", threshold=-10)
+
+
+def test_run_stimulus_recording_section():
+    """Test run_stimulus with custom recording section."""
+    recording_section = "soma[0]"
+    recording_segment = 0.3
+
+    template_params = create_ball_stick().template_params
+    stimulus = StimulusFactory(dt=1.0).idrest(threshold_current=0.1)
+
+    recording = run_stimulus(
+        template_params=template_params,
+        stimulus=stimulus,
+        section="soma[0]",
+        segment=0.5,
+        recording_section=recording_section,
+        recording_segment=recording_segment
+    )
+
+    # Assert that the Recording object is created
+    assert isinstance(recording, Recording), "Expected a Recording object."
+    assert recording.time is not None, "No time data was recorded."
+    assert recording.voltage is not None, "No voltage data was recorded."
+    assert recording.current is not None, "No current data was recorded."
+    assert recording.spike is None, "Spikes were recorded, but spike detection was disabled."
+
+
+def test_run_stimulus_enable_spike_detection():
+    """Test run_stimulus with spike detection enabled."""
+    template_params = create_ball_stick().template_params
+    stimulus = StimulusFactory(dt=1.0).idrest(threshold_current=0.1)
+
+    # Spike detection enabled
+    recording = run_stimulus(
+        template_params=template_params,
+        stimulus=stimulus,
+        section="soma[0]",
+        segment=0.5,
+        enable_spike_detection=True,
+        threshold_spike_detection=-30
+    )
+
+    assert isinstance(recording, Recording), "Expected a Recording object."
+    assert recording.spike is not None, "Spike detection is enabled, but no spikes were recorded."
+
+
+def test_run_stimulus_disable_spike_detection():
+    """Test run_stimulus with spike detection disabled."""
+    template_params = create_ball_stick().template_params
+    stimulus = StimulusFactory(dt=1.0).idrest(threshold_current=0.1)
+
+    # Spike detection disabled
+    recording = run_stimulus(
+        template_params=template_params,
+        stimulus=stimulus,
+        section="soma[0]",
+        segment=0.5,
+        enable_spike_detection=False
+    )
+    assert isinstance(recording, Recording), "Expected a Recording object."
+    assert recording.spike is None, "Spike detection is disabled, but spikes were recorded."
+
+
+def test_run_stimulus_threshold_spike_detection():
+    """Test run_stimulus with custom spike detection threshold."""
+    template_params = create_ball_stick().template_params
+    stimulus = StimulusFactory(dt=1.0).idrest(threshold_current=0.1)
+
+    threshold = -20
+    recording = run_stimulus(
+        template_params=template_params,
+        stimulus=stimulus,
+        section="soma[0]",
+        segment=0.5,
+        enable_spike_detection=True,
+        threshold_spike_detection=threshold
+    )
+
+    assert isinstance(recording, Recording), "Expected a Recording object."
+    assert recording.spike is not None, "Spikes were not recorded with custom threshold."

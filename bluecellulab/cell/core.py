@@ -25,6 +25,7 @@ from typing_extensions import deprecated
 import neuron
 import numpy as np
 import pandas as pd
+import re
 
 import bluecellulab
 from bluecellulab.cell.recording import section_to_voltage_recording_str
@@ -376,7 +377,11 @@ class Cell(InjectableMixin, PlottableMixin):
 
     def get_recording(self, var_name: str) -> np.ndarray:
         """Get recorded values."""
-        return np.array(self.recordings[var_name].to_python())
+        try:
+            res = np.array(self.recordings[var_name].to_python())
+        except KeyError as e:
+            raise ValueError(f"No recording for '{var_name}' was found.") from e
+        return res
 
     def add_replay_synapse(self,
                            synapse_id: SynapseID,
@@ -432,19 +437,42 @@ class Cell(InjectableMixin, PlottableMixin):
     def create_netcon_spikedetector(self, target: HocObjectType, location: str, threshold: float = -30.0) -> HocObjectType:
         """Add and return a spikedetector.
 
-        This is a NetCon that detects spike in the current cell, and that
-        connects to target
+        This function creates a NetCon object that detects spikes at a specific
+        location in the current cell and connects to the provided target point process.
+        The location can be specified as a predefined site ('soma' or 'AIS') or as a
+        custom location in the format `section[index](position)`. Custom locations
+        allow fine-grained control of the spike detection site within the cell's sections.
 
         Args:
-            target: target point process
-            location: the spike detection location
-            threshold: spike detection threshold
+            target: A NEURON point process object (e.g., synapse) that the NetCon connects to.
+            location: The spike detection location. Acceptable formats include:
 
-        Returns: Neuron netcon object
+                - `"soma"`: Detect spikes in the soma section at the distal end.
+
+                - `"AIS"`: Detect spikes in the axon initial segment at the midpoint.
+
+                - `"section[index](position)"`: Custom location specifying:
+
+                  - `section`: The name of the section (e.g., 'soma', 'axon').
+                  - `[index]` (optional): Segment index within a section array (e.g., 'soma[0]').
+                  - `(position)` (optional): Normalized position along the section length (0 to 1).
+                    Defaults to 0.5 if not provided.
+
+            threshold: The voltage threshold for spike detection (default: -30.0 mV).
+
+        Returns:
+            A NEURON `NetCon` object configured for spike detection at the specified location.
 
         Raises:
-            ValueError: If the spike detection location is not 'soma' or 'AIS'.
+            ValueError: If:
+
+                - The `location` is not 'soma', 'AIS', or a valid custom format.
+
+                - The specified section or segment index does not exist.
+
+                - The position is out of bounds (e.g., negative or greater than 1.0).
         """
+
         if location == "soma":
             sec = public_hoc_cell(self.cell).soma[0]
             source = sec(1)._ref_v
@@ -452,7 +480,34 @@ class Cell(InjectableMixin, PlottableMixin):
             sec = public_hoc_cell(self.cell).axon[1]
             source = sec(0.5)._ref_v
         else:
-            raise ValueError("Spike detection location must be soma or AIS")
+            # Parse custom location (e.g., 'soma[0](0.3)')
+            pattern = r'^([a-zA-Z_]+)(?:\[(\d+)\])?(?:\((-?\d+\.\d+)\))?$'
+            match = re.search(pattern, location)
+
+            # Extract the value if a match is found
+            if match:
+                section_name = match.group(1)
+                segment_index = match.group(2)
+                pos = match.group(3)
+                if pos is None:
+                    pos = 0.5
+                else:
+                    pos = float(pos)
+
+            else:
+                raise ValueError(f"Invalid location format: {location}")
+
+            try:
+                # Handle section arrays (e.g., soma[0])
+                if segment_index is not None:
+                    sec = getattr(public_hoc_cell(self.cell), section_name)[int(segment_index)]
+                else:
+                    sec = getattr(public_hoc_cell(self.cell), section_name)
+
+                source = sec(pos)._ref_v
+            except (AttributeError, ValueError, IndexError) as e:
+                raise ValueError(f"Invalid spike detection location: {location}") from e
+
         netcon = neuron.h.NetCon(source, target, sec=sec)
         netcon.threshold = threshold
         return netcon

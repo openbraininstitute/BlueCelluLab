@@ -25,7 +25,7 @@ from bluecellulab.cell.ballstick import create_ball_stick
 from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.circuit.node_id import create_cell_id
 from bluecellulab.exceptions import UnsteadyCellError
-from bluecellulab.tools import calculate_SS_voltage, calculate_SS_voltage_subprocess, calculate_input_resistance, detect_hyp_current, detect_spike, detect_spike_step, detect_spike_step_subprocess, holding_current, holding_current_subprocess, search_threshold_current, template_accepts_cvode, check_empty_topology, calculate_max_thresh_current, calculate_rheobase
+from bluecellulab.tools import calculate_SS_voltage, calculate_SS_voltage_subprocess, calculate_input_resistance, detect_hyp_current, detect_spike, detect_spike_step, detect_spike_step_subprocess, holding_current, holding_current_subprocess, search_threshold_current, template_accepts_cvode, check_empty_topology, calculate_max_thresh_current, calculate_rheobase, validate_section_and_segment
 
 
 script_dir = Path(__file__).parent
@@ -45,6 +45,17 @@ def mock_cell():
         template_format="v6",
         emodel_properties=emodel_properties
     )
+    return cell
+
+
+@pytest.fixture
+def mock_cell_sections():
+    cell = MagicMock(spec=Cell)
+    cell.sections = {
+        'soma': MagicMock(),
+        'axon[0]': MagicMock(),
+        'axon[1]': MagicMock(),
+    }
     return cell
 
 
@@ -303,3 +314,25 @@ def test_calculate_rheobase(mock_cell, mock_calculate_SS_voltage, mock_calculate
         rheobase = calculate_rheobase(mock_cell, threshold_voltage, threshold_search_stim_start, threshold_search_stim_stop)
 
         assert rheobase == mock_search_threshold_current.return_value
+
+
+def test_validate_section_and_segment_valid(mock_cell_sections):
+    """Test validate_section_and_segment with valid inputs."""
+    # Valid section and segment position
+    validate_section_and_segment(mock_cell_sections, 'soma', 0.5)
+    validate_section_and_segment(mock_cell_sections, 'axon[0]', 0.0)
+    validate_section_and_segment(mock_cell_sections, 'axon[1]', 1.0)
+
+
+def test_validate_section_and_segment_invalid_section(mock_cell_sections):
+    """Test validate_section_and_segment with an invalid section name."""
+    with pytest.raises(ValueError, match="Section 'dend' not found in the cell model."):
+        validate_section_and_segment(mock_cell_sections, 'dend', 0.5)
+
+
+def test_validate_section_and_segment_invalid_segment_position(mock_cell_sections):
+    """Test validate_section_and_segment with an invalid segment position."""
+    with pytest.raises(ValueError, match="Segment position must be between 0.0 and 1.0, got -0.1."):
+        validate_section_and_segment(mock_cell_sections, 'soma', -0.1)
+    with pytest.raises(ValueError, match="Segment position must be between 0.0 and 1.0, got 1.1."):
+        validate_section_and_segment(mock_cell_sections, 'axon[0]', 1.1)

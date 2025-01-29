@@ -8,26 +8,56 @@ import numpy as np
 from bluecellulab.stimulus import StimulusFactory
 from bluecellulab.tools import calculate_rheobase
 from bluecellulab.analysis.inject_sequence import run_stimulus
-from bluecellulab.analysis.plotting import plot_iv_curve
+from bluecellulab.analysis.plotting import plot_iv_curve, plot_fi_curve
 
 
-def compute_plot_iv_curve(cell, stim_start=100.0, duration=500.0, post_delay=100.0, threshold_voltage=-30, nb_bins=11):
-    """Compute and plot the IV curve from a given cell by injecting a
-    predefined range of currents.
+def compute_plot_iv_curve(cell,
+                          injecting_section="soma[0]",
+                          injecting_segment=0.5,
+                          recording_section="soma[0]",
+                          recording_segment=0.5,
+                          stim_start=100.0,
+                          duration=500.0,
+                          post_delay=100.0,
+                          threshold_voltage=-30,
+                          nb_bins=11):
+    """Compute and plot the Current-Voltage (I-V) curve for a given cell by
+    injecting a range of currents.
+
+    This function evaluates the relationship between the injected current amplitude and the resulting
+    steady-state membrane potential of a neuronal cell model. Currents are injected at a specified section
+    and segment, and the steady-state voltage at the recording location is used to construct the I-V curve.
 
     Args:
-        cell (bluecellulab.cell.Cell): The initialized cell model.
-        stim_start (float): Start time for current injection (in ms). Default is 100.0 ms.
-        duration (float): Duration of current injection (in ms). Default is 500.0 ms.
-        post_delay (float): Delay after the stimulation ends (in ms). Default is 100.0 ms.
-        nb_bins (int): Number of current injection levels. Default is 11.
+        cell (bluecellulab.cell.Cell): The initialized BlueCelluLab cell model.
+        injecting_section (str, optional): The name of the section where the stimulus is injected.
+            Default is "soma[0]".
+        injecting_segment (float, optional): The position along the injecting section (0.0 to 1.0)
+            where the stimulus is applied. Default is 0.5.
+        recording_section (str, optional): The name of the section where the voltage is recorded.
+            Default is "soma[0]".
+        recording_segment (float, optional): The position along the recording section (0.0 to 1.0)
+            where the voltage is recorded. Default is 0.5.
+        stim_start (float, optional): The start time of the current injection (in ms). Default is 100.0 ms.
+        duration (float, optional): The duration of the current injection (in ms). Default is 500.0 ms.
+        post_delay (float, optional): The delay after the stimulation ends before the simulation stops
+            (in ms). Default is 100.0 ms.
+        threshold_voltage (float, optional): The voltage threshold (in mV) for detecting a steady-state
+            response. Default is -30 mV.
+        nb_bins (int, optional): The number of discrete current levels between 0 and the maximum current.
+            Default is 11.
 
     Returns:
         tuple: A tuple containing:
-            - list_amp (np.ndarray): The predefined injected step current levels (nA).
-            - steady_states (np.ndarray): The corresponding steady-state voltages (mV).
+            - list_amp (np.ndarray): The injected current amplitudes (nA).
+            - steady_states (np.ndarray): The corresponding steady-state voltages (mV) recorded at the
+              specified location.
+
+    Raises:
+        ValueError: If the cell object is invalid, the specified sections/segments are not found, or if
+            the simulation results are inconsistent.
     """
-    rheobase = calculate_rheobase(cell)
+    rheobase = calculate_rheobase(cell=cell, section=injecting_section, segx=injecting_segment)
 
     list_amp = np.linspace(rheobase - 2, rheobase - 0.1, nb_bins)  # [nA]
 
@@ -35,10 +65,15 @@ def compute_plot_iv_curve(cell, stim_start=100.0, duration=500.0, post_delay=100
     times = []
     voltages = []
     # inject step current and record voltage response
+    stim_factory = StimulusFactory(dt=0.1)
     for amp in list_amp:
-        stim_factory = StimulusFactory(dt=0.1)
         step_stimulus = stim_factory.step(pre_delay=stim_start, duration=duration, post_delay=post_delay, amplitude=amp)
-        recording = run_stimulus(cell.template_params, step_stimulus, section="soma[0]", segment=0.5)
+        recording = run_stimulus(cell.template_params,
+                                 step_stimulus,
+                                 section=injecting_section,
+                                 segment=injecting_segment,
+                                 recording_section=recording_section,
+                                 recording_segment=recording_segment)
         steps.append(step_stimulus)
         times.append(recording.time)
         voltages.append(recording.voltage)
@@ -57,7 +92,86 @@ def compute_plot_iv_curve(cell, stim_start=100.0, duration=500.0, post_delay=100
         steady_state = features_results[0]['steady_state_voltage_stimend']
         steady_states.append(steady_state)
 
-    # plot I-V curve
-    plot_iv_curve(list_amp, steady_states)
+    plot_iv_curve(list_amp,
+                  steady_states,
+                  injecting_section=injecting_section,
+                  injecting_segment=injecting_segment,
+                  recording_section=recording_section,
+                  recording_segment=recording_segment)
 
     return np.array(list_amp), np.array(steady_states)
+
+
+def compute_plot_fi_curve(cell,
+                          injecting_section="soma[0]",
+                          injecting_segment=0.5,
+                          recording_section="soma[0]",
+                          recording_segment=0.5,
+                          stim_start=100.0,
+                          duration=500.0,
+                          post_delay=100.0,
+                          max_current=0.8,
+                          nb_bins=11):
+    """Compute and plot the Frequency-Current (F-I) curve for a given cell by
+    injecting a range of currents.
+
+    This function evaluates the relationship between injected current amplitude and the firing rate
+    of a neuronal cell model. Currents are injected at a specified section and segment, and the number
+    of spikes recorded in the specified recording location is used to construct the F-I curve.
+
+    Args:
+        cell (bluecellulab.cell.Cell): The initialized BlueCelluLab cell model.
+        injecting_section (str, optional): The name of the section where the stimulus is injected.
+            Default is "soma[0]".
+        injecting_segment (float, optional): The position along the injecting section (0.0 to 1.0)
+            where the stimulus is applied. Default is 0.5.
+        recording_section (str, optional): The name of the section where spikes are recorded.
+            Default is "soma[0]".
+        recording_segment (float, optional): The position along the recording section (0.0 to 1.0)
+            where spikes are recorded. Default is 0.5.
+        stim_start (float, optional): The start time of the current injection (in ms). Default is 100.0 ms.
+        duration (float, optional): The duration of the current injection (in ms). Default is 500.0 ms.
+        post_delay (float, optional): The delay after the stimulation ends before the simulation stops
+            (in ms). Default is 100.0 ms.
+        max_current (float, optional): The maximum amplitude of the injected current (in nA).
+            Default is 0.8 nA.
+        nb_bins (int, optional): The number of discrete current levels between 0 and `max_current`.
+            Default is 11.
+
+    Returns:
+        tuple: A tuple containing:
+            - list_amp (np.ndarray): The injected current amplitudes (nA).
+            - spike_count (np.ndarray): The corresponding spike counts for each current amplitude.
+
+    Raises:
+        ValueError: If the cell object is invalid or the specified sections/segments are not found.
+    """
+    rheobase = calculate_rheobase(cell=cell, section=injecting_section, segx=injecting_segment)
+
+    list_amp = np.linspace(rheobase, max_current, nb_bins)  # [nA]
+    steps = []
+    spikes = []
+    # inject step current and record spike response
+    stim_factory = StimulusFactory(dt=0.1)
+    for amp in list_amp:
+        step_stimulus = stim_factory.step(pre_delay=stim_start, duration=duration, post_delay=post_delay, amplitude=amp)
+        recording = run_stimulus(cell.template_params,
+                                 step_stimulus,
+                                 section=injecting_section,
+                                 segment=injecting_segment,
+                                 recording_section=recording_section,
+                                 recording_segment=recording_segment,
+                                 enable_spike_detection=True)
+        steps.append(step_stimulus)
+        spikes.append(recording.spike)
+
+    spike_count = [len(spike) for spike in spikes]
+
+    plot_fi_curve(list_amp,
+                  spike_count,
+                  injecting_section=injecting_section,
+                  injecting_segment=injecting_segment,
+                  recording_section=recording_section,
+                  recording_segment=recording_segment)
+
+    return np.array(list_amp), np.array(spike_count)
