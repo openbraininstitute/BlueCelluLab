@@ -30,6 +30,8 @@ from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.cell.template import NeuronTemplate, public_hoc_cell, shorten_and_hash_string
 from bluecellulab.exceptions import BluecellulabError
 from bluecellulab import CircuitSimulation
+from bluecellulab.cell.recording import section_to_voltage_recording_str
+
 
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
 warnings.filterwarnings("ignore", message="numpy.ndarray size changed")
@@ -504,6 +506,56 @@ class TestCellV6:
         """Unit test creating Cell from template_parameters."""
         new_cell = bluecellulab.Cell.from_template_parameters(self.cell.template_params)
         assert new_cell.template_params == self.cell.template_params
+
+    def test_get_voltage_recording_soma(self):
+        """Test get_voltage_recording for the soma section."""
+        # Add a voltage recording at the soma
+        self.cell.add_voltage_recording(self.cell.soma, segx=0.5)
+
+        self.cell.add_step(start_time=2.0, stop_time=22.0, level=1.0)
+        sim = bluecellulab.Simulation()
+        sim.add_cell(self.cell)
+        sim.run(24, cvode=False)
+
+        # Retrieve the voltage recording
+        voltage_soma_v1 = self.cell.get_voltage_recording(self.cell.soma, segx=0.5)
+        voltage_soma_v2 = self.cell.get_soma_voltage()
+
+        assert np.array_equal(voltage_soma_v1, voltage_soma_v2), "Arrays are not equal"
+
+        # Check the reference name is correct and the recording exists
+        reference_name = "self.soma(0.5)._ref_v"
+        assert reference_name in self.cell.recordings
+        assert isinstance(voltage_soma_v1, np.ndarray)
+
+    def test_get_voltage_recording_apical(self):
+        """Test get_voltage_recording for an apical section."""
+        apical_section = self.cell.apical[0]
+
+        # Add a voltage recording at an apical section
+        self.cell.add_voltage_recording(apical_section, segx=0.5)
+
+        self.cell.add_step(start_time=2.0, stop_time=22.0, level=1.0)
+        sim = bluecellulab.Simulation()
+        sim.add_cell(self.cell)
+        sim.run(24, cvode=False)
+
+        # Retrieve the voltage recording
+        voltage = self.cell.get_voltage_recording(apical_section, segx=0.5)
+        voltage_soma = self.cell.get_soma_voltage()
+
+        # Check the reference name is correct and the recording exists
+        reference_name = section_to_voltage_recording_str(apical_section, 0.5)
+
+        assert reference_name in self.cell.recordings
+        assert isinstance(voltage, np.ndarray)
+        assert not np.array_equal(voltage, voltage_soma), "Arrays should not be equal"
+
+    def test_get_voltage_recording_missing(self):
+        """Test the behavior of the `get_voltage_recording` method when
+        attempting to retrieve a voltage recording that was not previously added."""
+        with pytest.raises(BluecellulabError, match="get_voltage_recording: Voltage recording .* was not added previously using add_voltage_recording"):
+            self.cell.get_voltage_recording(self.cell.soma, segx=1.5)
 
 
 @pytest.mark.v6

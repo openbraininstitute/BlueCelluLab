@@ -62,7 +62,8 @@ def test_plot_iv_curve(mock_cell, mock_run_stimulus, mock_search_threshold_curre
     with patch('bluecellulab.cell.core', mock_cell), \
          patch('bluecellulab.analysis.analysis.run_stimulus', mock_run_stimulus), \
          patch('bluecellulab.tools.search_threshold_current', mock_search_threshold_current), \
-         patch('bluecellulab.analysis.analysis.efel', mock_efel):
+         patch('bluecellulab.analysis.analysis.efel', mock_efel), \
+         patch('bluecellulab.analysis.analysis.calculate_rheobase') as mock_rheobase:
 
         injecting_section = "soma[0]"
         injecting_segment = 0.5
@@ -73,6 +74,8 @@ def test_plot_iv_curve(mock_cell, mock_run_stimulus, mock_search_threshold_curre
         post_delay = 100.0
         threshold_voltage = -30
         nb_bins = 11
+
+        mock_rheobase.return_value = 0.2
 
         list_amp, steady_states = compute_plot_iv_curve(
             mock_cell,
@@ -92,11 +95,18 @@ def test_plot_iv_curve(mock_cell, mock_run_stimulus, mock_search_threshold_curre
         assert len(list_amp) == nb_bins
         assert len(steady_states) == nb_bins
 
+        mock_rheobase.assert_called_once_with(
+            cell=mock_cell,
+            section=injecting_section,
+            segx=injecting_segment
+        )
+
 
 def test_plot_fi_curve(mock_cell, mock_search_threshold_current):
     """Test the compute_plot_fi_curve function."""
     with patch('bluecellulab.cell.Cell', mock_cell), \
-         patch('bluecellulab.tools.search_threshold_current', mock_search_threshold_current):
+         patch('bluecellulab.tools.search_threshold_current', mock_search_threshold_current), \
+         patch('bluecellulab.analysis.analysis.calculate_rheobase') as mock_rheobase:
 
         stim_start = 100.0
         duration = 500.0
@@ -104,10 +114,12 @@ def test_plot_fi_curve(mock_cell, mock_search_threshold_current):
         max_current = 0.8
         nb_bins = 3
 
+        mock_rheobase.return_value = 0.1
+
         list_amp, spike_count = compute_plot_fi_curve(
             cell=mock_cell,
-            injecting_section="soma[0]",
-            injecting_segment=0.5,
+            injecting_section="apic[0]",
+            injecting_segment=0.2,
             recording_section="soma[0]",
             recording_segment=0.5,
             stim_start=stim_start,
@@ -115,6 +127,12 @@ def test_plot_fi_curve(mock_cell, mock_search_threshold_current):
             post_delay=post_delay,
             max_current=max_current,
             nb_bins=nb_bins
+        )
+
+        mock_rheobase.assert_called_once_with(
+            cell=mock_cell,
+            section="apic[0]",
+            segx=0.2
         )
 
         assert isinstance(list_amp, np.ndarray)

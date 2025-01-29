@@ -123,7 +123,6 @@ def calculate_SS_voltage_subprocess(
     cell.add_voltage_recording(cell.sections[section], segx)
     cell.add_ramp(500, 5000, step_level, step_level, section=neuron_section, segx=segx)
     simulation = bluecellulab.Simulation()
-    simulation.add_cell(cell)
     simulation.run(1000, cvode=template_accepts_cvode(template_path))
     time = cell.get_time()
     voltage = cell.get_voltage_recording(section=neuron_section, segx=segx)
@@ -317,7 +316,6 @@ def detect_spike_step_subprocess(
     cell.add_ramp(0, 5000, hyp_level, hyp_level, section=neuron_section, segx=segx)
     cell.add_ramp(inj_start, inj_stop, step_level, step_level, section=neuron_section, segx=segx)
     simulation = bluecellulab.Simulation()
-    simulation.add_cell(cell)
     simulation.run(int(inj_stop), cvode=template_accepts_cvode(template_path))
 
     time = cell.get_time()
