@@ -21,7 +21,7 @@ def plot_iv_curve(currents, voltages, injecting_section, injecting_segment, reco
         raise ValueError("currents and voltages must have the same length")
 
     plt.figure(figsize=(10, 6))
-    plt.plot(voltages, currents, marker='o', linestyle='-', color='b')
+    plt.plot(currents, voltages, marker='o', linestyle='-', color='b')
     plt.title("I-V Curve")
     plt.xlabel(f"Injected Current [nA] at {injecting_section}({injecting_segment:.2f})")
     plt.ylabel(f"Steady state voltage [mV] at {recording_section}({recording_segment:.2f})")
