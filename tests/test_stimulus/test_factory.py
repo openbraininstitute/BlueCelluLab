@@ -159,7 +159,7 @@ class TestStimulusFactory:
         s = self.factory.step_noise(duration=1000, step_duration=50, mean_percent=60.0, sd_percent=20.0, threshold_current=0.8, seed=42)
         assert isinstance(s, CombinedStimulus)
 
-        with pytest.raises(TypeError, match="You have to give either threshold_current or mean."):
+        with pytest.raises(TypeError, match="You must provide either `mean` and `variance`, or `threshold_current` with percentage values."):
             self.factory.step_noise(duration=1000, step_duration=50)
 
     def test_create_shot_noise(self):
@@ -170,7 +170,7 @@ class TestStimulusFactory:
         s = self.factory.shot_noise(duration=1000, rate=10, mean_percent=60.0, sd_percent=20.0, threshold_current=0.8, rise_time=1, decay_time=5, seed=42)
         assert isinstance(s, CombinedStimulus)
 
-        with pytest.raises(TypeError, match="You have to give either threshold_current or amplitude"):
+        with pytest.raises(TypeError, match="You must provide either `amp_mean` and `amp_var`, or `threshold_current` with percentage values."):
             self.factory.shot_noise(duration=1000, rate=10, rise_time=1, decay_time=5)
 
     def test_create_ornstein_uhlenbeck(self):
@@ -181,5 +181,5 @@ class TestStimulusFactory:
         s = self.factory.ornstein_uhlenbeck(duration=1000, tau=20, mean_percent=60.0, sd_percent=20.0, threshold_current=0.8, seed=42)
         assert isinstance(s, CombinedStimulus)
 
-        with pytest.raises(TypeError, match="You have to give either threshold_current or amplitude"):
+        with pytest.raises(TypeError, match="You have to give either `mean` or `threshold_current`."):
             self.factory.ornstein_uhlenbeck(duration=1000, tau=20)

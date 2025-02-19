@@ -30,7 +30,7 @@ class Recording(NamedTuple):
     current: np.ndarray
     voltage: np.ndarray
     time: np.ndarray
-    spike: np.ndarray | None
+    spike: Optional[np.ndarray] = None
 
 
 StimulusRecordings = Dict[str, Recording]
@@ -46,7 +46,7 @@ def run_stimulus(
     recording_section: str = "soma[0]",
     recording_segment: float = 0.5,
     enable_spike_detection: bool = False,
-    threshold_spike_detection: float = -30,
+    threshold_spike_detection: float = -30.0,
 ) -> Recording:
     """Creates a cell from template parameters, applies a stimulus, and records
     the response.
@@ -135,9 +135,9 @@ def apply_multiple_stimuli(
     stimulus_name: StimulusName,
     amplitudes: Sequence[float],
     threshold_based: bool = True,
-    section_name: str | None = None,
+    section_name: Optional[str] = None,
     segment: float = 0.5,
-    n_processes: int | None = None,
+    n_processes: Optional[int] = None,
     cvode: bool = True,
     add_hypamp: bool = True,
 ) -> StimulusRecordings:
