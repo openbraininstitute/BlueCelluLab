@@ -16,7 +16,8 @@
 from __future__ import annotations
 from typing import Optional
 import logging
-from bluecellulab.stimulus.stimulus import DelayedZap, Empty, Ramp, Slope, Step, Stimulus
+from bluecellulab.stimulus.stimulus import DelayedZap, Empty, Ramp, Slope, Step, StepNoise, Stimulus, OrnsteinUhlenbeck, ShotNoise
+from bluecellulab.stimulus.circuit_stimulus_definitions import Stimulus as CircuitStimulus
 
 logger = logging.getLogger(__name__)
 
@@ -371,3 +372,142 @@ class StimulusFactory:
 
         raise TypeError("You have to give either threshold_current or amplitude")
 
+    def ornstein_uhlenbeck(
+        self,
+        duration: float,
+        tau: float,
+        sigma: Optional[float] = None,
+        mean: Optional[float] = None,
+        mean_percent: Optional[float] = None,
+        sd_percent: Optional[float] = None,
+        threshold_current: Optional[float] = None,
+        seed: Optional[int] = None
+    ) -> Stimulus:
+        """Creates an Ornstein-Uhlenbeck process stimulus (factory-compatible).
+
+        Args:
+            duration: Duration of the stimulus (ms).
+            tau: Time constant of the noise process.
+            sigma: Standard deviation of the noise (used when mean is provided).
+            mean: Absolute mean current value (used if provided).
+            mean_percent: Mean current as a percentage of threshold current (used if mean is None).
+            sd_percent: Standard deviation as a percentage of threshold current (used if sigma is None).
+            threshold_current: Reference threshold current for percentage-based calculation.
+            seed: Optional random seed for reproducibility.
+
+        Returns:
+            A `Stimulus` object (OrnsteinUhlenbeck) that can be plotted and injected.
+
+        Notes:
+            - If `mean` is provided, `mean_percent` is ignored.
+            - If `threshold_current` is not provided, threshold-based parameters cannot be used.
+        """
+        if mean is not None:
+            if threshold_current is not None and threshold_current != 0 and mean_percent is not None:
+                logger.info(
+                    "amplitude, threshold_current and mean_percent are all set in Ornstein-Uhlenbeck."
+                    " Will only keep amplitude value."
+                )
+            return OrnsteinUhlenbeck.amplitude_based(self.dt, duration, tau, sigma, mean, seed)
+
+        if threshold_current is not None and threshold_current != 0 and mean_percent is not None and sd_percent is not None:
+            return OrnsteinUhlenbeck.threshold_based(self.dt, duration, mean_percent, sd_percent, threshold_current, tau, seed)
+
+        raise TypeError("You have to give either threshold_current or amplitude")
+
+    def shot_noise(
+            self, duration: float,
+            rate: float,
+            rise_time: float,
+            decay_time: float,
+            amp_mean: Optional[float] = None,
+            amp_var: Optional[float] = None,
+            mean_percent: Optional[float] = None,
+            sd_percent: Optional[float] = None,
+            relative_skew: Optional[float] = 0.5,
+            threshold_current: Optional[float] = None,
+            seed: Optional[int] = None
+    ) -> Stimulus:
+        """Creates a ShotNoise instance, either with an absolute amplitude or
+        relative to a threshold current.
+
+        Args:
+            duration: Duration of the stimulus (ms).
+            rate: Mean rate of synaptic events (Hz).
+            amp_mean: Mean amplitude of events (nA), used if provided.
+            amp_var: Variance in amplitude of events.
+            rise_time: Rise time of synaptic events (ms).
+            decay_time: Decay time of synaptic events (ms).
+            mean_percent: Mean current as a percentage of threshold current (used if amp_mean is None).
+            sd_percent: Standard deviation as a percentage of threshold current (used if amp_var is None).
+            relative_skew: Skew factor for the shot noise process (default: 0.5).
+            threshold_current: Reference threshold current for percentage-based calculation.
+            seed: Optional random seed for reproducibility.
+
+        Returns:
+            A `Stimulus` object that can be plotted and injected.
+
+        Notes:
+            - If `amp_mean` is provided, `mean_percent` is ignored.
+            - If `threshold_current` is not provided, threshold-based parameters cannot be used.
+        """
+        if amp_mean is not None:
+            if threshold_current is not None and threshold_current != 0 and mean_percent is not None:
+                logger.info(
+                    "amplitude, threshold_current and mean_percent are all set in Ornstein-Uhlenbeck."
+                    " Will only keep amplitude value."
+                )
+            return ShotNoise.amplitude_based(self.dt, duration, amp_mean, rate, amp_var, rise_time, decay_time, seed)
+
+        if threshold_current is not None and threshold_current != 0 and mean_percent is not None and sd_percent is not None:
+            return ShotNoise.threshold_based(self.dt, duration, rise_time, decay_time, mean_percent, sd_percent, threshold_current, relative_skew, seed)
+
+        raise TypeError("You have to give either threshold_current or amplitude")
+
+    def step_noise(
+        self,
+        duration: float,
+        step_duration: float,
+        mean: Optional[float] = None,
+        variance: Optional[float] = None,
+        mean_percent: Optional[float] = None,
+        sd_percent: Optional[float] = None,
+        threshold_current: Optional[float] = None,
+        seed: Optional[int] = None,
+    ) -> Stimulus:
+        """Creates a StepNoise instance, either with an absolute amplitude or
+        relative to a threshold current.
+
+        Args:
+            duration: Duration of the stimulus (ms).
+            step_duration: Duration of each step before noise changes (ms).
+            mean: Mean amplitude of step noise (nA), used if provided.
+            variance: Variance of step noise.
+            mean_percent: Mean current as a percentage of threshold current (used if mean is None).
+            sd_percent: Standard deviation as a percentage of threshold current (used if variance is None).
+            threshold_current: Reference threshold current for percentage-based calculation.
+            seed: Optional random seed for reproducibility.
+
+        Returns:
+            A `Stimulus` object that can be plotted and injected.
+
+        Notes:
+            - If `mean` is provided, `mean_percent` is ignored.
+            - If `threshold_current` is not provided, threshold-based parameters cannot be used.
+        """
+        if mean is not None:
+            if threshold_current is not None and threshold_current != 0 and mean_percent is not None:
+                logger.info(
+                    "amplitude, threshold_current and mean_percent are all set in StepNoise."
+                    " Will only keep amplitude value."
+                )
+            return StepNoise.amplitude_based(self.dt, duration, step_duration, mean, variance, seed)
+
+        if threshold_current is not None and threshold_current != 0 and mean_percent is not None and sd_percent is not None:
+            return StepNoise.threshold_based(self.dt, duration, step_duration, mean_percent, sd_percent, threshold_current, seed)
+
+        raise TypeError("You have to give either threshold_current or mean.")
+
+    def from_sonata(cls, circuit_stimulus: CircuitStimulus):
+        """Convert a SONATA stimulus into a factory-based stimulus."""
+        raise ValueError(f"Unsupported circuit stimulus type: {type(circuit_stimulus)}")
