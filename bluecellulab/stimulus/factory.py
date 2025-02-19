@@ -408,7 +408,7 @@ class StimulusFactory:
                     "amplitude, threshold_current and mean_percent are all set in Ornstein-Uhlenbeck."
                     " Will only keep amplitude value."
                 )
-            return OrnsteinUhlenbeck.amplitude_based(self.dt, duration, tau, sigma, mean, seed)
+            return OrnsteinUhlenbeck.amplitude_based(self.dt, duration, tau, sigma, mean, seed)  # type: ignore[arg-type]
 
         if threshold_current is not None and threshold_current != 0 and mean_percent is not None and sd_percent is not None:
             return OrnsteinUhlenbeck.threshold_based(self.dt, duration, mean_percent, sd_percent, threshold_current, tau, seed)
@@ -451,16 +451,16 @@ class StimulusFactory:
             - If `amp_mean` is provided, `mean_percent` is ignored.
             - If `threshold_current` is not provided, threshold-based parameters cannot be used.
         """
-        if amp_mean is not None:
+        if amp_mean is not None and amp_var is not None:
             if threshold_current is not None and threshold_current != 0 and mean_percent is not None:
                 logger.info(
                     "amplitude, threshold_current and mean_percent are all set in Ornstein-Uhlenbeck."
                     " Will only keep amplitude value."
                 )
-            return ShotNoise.amplitude_based(self.dt, duration, amp_mean, rate, amp_var, rise_time, decay_time, seed)
+            return ShotNoise.amplitude_based(self.dt, duration, amp_mean, rate, amp_var, rise_time, decay_time, seed)  # type: ignore[arg-type]
 
         if threshold_current is not None and threshold_current != 0 and mean_percent is not None and sd_percent is not None:
-            return ShotNoise.threshold_based(self.dt, duration, rise_time, decay_time, mean_percent, sd_percent, threshold_current, relative_skew, seed)
+            return ShotNoise.threshold_based(self.dt, duration, rise_time, decay_time, mean_percent, sd_percent, threshold_current, relative_skew, seed)  # type: ignore[arg-type]
 
         raise TypeError("You have to give either threshold_current or amplitude")
 
@@ -495,13 +495,13 @@ class StimulusFactory:
             - If `mean` is provided, `mean_percent` is ignored.
             - If `threshold_current` is not provided, threshold-based parameters cannot be used.
         """
-        if mean is not None:
+        if mean is not None and variance is not None:
             if threshold_current is not None and threshold_current != 0 and mean_percent is not None:
                 logger.info(
                     "amplitude, threshold_current and mean_percent are all set in StepNoise."
                     " Will only keep amplitude value."
                 )
-            return StepNoise.amplitude_based(self.dt, duration, step_duration, mean, variance, seed)
+            return StepNoise.amplitude_based(self.dt, duration, step_duration, mean, variance, seed)  # type: ignore[arg-type]
 
         if threshold_current is not None and threshold_current != 0 and mean_percent is not None and sd_percent is not None:
             return StepNoise.threshold_based(self.dt, duration, step_duration, mean_percent, sd_percent, threshold_current, seed)
