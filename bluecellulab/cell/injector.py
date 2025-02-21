@@ -280,7 +280,7 @@ class InjectableMixin:
             rng = neuron.h.Random()
             rng.Random123(seed1, seed2, seed3)
         else:
-            raise BluecellulabError("Ornstein-uhlenbeck noise stimulus requires Random123")
+            raise BluecellulabError("Ornstein-Uhlenbeck noise stimulus requires Random123")
 
         self.persistent.append(rng)
         return rng
