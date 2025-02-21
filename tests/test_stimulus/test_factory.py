@@ -151,26 +151,26 @@ class TestStimulusFactory:
             self.factory.sinespec()
 
     def test_create_step_noise(self):
-        s = self.factory.step_noise(pre_delay=100, post_delay=100, duration=1000, step_duration=50, mean=1.0, variance=0.3, seed=42)
+        s = self.factory.step_noise(pre_delay=100, post_delay=100, duration=1000, step_interval=50, mean=1.0, sigma=0.3, seed=42)
         assert isinstance(s, CombinedStimulus)
         assert np.all(np.isfinite(s.current))
         assert len(s.time) == len(s.current)
 
-        s = self.factory.step_noise(pre_delay=100, post_delay=100, duration=1000, step_duration=50, mean_percent=60.0, sd_percent=20.0, threshold_current=0.8, seed=42)
+        s = self.factory.step_noise(pre_delay=100, post_delay=100, duration=1000, step_interval=50, mean_percent=60.0, sigma_percent=20.0, threshold_current=0.8, seed=42)
         assert isinstance(s, CombinedStimulus)
 
-        with pytest.raises(TypeError, match="You must provide either `mean` and `variance`, or `threshold_current` with percentage values."):
-            self.factory.step_noise(pre_delay=100, post_delay=100, duration=1000, step_duration=50)
+        with pytest.raises(TypeError, match="You must provide either `mean` and `sigma`, or `threshold_current` and `mean_percent` and `sigma_percent`  with percentage values."):
+            self.factory.step_noise(pre_delay=100, post_delay=100, duration=1000, step_interval=50)
 
     def test_create_shot_noise(self):
-        s = self.factory.shot_noise(pre_delay=100, post_delay=100, duration=1000, rate=10, amp_mean=0.5, amp_var=0.1, rise_time=1, decay_time=5, seed=42)
+        s = self.factory.shot_noise(pre_delay=100, post_delay=100, duration=1000, rate=10, mean=0.5, sigma=0.1, rise_time=1, decay_time=5, seed=42)
         assert isinstance(s, CombinedStimulus)
         assert np.all(np.isfinite(s.current))
 
-        s = self.factory.shot_noise(pre_delay=100, post_delay=100, duration=1000, rate=10, mean_percent=60.0, sd_percent=20.0, threshold_current=0.8, rise_time=1, decay_time=5, seed=42)
+        s = self.factory.shot_noise(pre_delay=100, post_delay=100, duration=1000, rate=10, mean_percent=60.0, sigma_percent=20.0, threshold_current=0.8, rise_time=1, decay_time=5, seed=42)
         assert isinstance(s, CombinedStimulus)
 
-        with pytest.raises(TypeError, match="You must provide either `amp_mean` and `amp_var`, or `threshold_current` with percentage values."):
+        with pytest.raises(TypeError, match="You must provide either `mean` and `sigma`, or `threshold_current` and `mean_percent` and `sigma_percent` with percentage values."):
             self.factory.shot_noise(pre_delay=100, post_delay=100, duration=1000, rate=10, rise_time=1, decay_time=5)
 
     def test_create_ornstein_uhlenbeck(self):
@@ -178,8 +178,8 @@ class TestStimulusFactory:
         assert isinstance(s, CombinedStimulus)
         assert np.all(np.isfinite(s.current))
 
-        s = self.factory.ornstein_uhlenbeck(pre_delay=100, post_delay=100, duration=1000, tau=20, mean_percent=60.0, sd_percent=20.0, threshold_current=0.8, seed=42)
+        s = self.factory.ornstein_uhlenbeck(pre_delay=100, post_delay=100, duration=1000, tau=20, mean_percent=60.0, sigma_percent=20.0, threshold_current=0.8, seed=42)
         assert isinstance(s, CombinedStimulus)
 
-        with pytest.raises(TypeError, match="You have to give either `mean` or `threshold_current`."):
+        with pytest.raises(TypeError, match="You have to give either `mean` and `sigma` or `threshold_current` and `mean_percent` and `sigma_percent`."):
             self.factory.ornstein_uhlenbeck(pre_delay=100, post_delay=100, duration=1000, tau=20)

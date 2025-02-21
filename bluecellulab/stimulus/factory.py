@@ -38,7 +38,11 @@ class StimulusFactory:
         )
 
     def ramp(
-        self, pre_delay: float, duration: float, post_delay: float, amplitude: float,
+        self,
+        pre_delay: float,
+        duration: float,
+        post_delay: float,
+        amplitude: Optional[float] = None,
         threshold_current: Optional[float] = None,
         threshold_percentage: Optional[float] = 220.0,
     ) -> Stimulus:
@@ -381,7 +385,7 @@ class StimulusFactory:
         sigma: Optional[float] = None,
         mean: Optional[float] = None,
         mean_percent: Optional[float] = None,
-        sd_percent: Optional[float] = None,
+        sigma_percent: Optional[float] = None,
         threshold_current: Optional[float] = None,
         seed: Optional[int] = None
     ) -> Stimulus:
@@ -395,7 +399,7 @@ class StimulusFactory:
             sigma: Standard deviation of the noise (used when mean is provided).
             mean: Absolute mean current value (used if provided).
             mean_percent: Mean current as a percentage of threshold current (used if mean is None).
-            sd_percent: Standard deviation as a percentage of threshold current (used if sigma is None).
+            sigma_percent: Standard deviation as a percentage of threshold current (used if sigma is None).
             threshold_current: Reference threshold current for percentage-based calculation.
             seed: Optional random seed for reproducibility.
 
@@ -411,7 +415,7 @@ class StimulusFactory:
             threshold_current is not None
             and threshold_current != 0
             and mean_percent is not None
-            and sd_percent is not None
+            and sigma_percent is not None
         )
 
         if is_amplitude_based:
@@ -439,13 +443,13 @@ class StimulusFactory:
                 post_delay=post_delay,
                 duration=duration,
                 mean_percent=mean_percent,  # type: ignore[arg-type]
-                sd_percent=sd_percent,  # type: ignore[arg-type]
+                sigma_percent=sigma_percent,  # type: ignore[arg-type]
                 threshold_current=threshold_current,  # type: ignore[arg-type]
                 tau=tau,
                 seed=seed
             )
 
-        raise TypeError("You have to give either `mean` or `threshold_current`.")
+        raise TypeError("You have to give either `mean` and `sigma` or `threshold_current` and `mean_percent` and `sigma_percent`.")
 
     def shot_noise(
         self,
@@ -455,10 +459,10 @@ class StimulusFactory:
         rate: float,
         rise_time: float,
         decay_time: float,
-        amp_mean: Optional[float] = None,
-        amp_var: Optional[float] = None,
+        mean: Optional[float] = None,
+        sigma: Optional[float] = None,
         mean_percent: Optional[float] = None,
-        sd_percent: Optional[float] = None,
+        sigma_percent: Optional[float] = None,
         relative_skew: float = 0.5,
         threshold_current: Optional[float] = None,
         seed: Optional[int] = None
@@ -471,12 +475,12 @@ class StimulusFactory:
             post_delay: Delay after the noise ends (ms).
             duration: Duration of the stimulus (ms).
             rate: Mean rate of synaptic events (Hz).
-            amp_mean: Mean amplitude of events (nA), used if provided.
-            amp_var: Variance in amplitude of events.
+            mean: Mean amplitude of events (nA), used if provided.
+            sigma: Standard deviation of event amplitudes.
             rise_time: Rise time of synaptic events (ms).
             decay_time: Decay time of synaptic events (ms).
-            mean_percent: Mean current as a percentage of threshold current (used if amp_mean is None).
-            sd_percent: Standard deviation as a percentage of threshold current (used if amp_var is None).
+            mean_percent: Mean current as a percentage of threshold current (used if mean is None).
+            sigma_percent: Standard deviation as a percentage of threshold current (used if sigma is None).
             relative_skew: Skew factor for the shot noise process (default: 0.5).
             threshold_current: Reference threshold current for percentage-based calculation.
             seed: Optional random seed for reproducibility.
@@ -485,22 +489,22 @@ class StimulusFactory:
             A `Stimulus` object that can be plotted and injected.
 
         Notes:
-            - If `amp_mean` is provided, `mean_percent` is ignored.
+            - If `mean` is provided, `mean_percent` is ignored.
             - If `threshold_current` is not provided, threshold-based parameters cannot be used.
         """
-        is_amplitude_based = amp_mean is not None and amp_var is not None
+        is_amplitude_based = mean is not None and sigma is not None
         is_threshold_based = (
             threshold_current is not None
             and threshold_current != 0
             and mean_percent is not None
-            and sd_percent is not None
+            and sigma_percent is not None
         )
 
         if is_amplitude_based:
             if is_threshold_based:
                 logger.info(
-                    "amp_mean, threshold_current, and mean_percent are all set in ShotNoise."
-                    " Using amp_mean and ignoring threshold-based parameters."
+                    "mean, threshold_current, and mean_percent are all set in ShotNoise."
+                    " Using mean and ignoring threshold-based parameters."
                 )
 
             return ShotNoise.amplitude_based(
@@ -509,8 +513,8 @@ class StimulusFactory:
                 post_delay=post_delay,
                 duration=duration,
                 rate=rate,
-                amp_mean=amp_mean,  # type: ignore[arg-type]
-                amp_var=amp_var,  # type: ignore[arg-type]
+                mean=mean,  # type: ignore[arg-type]
+                sigma=sigma,  # type: ignore[arg-type]
                 rise_time=rise_time,
                 decay_time=decay_time,
                 seed=seed
@@ -525,24 +529,24 @@ class StimulusFactory:
                 rise_time=rise_time,
                 decay_time=decay_time,
                 mean_percent=mean_percent,  # type: ignore[arg-type]
-                sd_percent=sd_percent,  # type: ignore[arg-type]
+                sigma_percent=sigma_percent,  # type: ignore[arg-type]
                 threshold_current=threshold_current,  # type: ignore[arg-type]
                 relative_skew=relative_skew,
                 seed=seed
             )
 
-        raise TypeError("You must provide either `amp_mean` and `amp_var`, or `threshold_current` with percentage values.")
+        raise TypeError("You must provide either `mean` and `sigma`, or `threshold_current` and `mean_percent` and `sigma_percent` with percentage values.")
 
     def step_noise(
         self,
         pre_delay: float,
         post_delay: float,
         duration: float,
-        step_duration: float,
+        step_interval: float,
         mean: Optional[float] = None,
-        variance: Optional[float] = None,
+        sigma: Optional[float] = None,
         mean_percent: Optional[float] = None,
-        sd_percent: Optional[float] = None,
+        sigma_percent: Optional[float] = None,
         threshold_current: Optional[float] = None,
         seed: Optional[int] = None,
     ) -> Stimulus:
@@ -553,11 +557,11 @@ class StimulusFactory:
             pre_delay: Delay before the step noise starts (ms).
             post_delay: Delay after the step noise ends (ms).
             duration: Duration of the stimulus (ms).
-            step_duration: Duration of each step before noise changes (ms).
+            step_interval: Interval at which noise amplitude changes.
             mean: Mean amplitude of step noise (nA), used if provided.
-            variance: Variance of step noise.
+            sigma: Standard deviation of step noise.
             mean_percent: Mean current as a percentage of threshold current (used if mean is None).
-            sd_percent: Standard deviation as a percentage of threshold current (used if variance is None).
+            sigma_percent: Standard deviation as a percentage of threshold current (used if sigma is None).
             threshold_current: Reference threshold current for percentage-based calculation.
             seed: Optional random seed for reproducibility.
 
@@ -568,12 +572,12 @@ class StimulusFactory:
             - If `mean` is provided, `mean_percent` is ignored.
             - If `threshold_current` is not provided, threshold-based parameters cannot be used.
         """
-        is_amplitude_based = mean is not None and variance is not None
+        is_amplitude_based = mean is not None and sigma is not None
         is_threshold_based = (
             threshold_current is not None
             and threshold_current != 0
             and mean_percent is not None
-            and sd_percent is not None
+            and sigma_percent is not None
         )
 
         if is_amplitude_based:
@@ -587,9 +591,9 @@ class StimulusFactory:
                 pre_delay=pre_delay,
                 post_delay=post_delay,
                 duration=duration,
-                step_duration=step_duration,
+                step_interval=step_interval,
                 mean=mean,  # type: ignore[arg-type]
-                variance=variance,  # type: ignore[arg-type]
+                sigma=sigma,  # type: ignore[arg-type]
                 seed=seed,
             )
 
@@ -599,14 +603,14 @@ class StimulusFactory:
                 pre_delay=pre_delay,
                 post_delay=post_delay,
                 duration=duration,
-                step_duration=step_duration,
+                step_interval=step_interval,
                 mean_percent=mean_percent,  # type: ignore[arg-type]
-                sd_percent=sd_percent,  # type: ignore[arg-type]
+                sigma_percent=sigma_percent,  # type: ignore[arg-type]
                 threshold_current=threshold_current,  # type: ignore[arg-type]
                 seed=seed,
             )
 
-        raise TypeError("You must provide either `mean` and `variance`, or `threshold_current` with percentage values.")
+        raise TypeError("You must provide either `mean` and `sigma`, or `threshold_current` and `mean_percent` and `sigma_percent`  with percentage values.")
 
     def from_sonata(cls, circuit_stimulus: CircuitStimulus):
         """Convert a SONATA stimulus into a factory-based stimulus."""

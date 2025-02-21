@@ -17,7 +17,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Optional
 import logging
-import warnings
 import matplotlib.pyplot as plt
 import numpy as np
 from bluecellulab.cell.stimuli_generator import get_relative_shotnoise_params
@@ -225,14 +224,14 @@ class ShotNoiseProcess(Stimulus):
     occurring at random intervals."""
 
     def __init__(
-        self, dt: float, duration: float, rate: float, amp_mean: float, amp_var: float,
+        self, dt: float, duration: float, rate: float, mean: float, sigma: float,
         rise_time: float, decay_time: float, seed: Optional[int] = None
     ):
         super().__init__(dt)
         self.duration = duration
         self.rate = rate
-        self.amp_mean = amp_mean
-        self.amp_var = amp_var
+        self.mean = mean
+        self.sigma = sigma
         self.rise_time = rise_time
         self.decay_time = decay_time
         self.seed = seed
@@ -263,12 +262,13 @@ class ShotNoiseProcess(Stimulus):
         else:
             raise ValueError("Shot noise stimulus requires Random123 RNG mode.")
 
+        variance = self.sigma ** 2
         tvec, svec = gen_shotnoise_signal(
             self.decay_time,
             self.rise_time,
             self.rate,
-            self.amp_mean,
-            self.amp_var,
+            self.mean,
+            variance,
             self.duration,
             self.dt,
             rng=rng
@@ -284,16 +284,16 @@ class StepNoiseProcess(Stimulus):
         self,
         dt: float,
         duration: float,
-        step_duration: float,
+        step_interval: float,
         mean: float,
-        variance: float,
+        sigma: float,
         seed: Optional[int] = None,
     ):
         super().__init__(dt)
         self.duration = duration
-        self.step_duration = step_duration
+        self.step_interval = step_interval
         self.mean = mean
-        self.variance = variance
+        self.sigma = sigma
         self.seed = seed
 
         # Generate step noise signal
@@ -323,10 +323,10 @@ class StepNoiseProcess(Stimulus):
         else:
             raise ValueError("StepNoise stimulus requires Random123 RNG mode.")
 
-        num_steps = int(self.duration / self.step_duration)
+        num_steps = int(self.duration / self.step_interval)
 
         # Generate noise using NEURON's normal distribution function
-        amplitudes = [self.mean + rng.normal(0, self.variance) for _ in range(num_steps)]
+        amplitudes = [self.mean + rng.normal(0, self.sigma) for _ in range(num_steps)]
 
         # Construct stimulus
         time_values = []
@@ -336,7 +336,7 @@ class StepNoiseProcess(Stimulus):
         for amp in amplitudes:
             time_values.append(time)
             current_values.append(amp)
-            time += self.step_duration
+            time += self.step_interval
 
         return np.array(time_values), np.array(current_values)
 
@@ -579,20 +579,20 @@ class OrnsteinUhlenbeck(Stimulus):
         duration: float,
         post_delay: float,
         mean_percent: float,
-        sd_percent: float,
+        sigma_percent: float,
         threshold_current: float,
         tau: float,
         seed: Optional[int] = None,
     ) -> CombinedStimulus:
         """Creates an Ornstein-Uhlenbeck stimulus with respect to the threshold
         current."""
-        sigma = sd_percent / 100 * threshold_current
+        sigma = sigma_percent / 100 * threshold_current
         if sigma <= 0:
             raise BluecellulabError(f"standard deviation: {sigma}, must be positive.")
 
         mean = mean_percent / 100 * threshold_current
         if mean < 0 and abs(mean) > 2 * sigma:
-            warnings.warn("relative ornstein uhlenbeck signal is mostly zero.")
+            logger.warning("Relative Ornstein-Uhlenbeck signal is mostly zero.")
 
         return cls.amplitude_based(
             dt,
@@ -624,8 +624,8 @@ class ShotNoise(Stimulus):
         duration: float,
         post_delay: float,
         rate: float,
-        amp_mean: float,
-        amp_var: float,
+        mean: float,
+        sigma: float,
         rise_time: float,
         decay_time: float,
         seed: Optional[int] = None,
@@ -638,15 +638,15 @@ class ShotNoise(Stimulus):
             duration: Duration of the noise signal.
             post_delay: Delay after the noise ends.
             rate: Frequency of synaptic-like events.
-            amp_mean: Mean amplitude of the events.
-            amp_var: Variance of event amplitudes.
+            mean: Mean amplitude of the events.
+            sigma: Standard deviation of event amplitudes.
             rise_time: Time constant for the event's rise phase.
             decay_time: Time constant for the event's decay phase.
             seed: Random seed for reproducibility.
         """
         return (
             Empty(dt, duration=pre_delay)
-            + ShotNoiseProcess(dt, duration, rate, amp_mean, amp_var, rise_time, decay_time, seed)
+            + ShotNoiseProcess(dt, duration, rate, mean, sigma, rise_time, decay_time, seed)
             + Empty(dt, duration=post_delay)
         )
 
@@ -660,7 +660,7 @@ class ShotNoise(Stimulus):
         rise_time: float,
         decay_time: float,
         mean_percent: float,
-        sd_percent: float,
+        sigma_percent: float,
         threshold_current: float,
         relative_skew: float = 0.5,
         seed: Optional[int] = None,
@@ -675,16 +675,16 @@ class ShotNoise(Stimulus):
             rise_time: Rise time constant of events.
             decay_time: Decay time constant of events.
             mean_percent: Mean value as a percentage of the threshold current.
-            sd_percent: Standard deviation as a percentage of the threshold current.
+            sigma_percent: Standard deviation as a percentage of the threshold current.
             threshold_current: Baseline threshold current.
             relative_skew: Skew factor affecting noise distribution.
             seed: Random seed for reproducibility.
         """
-        mean = mean_percent / 100 * threshold_current
-        sd = sd_percent / 100 * threshold_current
+        _mean = mean_percent / 100 * threshold_current
+        sd = sigma_percent / 100 * threshold_current
 
-        rate, amp_mean, amp_var = get_relative_shotnoise_params(
-            mean, sd, decay_time, rise_time, relative_skew
+        rate, mean, sigma = get_relative_shotnoise_params(
+            _mean, sd, decay_time, rise_time, relative_skew
         )
 
         return cls.amplitude_based(
@@ -693,8 +693,8 @@ class ShotNoise(Stimulus):
             duration=duration,
             post_delay=post_delay,
             rate=rate,
-            amp_mean=amp_mean,
-            amp_var=amp_var,
+            mean=mean,
+            sigma=sigma,
             rise_time=rise_time,
             decay_time=decay_time,
             seed=seed,
@@ -718,9 +718,9 @@ class StepNoise(Stimulus):
         pre_delay: float,
         duration: float,
         post_delay: float,
-        step_duration: float,
+        step_interval: float,
         mean: float,
-        variance: float,
+        sigma: float,
         seed: Optional[int] = None,
     ) -> CombinedStimulus:
         """Creates a step noise stimulus with a specified amplitude.
@@ -730,14 +730,14 @@ class StepNoise(Stimulus):
             pre_delay: Delay before the step noise starts.
             duration: Duration of the noise signal.
             post_delay: Delay after the step noise ends.
-            step_duration: Duration of each step before noise changes.
+            step_interval: Interval at which noise amplitude changes.
             mean: Mean amplitude of step noise.
-            variance: Variance of step noise.
+            sigma: Standard deviation of step noise.
             seed: Random seed for reproducibility.
         """
         return (
             Empty(dt, duration=pre_delay)
-            + StepNoiseProcess(dt, duration, step_duration, mean, variance, seed)
+            + StepNoiseProcess(dt, duration, step_interval, mean, sigma, seed)
             + Empty(dt, duration=post_delay)
         )
 
@@ -748,9 +748,9 @@ class StepNoise(Stimulus):
         pre_delay: float,
         duration: float,
         post_delay: float,
-        step_duration: float,
+        step_interval: float,
         mean_percent: float,
-        sd_percent: float,
+        sigma_percent: float,
         threshold_current: float,
         seed: Optional[int] = None,
     ) -> CombinedStimulus:
@@ -761,22 +761,22 @@ class StepNoise(Stimulus):
             pre_delay: Delay before the step noise starts.
             duration: Duration of the noise signal.
             post_delay: Delay after the step noise ends.
-            step_duration: Duration of each step before noise changes.
+            step_interval: Interval at which noise amplitude changes.
             mean_percent: Mean current as a percentage of threshold current.
-            sd_percent: Standard deviation as a percentage of threshold current.
+            sigma_percent: Standard deviation as a percentage of threshold current.
             threshold_current: Baseline threshold current.
             seed: Random seed for reproducibility.
         """
         mean = mean_percent / 100 * threshold_current
-        variance = sd_percent / 100 * threshold_current
+        sigma = sigma_percent / 100 * threshold_current
 
         return cls.amplitude_based(
             dt,
             pre_delay=pre_delay,
             duration=duration,
             post_delay=post_delay,
-            step_duration=step_duration,
+            step_interval=step_interval,
             mean=mean,
-            variance=variance,
+            sigma=sigma,
             seed=seed,
         )
