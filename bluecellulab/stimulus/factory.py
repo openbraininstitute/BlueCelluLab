@@ -374,6 +374,8 @@ class StimulusFactory:
 
     def ornstein_uhlenbeck(
         self,
+        pre_delay: float,
+        post_delay: float,
         duration: float,
         tau: float,
         sigma: Optional[float] = None,
@@ -386,6 +388,8 @@ class StimulusFactory:
         """Creates an Ornstein-Uhlenbeck process stimulus (factory-compatible).
 
         Args:
+            pre_delay: Delay before the noise starts (ms).
+            post_delay: Delay after the noise ends (ms).
             duration: Duration of the stimulus (ms).
             tau: Time constant of the noise process.
             sigma: Standard deviation of the noise (used when mean is provided).
@@ -419,6 +423,8 @@ class StimulusFactory:
 
             return OrnsteinUhlenbeck.amplitude_based(
                 dt=self.dt,
+                pre_delay=pre_delay,
+                post_delay=post_delay,
                 duration=duration,
                 tau=tau,
                 sigma=sigma,  # type: ignore[arg-type]
@@ -429,6 +435,8 @@ class StimulusFactory:
         if is_threshold_based:
             return OrnsteinUhlenbeck.threshold_based(
                 dt=self.dt,
+                pre_delay=pre_delay,
+                post_delay=post_delay,
                 duration=duration,
                 mean_percent=mean_percent,  # type: ignore[arg-type]
                 sd_percent=sd_percent,  # type: ignore[arg-type]
@@ -440,22 +448,27 @@ class StimulusFactory:
         raise TypeError("You have to give either `mean` or `threshold_current`.")
 
     def shot_noise(
-            self, duration: float,
-            rate: float,
-            rise_time: float,
-            decay_time: float,
-            amp_mean: Optional[float] = None,
-            amp_var: Optional[float] = None,
-            mean_percent: Optional[float] = None,
-            sd_percent: Optional[float] = None,
-            relative_skew: float = 0.5,
-            threshold_current: Optional[float] = None,
-            seed: Optional[int] = None
+        self,
+        pre_delay: float,
+        post_delay: float,
+        duration: float,
+        rate: float,
+        rise_time: float,
+        decay_time: float,
+        amp_mean: Optional[float] = None,
+        amp_var: Optional[float] = None,
+        mean_percent: Optional[float] = None,
+        sd_percent: Optional[float] = None,
+        relative_skew: float = 0.5,
+        threshold_current: Optional[float] = None,
+        seed: Optional[int] = None
     ) -> Stimulus:
         """Creates a ShotNoise instance, either with an absolute amplitude or
         relative to a threshold current.
 
         Args:
+            pre_delay: Delay before the noise starts (ms).
+            post_delay: Delay after the noise ends (ms).
             duration: Duration of the stimulus (ms).
             rate: Mean rate of synaptic events (Hz).
             amp_mean: Mean amplitude of events (nA), used if provided.
@@ -489,11 +502,14 @@ class StimulusFactory:
                     "amp_mean, threshold_current, and mean_percent are all set in ShotNoise."
                     " Using amp_mean and ignoring threshold-based parameters."
                 )
+
             return ShotNoise.amplitude_based(
                 dt=self.dt,
+                pre_delay=pre_delay,
+                post_delay=post_delay,
                 duration=duration,
-                amp_mean=amp_mean,  # type: ignore[arg-type]
                 rate=rate,
+                amp_mean=amp_mean,  # type: ignore[arg-type]
                 amp_var=amp_var,  # type: ignore[arg-type]
                 rise_time=rise_time,
                 decay_time=decay_time,
@@ -503,6 +519,8 @@ class StimulusFactory:
         if is_threshold_based:
             return ShotNoise.threshold_based(
                 dt=self.dt,
+                pre_delay=pre_delay,
+                post_delay=post_delay,
                 duration=duration,
                 rise_time=rise_time,
                 decay_time=decay_time,
@@ -517,6 +535,8 @@ class StimulusFactory:
 
     def step_noise(
         self,
+        pre_delay: float,
+        post_delay: float,
         duration: float,
         step_duration: float,
         mean: Optional[float] = None,
@@ -530,6 +550,8 @@ class StimulusFactory:
         relative to a threshold current.
 
         Args:
+            pre_delay: Delay before the step noise starts (ms).
+            post_delay: Delay after the step noise ends (ms).
             duration: Duration of the stimulus (ms).
             step_duration: Duration of each step before noise changes (ms).
             mean: Mean amplitude of step noise (nA), used if provided.
@@ -560,21 +582,29 @@ class StimulusFactory:
                     "mean, threshold_current, and mean_percent are all set in StepNoise."
                     " Using mean and ignoring threshold-based parameters."
                 )
-            return StepNoise.amplitude_based(dt=self.dt,
-                                             duration=duration,
-                                             step_duration=step_duration,
-                                             mean=mean,  # type: ignore[arg-type]
-                                             variance=variance,  # type: ignore[arg-type]
-                                             seed=seed)
+            return StepNoise.amplitude_based(
+                dt=self.dt,
+                pre_delay=pre_delay,
+                post_delay=post_delay,
+                duration=duration,
+                step_duration=step_duration,
+                mean=mean,  # type: ignore[arg-type]
+                variance=variance,  # type: ignore[arg-type]
+                seed=seed,
+            )
 
         if is_threshold_based:
-            return StepNoise.threshold_based(dt=self.dt,
-                                             duration=duration,
-                                             step_duration=step_duration,
-                                             mean_percent=mean_percent,  # type: ignore[arg-type]
-                                             sd_percent=sd_percent,  # type: ignore[arg-type]
-                                             threshold_current=threshold_current,  # type: ignore[arg-type]
-                                             seed=seed)
+            return StepNoise.threshold_based(
+                dt=self.dt,
+                pre_delay=pre_delay,
+                post_delay=post_delay,
+                duration=duration,
+                step_duration=step_duration,
+                mean_percent=mean_percent,  # type: ignore[arg-type]
+                sd_percent=sd_percent,  # type: ignore[arg-type]
+                threshold_current=threshold_current,  # type: ignore[arg-type]
+                seed=seed,
+            )
 
         raise TypeError("You must provide either `mean` and `variance`, or `threshold_current` with percentage values.")
 

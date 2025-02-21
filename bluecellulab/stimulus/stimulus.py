@@ -176,6 +176,160 @@ class Zap(Stimulus):
         )
 
 
+class OUProcess(Stimulus):
+    """Generates an Ornstein-Uhlenbeck noise signal."""
+
+    def __init__(self, dt: float, duration: float, tau: float, sigma: float, mean: float, seed: Optional[int] = None):
+        super().__init__(dt)  # Ensure proper Stimulus initialization
+        self.duration = duration
+        self.tau = tau
+        self.sigma = sigma
+        self.mean = mean
+        self.seed = seed
+
+        # Generate OU noise upon initialization
+        self._time, self._current = self._generate_ou_noise()
+
+    @property
+    def time(self) -> np.ndarray:
+        """Returns the time array for the stimulus duration."""
+        return self._time
+
+    @property
+    def current(self) -> np.ndarray:
+        """Returns the Ornstein-Uhlenbeck noise signal."""
+        return self._current
+
+    def _generate_ou_noise(self):
+        """Generates an Ornstein-Uhlenbeck noise signal."""
+        from bluecellulab.cell.stimuli_generator import gen_ornstein_uhlenbeck
+        from bluecellulab.rngsettings import RNGSettings
+        import neuron
+
+        rng_settings = RNGSettings.get_instance()
+        rng = neuron.h.Random()
+
+        if rng_settings.mode == "Random123":
+            seed1, seed2, seed3 = 2997, 291204, self.seed if self.seed else 123
+            rng.Random123(seed1, seed2, seed3)
+        else:
+            raise ValueError("Ornstein-Uhlenbeck stimulus requires Random123 RNG mode.")
+
+        # Generate noise signal
+        time, current = gen_ornstein_uhlenbeck(self.tau, self.sigma, self.mean, self.duration, self.dt, rng)
+        return time, current
+
+
+class ShotNoiseProcess(Stimulus):
+    """Generates a shot noise signal, modeling discrete synaptic events
+    occurring at random intervals."""
+
+    def __init__(
+        self, dt: float, duration: float, rate: float, amp_mean: float, amp_var: float,
+        rise_time: float, decay_time: float, seed: Optional[int] = None
+    ):
+        super().__init__(dt)
+        self.duration = duration
+        self.rate = rate
+        self.amp_mean = amp_mean
+        self.amp_var = amp_var
+        self.rise_time = rise_time
+        self.decay_time = decay_time
+        self.seed = seed
+
+        # Generate shot noise signal
+        self._time, self._current = self._generate_shot_noise()
+
+    @property
+    def time(self) -> np.ndarray:
+        return self._time
+
+    @property
+    def current(self) -> np.ndarray:
+        return self._current
+
+    def _generate_shot_noise(self):
+        """Generates the shot noise time and current vectors."""
+        from bluecellulab.cell.stimuli_generator import gen_shotnoise_signal
+        from bluecellulab.rngsettings import RNGSettings
+        import neuron
+
+        rng_settings = RNGSettings.get_instance()
+        rng = neuron.h.Random()
+
+        if rng_settings.mode == "Random123":
+            seed1, seed2, seed3 = 2997, 19216, self.seed if self.seed else 123
+            rng.Random123(seed1, seed2, seed3)
+        else:
+            raise ValueError("Shot noise stimulus requires Random123 RNG mode.")
+
+        tvec, svec = gen_shotnoise_signal(
+            self.decay_time,
+            self.rise_time,
+            self.rate,
+            self.amp_mean,
+            self.amp_var,
+            self.duration,
+            self.dt,
+            rng=rng
+        )
+
+        return np.array(tvec.to_python()), np.array(svec.to_python())
+
+
+class StepNoiseProcess(Stimulus):
+    """Generates step noise: A step current with noise variations."""
+
+    def __init__(
+        self,
+        dt: float,
+        duration: float,
+        step_duration: float,
+        mean: float,
+        variance: float,
+        seed: Optional[int] = None,
+    ):
+        super().__init__(dt)
+        self.duration = duration
+        self.step_duration = step_duration
+        self.mean = mean
+        self.variance = variance
+        self.seed = seed
+
+        # Generate step noise signal
+        self._time, self._current = self._generate_step_noise()
+
+    @property
+    def time(self) -> np.ndarray:
+        return self._time
+
+    @property
+    def current(self) -> np.ndarray:
+        return self._current
+
+    def _generate_step_noise(self):
+        """Generates the step noise time and current vectors."""
+        import numpy as np
+
+        if self.seed is not None:
+            np.random.seed(self.seed)
+
+        num_steps = int(self.duration / self.step_duration)
+        amplitudes = np.random.normal(loc=self.mean, scale=self.variance, size=num_steps)
+
+        # Construct stimulus
+        time_values = []
+        current_values = []
+        time = 0
+
+        for amp in amplitudes:
+            time_values.append(time)
+            current_values.append(amp)
+            time += self.step_duration
+
+        return np.array(time_values), np.array(current_values)
+
+
 class Step(Stimulus):
 
     def __init__(self):
@@ -379,50 +533,20 @@ class DelayedZap(Stimulus):
 class OrnsteinUhlenbeck(Stimulus):
     """Factory-compatible Ornstein-Uhlenbeck noise stimulus."""
 
-    def __init__(self, dt: float, duration: float, tau: float, sigma: float, mean: float, seed: Optional[int] = None):
-        super().__init__(dt)
-        self.duration = duration
-        self.tau = tau
-        self.sigma = sigma
-        self.mean = mean
-        self.seed = seed
-
-        # Generate the OU process signal
-        self._time, self._current = self._generate_ou_signal()
-
-    def _generate_ou_signal(self):
-        """Generates an Ornstein-Uhlenbeck process based on circuit
-        definitions."""
-        from bluecellulab.cell.stimuli_generator import gen_ornstein_uhlenbeck
-        from bluecellulab.rngsettings import RNGSettings
-        import neuron
-
-        # Get NEURON RNG settings
-        rng_settings = RNGSettings.get_instance()
-        rng = neuron.h.Random()
-
-        if rng_settings.mode == "Random123":
-            seed1, seed2, seed3 = 2997, 291204, self.seed if self.seed else 123
-            rng.Random123(seed1, seed2, seed3)
-        else:
-            raise ValueError("Ornstein-Uhlenbeck stimulus requires Random123 RNG mode.")
-
-        time, current = gen_ornstein_uhlenbeck(self.tau, self.sigma, self.mean, self.duration, self.dt, rng)
-        return time, current
-
-    @property
-    def time(self) -> np.ndarray:
-        return self._time
-
-    @property
-    def current(self) -> np.ndarray:
-        return self._current
+    def __init__(self):
+        """Prevents direct instantiation of the class."""
+        raise NotImplementedError(
+            "This class cannot be instantiated directly. "
+            "Please use 'amplitude_based' or 'threshold_based' methods."
+        )
 
     @classmethod
     def amplitude_based(
         cls,
         dt: float,
+        pre_delay: float,
         duration: float,
+        post_delay: float,
         tau: float,
         sigma: float,
         mean: float,
@@ -431,16 +555,18 @@ class OrnsteinUhlenbeck(Stimulus):
         """Create an Ornstein-Uhlenbeck stimulus from given time events and
         amplitude."""
         return (
-            Empty(dt, duration=0)
-            + cls(dt, duration, tau, sigma, mean, seed)
-            + Empty(dt, duration=0)
+            Empty(dt, duration=pre_delay)
+            + OUProcess(dt, duration, tau, sigma, mean, seed)
+            + Empty(dt, duration=post_delay)
         )
 
     @classmethod
     def threshold_based(
         cls,
         dt: float,
+        pre_delay: float,
         duration: float,
+        post_delay: float,
         mean_percent: float,
         sd_percent: float,
         threshold_current: float,
@@ -459,7 +585,9 @@ class OrnsteinUhlenbeck(Stimulus):
 
         return cls.amplitude_based(
             dt,
+            pre_delay=pre_delay,
             duration=duration,
+            post_delay=post_delay,
             tau=tau,
             sigma=sigma,
             mean=mean,
@@ -468,82 +596,56 @@ class OrnsteinUhlenbeck(Stimulus):
 
 
 class ShotNoise(Stimulus):
-    """Shot Noise Stimulus: Models discrete synaptic events occurring at random intervals."""
+    """Factory-compatible Shot Noise Stimulus."""
 
-    def __init__(
-        self, dt: float, duration: float, rate: float, amp_mean: float, amp_var: float,
-        rise_time: float, decay_time: float, seed: Optional[int] = None
-    ):
-        super().__init__(dt)
-        self.duration = duration
-        self.rate = rate
-        self.amp_mean = amp_mean
-        self.amp_var = amp_var
-        self.rise_time = rise_time
-        self.decay_time = decay_time
-        self.seed = seed
-        self._generate_shot_noise()
-
-    def _generate_shot_noise(self):
-        """Generates the time and current vectors for the shot noise
-        stimulus."""
-        from bluecellulab.cell.stimuli_generator import gen_shotnoise_signal
-        from bluecellulab.rngsettings import RNGSettings
-        import neuron
-
-        rng_settings = RNGSettings.get_instance()
-        rng = neuron.h.Random()
-        if rng_settings.mode == "Random123":
-            seed1, seed2, seed3 = 2997, 19216, self.seed if self.seed else 123
-            rng.Random123(seed1, seed2, seed3)
-        else:
-            raise ValueError("Shot noise stimulus requires Random123 RNG mode.")
-
-        tvec, svec = gen_shotnoise_signal(
-            self.decay_time,
-            self.rise_time,
-            self.rate,
-            self.amp_mean,
-            self.amp_var,
-            self.duration,
-            self.dt,
-            rng=rng
+    def __init__(self):
+        """Prevents direct instantiation."""
+        raise NotImplementedError(
+            "This class cannot be instantiated directly. "
+            "Please use 'amplitude_based' or 'threshold_based' methods."
         )
-
-        self._time = np.array(tvec.to_python())
-        self._current = np.array(svec.to_python())
-
-    @property
-    def time(self) -> np.ndarray:
-        return self._time
-
-    @property
-    def current(self) -> np.ndarray:
-        return self._current
 
     @classmethod
     def amplitude_based(
         cls,
         dt: float,
+        pre_delay: float,
         duration: float,
-        amp_mean: float,
+        post_delay: float,
         rate: float,
+        amp_mean: float,
         amp_var: float,
         rise_time: float,
         decay_time: float,
         seed: Optional[int] = None,
     ) -> CombinedStimulus:
+        """Creates a shot noise stimulus with a specified amplitude.
+
+        Args:
+            dt: Time step of the stimulus.
+            pre_delay: Delay before the noise starts.
+            duration: Duration of the noise signal.
+            post_delay: Delay after the noise ends.
+            rate: Frequency of synaptic-like events.
+            amp_mean: Mean amplitude of the events.
+            amp_var: Variance of event amplitudes.
+            rise_time: Time constant for the event's rise phase.
+            decay_time: Time constant for the event's decay phase.
+            seed: Random seed for reproducibility.
+        """
         return (
-            Empty(dt, duration=0)
-            + cls(dt, duration, rate, amp_mean, amp_var, rise_time, decay_time, seed)
-            + Empty(dt, duration=0)
+            Empty(dt, duration=pre_delay)
+            + ShotNoiseProcess(dt, duration, rate, amp_mean, amp_var, rise_time, decay_time, seed)
+            + Empty(dt, duration=post_delay)
         )
 
     @classmethod
     def threshold_based(
         cls,
         dt: float,
+        pre_delay: float,
         duration: float,
+        post_delay: float,
         rise_time: float,
         decay_time: float,
         mean_percent: float,
@@ -552,107 +654,118 @@ class ShotNoise(Stimulus):
         relative_skew: float = 0.5,
         seed: Optional[int] = None,
     ) -> CombinedStimulus:
+        """Creates a shot noise stimulus based on a neuron's threshold current.
 
+        Args:
+            dt: Time step of the stimulus.
+            pre_delay: Delay before the noise starts.
+            duration: Duration of the noise signal.
+            post_delay: Delay after the noise ends.
+            rise_time: Rise time constant of events.
+            decay_time: Decay time constant of events.
+            mean_percent: Mean value as a percentage of the threshold current.
+            sd_percent: Standard deviation as a percentage of the threshold current.
+            threshold_current: Baseline threshold current.
+            relative_skew: Skew factor affecting noise distribution.
+            seed: Random seed for reproducibility.
+        """
         mean = mean_percent / 100 * threshold_current
         sd = sd_percent / 100 * threshold_current
 
         rate, amp_mean, amp_var = get_relative_shotnoise_params(
-            mean, sd, decay_time, rise_time, relative_skew)
+            mean, sd, decay_time, rise_time, relative_skew
+        )
 
-        return cls.amplitude_based(dt,
-                                   duration,
-                                   rate,
-                                   amp_mean,
-                                   amp_var,
-                                   rise_time,
-                                   decay_time,
-                                   seed)
+        return cls.amplitude_based(
+            dt,
+            pre_delay=pre_delay,
+            duration=duration,
+            post_delay=post_delay,
+            rate=rate,
+            amp_mean=amp_mean,
+            amp_var=amp_var,
+            rise_time=rise_time,
+            decay_time=decay_time,
+            seed=seed,
+        )
 
 
 class StepNoise(Stimulus):
-    """Step Noise Stimulus: Generates a step current with noise variations."""
+    """Factory-compatible Step Noise Stimulus."""
 
-    def __init__(
-        self,
-        dt: float,
-        duration: float,
-        step_duration: float,
-        mean: float,
-        variance: float,
-        seed: Optional[int] = None,
-    ):
-        super().__init__(dt)
-        self.duration = duration
-        self.step_duration = step_duration
-        self.mean = mean
-        self.variance = variance
-        self.seed = seed
-
-        # Generate step noise signal
-        self._time, self._current = self._generate_step_noise()
-
-    def _generate_step_noise(self):
-        """Generates the step noise time and current vectors."""
-        import numpy as np
-
-        if self.seed is not None:
-            np.random.seed(self.seed)
-
-        num_steps = int(self.duration / self.step_duration)
-        amplitudes = np.random.normal(loc=self.mean, scale=self.variance, size=num_steps)
-
-        # Construct stimulus
-        time_values = []
-        current_values = []
-        time = 0
-
-        for amp in amplitudes:
-            time_values.append(time)
-            current_values.append(amp)
-            time += self.step_duration
-
-        return np.array(time_values), np.array(current_values)
-
-    @property
-    def time(self) -> np.ndarray:
-        return self._time
-
-    @property
-    def current(self) -> np.ndarray:
-        return self._current
+    def __init__(self):
+        """Prevents direct instantiation."""
+        raise NotImplementedError(
+            "This class cannot be instantiated directly. "
+            "Please use 'amplitude_based' or 'threshold_based' methods."
+        )
 
     @classmethod
     def amplitude_based(
         cls,
         dt: float,
+        pre_delay: float,
         duration: float,
+        post_delay: float,
         step_duration: float,
         mean: float,
         variance: float,
         seed: Optional[int] = None,
     ) -> CombinedStimulus:
-        """Create a StepNoise stimulus based on amplitude values."""
+        """Creates a step noise stimulus with a specified amplitude.
+
+        Args:
+            dt: Time step of the stimulus.
+            pre_delay: Delay before the step noise starts.
+            duration: Duration of the noise signal.
+            post_delay: Delay after the step noise ends.
+            step_duration: Duration of each step before noise changes.
+            mean: Mean amplitude of step noise.
+            variance: Variance of step noise.
+            seed: Random seed for reproducibility.
+        """
         return (
-            Empty(dt, duration=0)
-            + cls(dt, duration, step_duration, mean, variance, seed)
-            + Empty(dt, duration=0)
+            Empty(dt, duration=pre_delay)
+            + StepNoiseProcess(dt, duration, step_duration, mean, variance, seed)
+            + Empty(dt, duration=post_delay)
         )
 
     @classmethod
     def threshold_based(
         cls,
         dt: float,
+        pre_delay: float,
         duration: float,
+        post_delay: float,
         step_duration: float,
         mean_percent: float,
         sd_percent: float,
         threshold_current: float,
         seed: Optional[int] = None,
     ) -> CombinedStimulus:
-        """Create a StepNoise stimulus relative to the threshold current."""
+        """Creates a step noise stimulus relative to the threshold current.
+
+        Args:
+            dt: Time step of the stimulus.
+            pre_delay: Delay before the step noise starts.
+            duration: Duration of the noise signal.
+            post_delay: Delay after the step noise ends.
+            step_duration: Duration of each step before noise changes.
+            mean_percent: Mean current as a percentage of threshold current.
+            sd_percent: Standard deviation as a percentage of threshold current.
+            threshold_current: Baseline threshold current.
+            seed: Random seed for reproducibility.
+        """
         mean = mean_percent / 100 * threshold_current
         variance = sd_percent / 100 * threshold_current
 
         return cls.amplitude_based(
-            dt, duration, step_duration, mean, variance, seed
+            dt,
+            pre_delay=pre_delay,
+            duration=duration,
+            post_delay=post_delay,
+            step_duration=step_duration,
+            mean=mean,
+            variance=variance,
+            seed=seed,
         )
