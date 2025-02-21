@@ -357,6 +357,39 @@ class DelayedZap(Stimulus):
         )
         return res
 
+class Sinusoidal(Stimulus):
+    """Injects a sinusoidal current with given amplitude and frequency."""
+
+    def __init__(self, dt: float, duration: float, amp: float, freq: float) -> None:
+        super().__init__(dt)
+        self.duration = duration
+        self.amp = amp
+        self.freq = freq
+
+        # Generate time and current vectors
+        self._time, self._current = self._generate_sinusoidal_signal()
+
+    @property
+    def time(self) -> np.ndarray:
+        return self._time
+
+    @property
+    def current(self) -> np.ndarray:
+        return self._current
+
+    def _generate_sinusoidal_signal(self):
+        """Generate the sinusoidal waveform with given parameters."""
+        import neuron
+
+        step = self.dt  # time step for stimulus
+        time_vector = np.arange(0.0, self.duration, step)  # time points
+        stim_vector = neuron.h.Vector(len(time_vector))
+
+        # Generate sinusoidal waveform using NEURON built-in function
+        stim_vector.sin(self.freq, 0.0, step)
+        stim_vector.mul(self.amp)  # Scale by amplitude
+
+        return time_vector, np.array(stim_vector)
 
 class StimulusFactory:
     def __init__(self, dt: float):
@@ -687,3 +720,19 @@ class StimulusFactory:
             )
 
         raise TypeError("You have to give either threshold_current or amplitude")
+
+    def sinusoidal(
+        self, target: str, delay: float, duration: float, frequency: float, amplitude: float, base_amp: float = 0.0, dt: float = 0.025, mode: ClampMode = ClampMode.CURRENT, reversal: float = 0.0
+    ) -> Sinusoidal:
+        """Creates a sinusoidal stimulus."""
+        return Sinusoidal(
+            target=target,
+            delay=delay,
+            duration=duration,
+            frequency=frequency,
+            amplitude=amplitude,
+            base_amp=base_amp,
+            dt=dt,
+            mode=mode,
+            reversal=reversal,
+        )

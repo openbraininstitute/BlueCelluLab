@@ -416,3 +416,41 @@ class RelativeOrnsteinUhlenbeck(Stimulus):
     seed: Optional[int] = None
     mode: ClampMode = ClampMode.CURRENT
     reversal: float = 0.0
+
+@dataclass(frozen=True, config=dict(extra="forbid"))
+class Sinusoidal(Stimulus):
+    """
+    Represents a sinusoidal wave stimulus.
+
+    Attributes:
+        target (str): The target section/node.
+        delay (float): Delay before the wave starts (ms).
+        duration (float): Total duration of the sinusoidal wave (ms).
+        frequency (float): Frequency of the wave (Hz).
+        amplitude (float): Maximum amplitude of the wave (nA).
+        base_amp (float): Baseline amplitude (default: 0 nA).
+        dt (float): Time step for generating the wave (ms, default: 0.025).
+        mode (ClampMode): Whether it's current clamp or conductance clamp.
+        reversal (float): Reversal potential (mV) if using conductance mode.
+    """
+
+    frequency: PositiveFloat
+    amplitude: float
+    base_amp: float = 0.0
+    dt: float = 0.025
+    mode: ClampMode = ClampMode.CURRENT
+    reversal: float = 0.0
+
+    @field_validator("frequency")
+    @classmethod
+    def check_positive_frequency(cls, v):
+        if v <= 0:
+            raise ValueError("Frequency must be a positive value.")
+        return v
+
+    def __repr__(self):
+        return (
+            f"Sinusoidal(target={self.target}, delay={self.delay}, duration={self.duration}, "
+            f"frequency={self.frequency}, amplitude={self.amplitude}, base_amp={self.base_amp})"
+        )
+
