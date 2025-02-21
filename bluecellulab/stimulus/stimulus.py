@@ -308,14 +308,25 @@ class StepNoiseProcess(Stimulus):
         return self._current
 
     def _generate_step_noise(self):
-        """Generates the step noise time and current vectors."""
-        import numpy as np
+        """Generates the step noise time and current vectors using NEURON’s
+        random generator."""
+        from neuron import h
+        from bluecellulab.rngsettings import RNGSettings
 
-        if self.seed is not None:
-            np.random.seed(self.seed)
+        # Get NEURON RNG settings
+        rng_settings = RNGSettings.get_instance()
+        rng = h.Random()
+
+        if rng_settings.mode == "Random123":
+            seed1, seed2, seed3 = 2997, 19216, self.seed if self.seed else 123
+            rng.Random123(seed1, seed2, seed3)
+        else:
+            raise ValueError("StepNoise stimulus requires Random123 RNG mode.")
 
         num_steps = int(self.duration / self.step_duration)
-        amplitudes = np.random.normal(loc=self.mean, scale=self.variance, size=num_steps)
+
+        # Generate noise using NEURON's normal distribution function
+        amplitudes = [self.mean + rng.normal(0, self.variance) for _ in range(num_steps)]
 
         # Construct stimulus
         time_values = []
