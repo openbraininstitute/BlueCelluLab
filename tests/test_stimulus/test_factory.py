@@ -11,68 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 import pytest
 import numpy as np
 
-from bluecellulab.stimulus.factory import (
+from bluecellulab.exceptions import BluecellulabError
+from bluecellulab.stimulus.stimulus import (
     CombinedStimulus,
-    Empty,
-    Stimulus,
-    Step,
-    Ramp,
-    StimulusFactory,
     Zap,
 )
-
-
-class TestStimulus:
-
-    def test_abstract_methods(self):
-        with pytest.raises(TypeError):
-            s = Stimulus(0.1)
-
-    def test_repr(self):
-        s = Step.amplitude_based(0.1, 1, 2, 3, 0.55)
-        assert repr(s) == "CombinedStimulus(dt=0.1)"
-
-    def test_len(self):
-        s = Step.amplitude_based(0.1, 0, 1, 0, 0.55)
-        assert len(s) == 10
-
-    def test_plot(self):
-        s = Step.amplitude_based(0.1, 1, 2, 3, 0.55)
-        ax = s.plot()
-        assert ax.get_xlabel() == "Time (ms)"
-        assert ax.get_ylabel() == "Current (nA)"
-        assert ax.get_title() == "CombinedStimulus"
-
-    def test_add(self):
-        zero_length_stim = Empty(dt=0.1, duration=0)
-        step_stim = Step.amplitude_based(
-            dt=0.1, pre_delay=0, duration=1, post_delay=0, amplitude=1
-        )
-        assert zero_length_stim + step_stim == step_stim
-        assert step_stim + zero_length_stim == step_stim
-
-        ramp_stim = Ramp.amplitude_based(
-            dt=0.1, pre_delay=0, duration=1, post_delay=0, amplitude=1
-        )
-        combined = step_stim + ramp_stim
-        assert isinstance(combined, CombinedStimulus)
-        assert len(combined) == len(step_stim) + len(ramp_stim)
-
-    def test_add_different_dt(self):
-        s1 = Step.amplitude_based(0.1, 0, 1, 0, 0.55)
-        s2 = Step.amplitude_based(0.2, 0, 1, 0, 0.55)
-        with pytest.raises(ValueError):
-            s1 + s2
-
-    def test__eq__(self):
-        s1 = Step.amplitude_based(0.1, 0.55, 1, 2, 3)
-        s2 = Step.amplitude_based(0.1, 0.55, 1, 2, 3)
-        assert s1 == s2
-        assert s1 != 5
-        assert s1 != "this string object"
+from bluecellulab.stimulus.factory import StimulusFactory
 
 
 class TestStimulusFactory:
@@ -95,6 +43,12 @@ class TestStimulusFactory:
         np.testing.assert_almost_equal(stim.time, np.arange(0, total_time, self.dt), decimal=9)
         assert stim.current[0] == 0.0
         assert stim.current[-1] == 3.0
+
+        s = self.factory.ramp(pre_delay, duration, post_delay, threshold_current=1)
+        assert isinstance(s, CombinedStimulus)
+
+        with pytest.raises(TypeError, match="You have to give either threshold_current or amplitude"):
+            self.factory.ramp(pre_delay, duration, post_delay)
 
     def test_create_ap_waveform(self):
         s = self.factory.ap_waveform(threshold_current=1)
@@ -204,73 +158,50 @@ class TestStimulusFactory:
         with pytest.raises(TypeError, match="You have to give either threshold_current or amplitude"):
             self.factory.sinespec()
 
+    def test_create_step_noise(self):
+        s = self.factory.step_noise(pre_delay=100, post_delay=100, duration=1000, step_interval=50, mean=1.0, sigma=0.3, seed=42)
+        assert isinstance(s, CombinedStimulus)
+        assert np.all(np.isfinite(s.current))
+        assert len(s.time) == len(s.current)
 
-def test_combined_stimulus():
-    """Test combining Stimulus objects."""
-    s1 = Step.amplitude_based(0.1, 0.55, 1, 2, 3)
-    s2 = Step.threshold_based(0.1, 0.55, 200, 3, 4, 5)
-    combined = s1 + s2
+        s = self.factory.step_noise(pre_delay=100, post_delay=100, duration=1000, step_interval=50, mean_percent=60.0, sigma_percent=20.0, threshold_current=0.8, seed=42)
+        assert isinstance(s, CombinedStimulus)
 
-    assert isinstance(combined, CombinedStimulus)
-    assert np.all(
-        combined.time == np.concatenate([s1.time, s2.time + s1.time[-1] + 0.1])
-    )
-    assert np.all(combined.current == np.concatenate([s1.current, s2.current]))
-    assert combined.dt == 0.1
-    assert len(combined) == len(s1) + len(s2)
-    assert combined.stimulus_time == (len(combined) * combined.dt)
+        with pytest.raises(TypeError, match="You must provide either `mean` and `sigma`, or `threshold_current` and `mean_percent` and `sigma_percent`  with percentage values."):
+            self.factory.step_noise(pre_delay=100, post_delay=100, duration=1000, step_interval=50)
 
+    def test_create_shot_noise(self):
+        s = self.factory.shot_noise(pre_delay=100, post_delay=100, duration=1000, rate=10, mean=0.5, sigma=0.1, rise_time=1, decay_time=5, seed=42)
+        assert isinstance(s, CombinedStimulus)
+        assert np.all(np.isfinite(s.current))
 
-def test_empty_stimulus():
-    dt = 0.2
-    duration = 1.0
-    stimulus = Empty(dt, duration)
+        s = self.factory.shot_noise(pre_delay=100, post_delay=100, duration=1000, rate=10, mean_percent=60.0, sigma_percent=20.0, threshold_current=0.8, rise_time=1, decay_time=5, seed=42)
+        assert isinstance(s, CombinedStimulus)
 
-    assert stimulus.dt == dt
-    assert np.all(stimulus.time == np.arange(0, duration, dt))
-    assert np.all(stimulus.current == np.zeros_like(stimulus.time))
+        with pytest.raises(TypeError, match="You must provide either `mean` and `sigma`, or `threshold_current` and `mean_percent` and `sigma_percent` with percentage values."):
+            self.factory.shot_noise(pre_delay=100, post_delay=100, duration=1000, rate=10, rise_time=1, decay_time=5)
 
+    def test_create_ornstein_uhlenbeck(self, caplog):
+        s = self.factory.ornstein_uhlenbeck(pre_delay=100, post_delay=100, duration=1000, tau=20, sigma=0.5, mean=1.0, seed=42)
+        assert isinstance(s, CombinedStimulus)
+        assert np.all(np.isfinite(s.current))
 
-def test_threshold_based_ramp():
-    threshold_current, threshold_percentage = 0.77, 500
-    stim = Ramp.threshold_based(0.1, 1, 2, 3, threshold_current, threshold_percentage)
-    amplitude = threshold_current * threshold_percentage / 100
-    assert max(stim.current) == amplitude
+        s = self.factory.ornstein_uhlenbeck(pre_delay=100, post_delay=100, duration=1000, tau=20, mean_percent=60.0, sigma_percent=20.0, threshold_current=0.8, seed=42)
+        assert isinstance(s, CombinedStimulus)
 
+        with pytest.raises(TypeError, match="You have to give either `mean` and `sigma` or `threshold_current` and `mean_percent` and `sigma_percent`."):
+            self.factory.ornstein_uhlenbeck(pre_delay=100, post_delay=100, duration=1000, tau=20)
 
-def test_combine_multiple_stimuli():
-    """Test combining multiple stimuli."""
-    dt = 0.1
-    stim1 = Step.amplitude_based(dt, 50, 100, 50, 0.55)
-    stim2 = Ramp.amplitude_based(dt, 3, 4, 2, 0.55)
-    stim3 = Empty(dt, 1)
-    stim4 = Step.amplitude_based(dt, 5, 10, 5, 0.66)
+        with pytest.raises(TypeError, match="You have to give either `mean` and `sigma` or `threshold_current` and `mean_percent` and `sigma_percent`."):
+            self.factory.ornstein_uhlenbeck(pre_delay=100, post_delay=100, duration=1000, tau=20, sigma=0)
 
-    combined = stim1 + stim2 + stim3 + stim4
+        sigma_percent = 0.0
+        threshold_current = 0.8
+        sigma = sigma_percent / 100 * threshold_current
+        with pytest.raises(BluecellulabError, match=f"Calculated standard deviation \\(sigma\\) must be positive, but got {sigma}\\. Ensure sigma_percent and threshold_current are both positive\\."):
+            self.factory.ornstein_uhlenbeck(pre_delay=100, post_delay=100, duration=1000, tau=20, mean_percent=60.0, sigma_percent=0.0, threshold_current=0.8, seed=42)
 
-    assert isinstance(combined, CombinedStimulus)
-    assert combined.dt == dt
+        with caplog.at_level(logging.WARNING):
+            self.factory.ornstein_uhlenbeck(pre_delay=100, post_delay=100, duration=1000, tau=20, mean_percent=-80.0, sigma_percent=20.0, threshold_current=0.8, seed=42)
 
-    shifted_stim2_time = stim2.time + stim1.time[-1] + dt
-    shifted_stim3_time = stim3.time + shifted_stim2_time[-1] + dt
-    shifted_stim4_time = stim4.time + shifted_stim3_time[-1] + dt
-
-    expected_time = np.concatenate(
-        [
-            stim1.time,
-            shifted_stim2_time,
-            shifted_stim3_time,
-            shifted_stim4_time,
-        ]
-    )
-    expected_current = np.concatenate(
-        [
-            stim1.current,
-            stim2.current,
-            stim3.current,
-            stim4.current,
-        ]
-    )
-
-    assert np.all(combined.time == expected_time)
-    assert np.all(combined.current == expected_current)
+        assert any("Relative Ornstein-Uhlenbeck signal is mostly zero." in record.message for record in caplog.records)
