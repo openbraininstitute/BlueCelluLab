@@ -11,9 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 import pytest
 import numpy as np
 
+from bluecellulab.exceptions import BluecellulabError
 from bluecellulab.stimulus.stimulus import (
     CombinedStimulus,
     Zap,
@@ -41,6 +43,12 @@ class TestStimulusFactory:
         np.testing.assert_almost_equal(stim.time, np.arange(0, total_time, self.dt), decimal=9)
         assert stim.current[0] == 0.0
         assert stim.current[-1] == 3.0
+
+        s = self.factory.ramp(pre_delay, duration, post_delay, threshold_current=1)
+        assert isinstance(s, CombinedStimulus)
+
+        with pytest.raises(TypeError, match="You have to give either threshold_current or amplitude"):
+            self.factory.ramp(pre_delay, duration, post_delay)
 
     def test_create_ap_waveform(self):
         s = self.factory.ap_waveform(threshold_current=1)
@@ -173,7 +181,7 @@ class TestStimulusFactory:
         with pytest.raises(TypeError, match="You must provide either `mean` and `sigma`, or `threshold_current` and `mean_percent` and `sigma_percent` with percentage values."):
             self.factory.shot_noise(pre_delay=100, post_delay=100, duration=1000, rate=10, rise_time=1, decay_time=5)
 
-    def test_create_ornstein_uhlenbeck(self):
+    def test_create_ornstein_uhlenbeck(self, caplog):
         s = self.factory.ornstein_uhlenbeck(pre_delay=100, post_delay=100, duration=1000, tau=20, sigma=0.5, mean=1.0, seed=42)
         assert isinstance(s, CombinedStimulus)
         assert np.all(np.isfinite(s.current))
@@ -183,3 +191,17 @@ class TestStimulusFactory:
 
         with pytest.raises(TypeError, match="You have to give either `mean` and `sigma` or `threshold_current` and `mean_percent` and `sigma_percent`."):
             self.factory.ornstein_uhlenbeck(pre_delay=100, post_delay=100, duration=1000, tau=20)
+
+        with pytest.raises(TypeError, match="You have to give either `mean` and `sigma` or `threshold_current` and `mean_percent` and `sigma_percent`."):
+            self.factory.ornstein_uhlenbeck(pre_delay=100, post_delay=100, duration=1000, tau=20, sigma=0)
+
+        sigma_percent = 0.0
+        threshold_current = 0.8
+        sigma = sigma_percent / 100 * threshold_current
+        with pytest.raises(BluecellulabError, match=f"Calculated standard deviation \\(sigma\\) must be positive, but got {sigma}\\. Ensure sigma_percent and threshold_current are both positive\\."):
+            self.factory.ornstein_uhlenbeck(pre_delay=100, post_delay=100, duration=1000, tau=20, mean_percent=60.0, sigma_percent=0.0, threshold_current=0.8, seed=42)
+
+        with caplog.at_level(logging.WARNING):
+            self.factory.ornstein_uhlenbeck(pre_delay=100, post_delay=100, duration=1000, tau=20, mean_percent=-80.0, sigma_percent=20.0, threshold_current=0.8, seed=42)
+
+        assert any("Relative Ornstein-Uhlenbeck signal is mostly zero." in record.message for record in caplog.records)

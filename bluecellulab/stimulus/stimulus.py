@@ -588,7 +588,7 @@ class OrnsteinUhlenbeck(Stimulus):
         current."""
         sigma = sigma_percent / 100 * threshold_current
         if sigma <= 0:
-            raise BluecellulabError(f"standard deviation: {sigma}, must be positive.")
+            raise BluecellulabError(f"Calculated standard deviation (sigma) must be positive, but got {sigma}. Ensure sigma_percent and threshold_current are both positive.")
 
         mean = mean_percent / 100 * threshold_current
         if mean < 0 and abs(mean) > 2 * sigma:
