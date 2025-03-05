@@ -18,6 +18,7 @@ from abc import ABC, abstractmethod
 from typing import Optional
 import logging
 import matplotlib.pyplot as plt
+import neuron
 import numpy as np
 from bluecellulab.cell.stimuli_generator import get_relative_shotnoise_params
 from bluecellulab.exceptions import BluecellulabError
@@ -57,7 +58,6 @@ class Stimulus(ABC):
         ax.plot(self.time, self.current, **kwargs)
         ax.set_xlabel("Time (ms)")
         ax.set_ylabel("Current (nA)")
-        ax.set_title(self.__class__.__name__)
         return ax
 
     def __add__(self, other: Stimulus) -> CombinedStimulus:
@@ -362,9 +362,14 @@ class SinusoidalWave(Stimulus):
 
     def _generate_sinusoidal_signal(self):
         """Generate the sinusoidal waveform."""
-        time_vector = np.arange(0.0, self.duration, self.dt)  # Time points
-        current_vector = self.amplitude * np.sin(2.0 * np.pi * self.frequency * time_vector)
-        return time_vector, current_vector
+        tvec = neuron.h.Vector()
+        tvec.indgen(0.0, self.duration, self.dt)  # Time points using NEURON
+
+        stim = neuron.h.Vector(len(tvec))
+        stim.sin(self.frequency, 0.0, self.dt)  # Generate sinusoidal wave using NEURON
+        stim.mul(self.amplitude)  # Scale by amplitude
+
+        return  np.array(tvec.to_python()),  np.array(stim.to_python())
 
 class Step(Stimulus):
 

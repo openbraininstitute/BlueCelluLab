@@ -377,20 +377,70 @@ class StimulusFactory:
         raise TypeError("You have to give either threshold_current or amplitude")
 
     def sinusoidal(
-        self, target: str, delay: float, duration: float, frequency: float, amplitude: float, base_amp: float = 0.0, dt: float = 0.025, reversal: float = 0.0
-    ) -> Sinusoidal:
-        """Creates a sinusoidal stimulus."""
-        return Sinusoidal(
-            target=target,
-            delay=delay,
-            duration=duration,
-            frequency=frequency,
-            amplitude=amplitude,
-            base_amp=base_amp,
-            dt=dt,
-            reversal=reversal,
+        self,
+        pre_delay: float,
+        post_delay: float,
+        duration: float,
+        frequency: float,
+        amplitude: Optional[float] = None,
+        amplitude_percent: Optional[float] = None,
+        threshold_current: Optional[float] = None,
+        dt: float = 0.025,
+    ) -> Stimulus:
+        """Creates a Sinusoidal stimulus (factory-compatible).
+
+        Args:
+            pre_delay: Delay before the sinusoidal stimulus starts (ms).
+            post_delay: Delay after the stimulus ends (ms).
+            duration: Duration of the stimulus (ms).
+            frequency: Frequency of oscillation (Hz).
+            amplitude: Absolute amplitude (nA). Used if provided.
+            amplitude_percent: Amplitude as a percentage of threshold current.
+            threshold_current: Reference threshold current for percentage-based calculation.
+            dt: Time step of the stimulus (ms).
+
+        Returns:
+            A `Stimulus` object (Sinusoidal) that can be plotted and injected.
+
+        Notes:
+            - If `amplitude` is provided, `amplitude_percent` is ignored.
+            - If `threshold_current` is not provided, threshold-based parameters cannot be used.
+        """
+        is_amplitude_based = amplitude is not None
+        is_threshold_based = (
+            threshold_current is not None
+            and threshold_current != 0
+            and amplitude_percent is not None
         )
 
+        if is_amplitude_based:
+            if is_threshold_based:
+                logger.info(
+                    "amplitude, threshold_current, and amplitude_percent are all set in Sinusoidal."
+                    " Using absolute amplitude and ignoring threshold-based parameters."
+                )
+
+            return Sinusoidal.amplitude_based(
+                dt=dt,
+                pre_delay=pre_delay,
+                post_delay=post_delay,
+                duration=duration,
+                frequency=frequency,
+                amplitude=amplitude,  # type: ignore[arg-type]
+            )
+
+        if is_threshold_based:
+            return Sinusoidal.threshold_based(
+                dt=dt,
+                pre_delay=pre_delay,
+                post_delay=post_delay,
+                duration=duration,
+                frequency=frequency,
+                amplitude_percent=amplitude_percent,  # type: ignore[arg-type]
+                threshold_current=threshold_current,  # type: ignore[arg-type]
+            )
+
+        raise TypeError("You have to provide either `amplitude` or `threshold_current` with `amplitude_percent`.")
 
 
     def ornstein_uhlenbeck(
