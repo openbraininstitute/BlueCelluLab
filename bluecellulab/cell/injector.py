@@ -494,35 +494,12 @@ class InjectableMixin:
         self.persistent.append(syn)  # type: ignore
         return syn
 
-    def add_sinusoidal(
-        self, section, segx, stimulus: Sinusoidal
-    ):
-        """Injects a sinusoidal current into the given section.
-
-        Args:
-            section: The section of the cell where current is injected.
-            segx: The segment location within the section (0-1).
-            stimulus: The `Sinusoidal` stimulus object.
-
-        Returns:
-            The vectors used in the simulation.
-        """
-        import neuron
-
-        tvec = neuron.h.Vector()
-        stim_vec = neuron.h.Vector()
-
-        tvec.indgen(stimulus.delay, stimulus.delay + stimulus.duration, stimulus.dt)  # Generate time points
-        stim_vec.sin(stimulus.frequency, 0.0, stimulus.dt)  # Create sinusoidal wave
-        stim_vec.mul(stimulus.amplitude)  # Apply amplitude scaling
-        stim_vec.add(stimulus.base_amp)  # Apply baseline amplitude
-
-        cs = neuron.h.IClamp(segx, sec=section)
-        cs.dur = tvec[-1]  # Set duration
-        stim_vec.play(cs._ref_amp, tvec, 1)  # Play the sinusoidal current into the cell
-
-        self.persistent.append(cs)
-        self.persistent.append(tvec)
-        self.persistent.append(stim_vec)
-
-        return cs, tvec, stim_vec
+    def add_sinusoidal(self, stimulus) -> TStim:
+        """Inject sinusoidal stimulus for replay."""
+        return self.add_sin_current(
+            stimulus.amp_start,
+            stimulus.delay,
+            stimulus.duration,
+            stimulus.frequency,
+            self.soma
+        )
