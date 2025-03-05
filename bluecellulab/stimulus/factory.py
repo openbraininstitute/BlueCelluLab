@@ -442,7 +442,6 @@ class StimulusFactory:
 
         raise TypeError("You have to provide either `amplitude` or `threshold_current` with `amplitude_percent`.")
 
-
     def ornstein_uhlenbeck(
         self,
         pre_delay: float,

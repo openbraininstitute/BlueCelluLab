@@ -501,5 +501,4 @@ class InjectableMixin:
             stimulus.delay,
             stimulus.duration,
             stimulus.frequency,
-            self.soma
         )

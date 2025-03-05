@@ -206,6 +206,7 @@ class TestStimulusFactory:
 
         assert any("Relative Ornstein-Uhlenbeck signal is mostly zero." in record.message for record in caplog.records)
 
+
 class TestSinusoidalStimulus:
 
     def setup_method(self):

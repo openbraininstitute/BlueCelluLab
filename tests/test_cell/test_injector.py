@@ -470,6 +470,7 @@ class TestInjector:
             )
             self.cell.add_sinusoidal(unsupported_stimulus)
 
+
 class TestInjectorSonata:
     """Test the InjectableMixin on local Sonata circuit."""
 

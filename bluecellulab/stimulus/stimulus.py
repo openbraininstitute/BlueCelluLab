@@ -369,7 +369,8 @@ class SinusoidalWave(Stimulus):
         stim.sin(self.frequency, 0.0, self.dt)  # Generate sinusoidal wave using NEURON
         stim.mul(self.amplitude)  # Scale by amplitude
 
-        return  np.array(tvec.to_python()),  np.array(stim.to_python())
+        return np.array(tvec.to_python()), np.array(stim.to_python())
+
 
 class Step(Stimulus):
 
@@ -810,6 +811,7 @@ class StepNoise(Stimulus):
             sigma=sigma,
             seed=seed,
         )
+
 
 class Sinusoidal(Stimulus):
     """Factory-compatible Sinusoidal Stimulus."""
