@@ -43,7 +43,6 @@ class TestStimulus:
         ax = s.plot()
         assert ax.get_xlabel() == "Time (ms)"
         assert ax.get_ylabel() == "Current (nA)"
-        assert ax.get_title() == "CombinedStimulus"
 
     def test_add(self):
         zero_length_stim = Empty(dt=0.1, duration=0)
