@@ -205,3 +205,107 @@ class TestStimulusFactory:
             self.factory.ornstein_uhlenbeck(pre_delay=100, post_delay=100, duration=1000, tau=20, mean_percent=-80.0, sigma_percent=20.0, threshold_current=0.8, seed=42)
 
         assert any("Relative Ornstein-Uhlenbeck signal is mostly zero." in record.message for record in caplog.records)
+
+class TestSinusoidalStimulus:
+
+    def setup_method(self):
+        self.dt = 0.025  # Default dt for sinusoidal stimulus
+        self.factory = StimulusFactory(dt=self.dt)
+
+    def test_create_sinusoidal_amplitude_based(self):
+        """Test sinusoidal stimulus with absolute amplitude."""
+        duration = 500.0  # ms
+        frequency = 5.0  # Hz
+        amplitude = 0.2  # nA
+
+        s = self.factory.sinusoidal(
+            pre_delay=100.0,
+            post_delay=100.0,
+            duration=duration,
+            frequency=frequency,
+            amplitude=amplitude,
+        )
+
+        assert isinstance(s, CombinedStimulus)
+        assert np.all(np.isfinite(s.current))  # Ensure no NaN values
+        assert np.isclose(
+            s.stimulus_time,
+            100 + duration + 100,
+            atol=0.025  # Allow a tolerance equal to dt
+        ), f"Expected {100 + duration + 100} ms, but got {s.stimulus_time} ms"
+        assert np.max(np.abs(s.current)) <= amplitude  # Ensure max amplitude is correct
+
+    def test_create_sinusoidal_threshold_based(self):
+        """Test sinusoidal stimulus with threshold-based amplitude."""
+        duration = 500.0  # ms
+        frequency = 5.0  # Hz
+        threshold_current = 0.8  # Reference threshold
+        amplitude_percent = 50.0  # 50% of threshold current
+
+        s = self.factory.sinusoidal(
+            pre_delay=100.0,
+            post_delay=100.0,
+            duration=duration,
+            frequency=frequency,
+            amplitude_percent=amplitude_percent,
+            threshold_current=threshold_current,
+        )
+
+        expected_amplitude = (amplitude_percent / 100) * threshold_current
+        assert isinstance(s, CombinedStimulus)
+        assert np.all(np.isfinite(s.current))  # Ensure no NaN values
+        assert np.isclose(
+            s.stimulus_time,
+            100 + duration + 100,
+            atol=0.025  # Allow a tolerance equal to dt
+        ), f"Expected {100 + duration + 100} ms, but got {s.stimulus_time} ms"
+        assert np.max(np.abs(s.current)) <= expected_amplitude  # Ensure amplitude scaling is correct
+
+    def test_create_sinusoidal_invalid_parameters(self):
+        """Test invalid parameter combinations for sinusoidal stimulus."""
+        with pytest.raises(TypeError, match="You have to provide either `amplitude` or `threshold_current` with `amplitude_percent`."):
+            self.factory.sinusoidal(pre_delay=100, post_delay=100, duration=500, frequency=5)
+
+        with pytest.raises(TypeError, match="You have to provide either `amplitude` or `threshold_current` with `amplitude_percent`."):
+            self.factory.sinusoidal(pre_delay=100, post_delay=100, duration=500, frequency=5, amplitude_percent=50.0)
+
+        with pytest.raises(TypeError, match="You have to provide either `amplitude` or `threshold_current` with `amplitude_percent`."):
+            self.factory.sinusoidal(pre_delay=100, post_delay=100, duration=500, frequency=5, threshold_current=0.8)
+
+    def test_sinusoidal_zero_amplitude(self):
+        """Ensure a zero-amplitude sinusoidal stimulus results in a flat signal."""
+        s = self.factory.sinusoidal(
+            pre_delay=100.0,
+            post_delay=100.0,
+            duration=500.0,
+            frequency=5.0,
+            amplitude=0.0,
+        )
+
+        assert isinstance(s, CombinedStimulus)
+        assert np.all(s.current == 0.0)  # Ensure it remains zero throughout
+
+    def test_sinusoidal_waveform_shape(self):
+        """Validate the sinusoidal waveform shape."""
+        s = self.factory.sinusoidal(
+            pre_delay=0.0,
+            post_delay=0.0,
+            duration=1000.0,  # 1 second
+            frequency=10.0,  # 10 Hz
+            amplitude=0.5,  # nA
+        )
+
+        time_values = s.time
+        current_values = s.current
+
+        # Check zero-crossings occur at expected frequency
+        zero_crossings = np.where(np.diff(np.sign(current_values)))[0]
+        assert len(zero_crossings) > 1, "Not enough zero crossings detected."
+
+        # Compute estimated period using zero crossings
+        estimated_period = np.mean(np.diff(time_values[zero_crossings])) * 2  # Full period
+        expected_period = (1 / 10.0) * 1000  # Convert Hz to ms
+
+        assert np.isclose(estimated_period, expected_period, rtol=0.3), (
+            f"Estimated period {estimated_period} ms does not match expected {expected_period} ms"
+        )
