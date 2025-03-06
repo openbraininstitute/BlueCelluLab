@@ -263,7 +263,7 @@ class InjectableMixin:
 
     def add_replay_linear(self, stimulus: Linear):
         """Add a linear stimulus."""
-        tstim = neuron.h.TStim(0.5, sec=self.soma)
+        tstim = neuron.h.TStim(0.5, sec=self.soma)  # type: ignore
 
         tstim.ramp(
             0.0,
@@ -274,15 +274,15 @@ class InjectableMixin:
             0.0,
             0.0
         )
-        self.persistent.append(tstim)
+        self.persistent.append(tstim)  # type: ignore
 
         return tstim
 
     def add_replay_relativelinear(self, stimulus: RelativeLinear):
         """Add a relative linear stimulus."""
-        tstim = neuron.h.TStim(0.5, sec=self.soma)
-        amp_start = stimulus.percent_start / 100.0 * self.threshold
-        amp_end = stimulus.percent_end / 100.0 * self.threshold
+        tstim = neuron.h.TStim(0.5, sec=self.soma)  # type: ignore
+        amp_start = stimulus.percent_start / 100.0 * self.threshold  # type: ignore
+        amp_end = stimulus.percent_end / 100.0 * self.threshold  # type: ignore
 
         tstim.ramp(
             0.0,
@@ -293,7 +293,7 @@ class InjectableMixin:
             0.0,
             0.0
         )
-        self.persistent.append(tstim)
+        self.persistent.append(tstim)  # type: ignore
 
         return tstim
 
