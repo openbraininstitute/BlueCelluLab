@@ -42,6 +42,7 @@ class Pattern(Enum):
     NOISE = "noise"
     HYPERPOLARIZING = "hyperpolarizing"
     PULSE = "pulse"
+    LINEAR = "linear"
     RELATIVE_LINEAR = "relative_linear"
     SYNAPSE_REPLAY = "synapse_replay"
     SHOT_NOISE = "shot_noise"
@@ -57,6 +58,8 @@ class Pattern(Enum):
             return Pattern.HYPERPOLARIZING
         elif pattern == "Pulse":
             return Pattern.PULSE
+        elif pattern == "Linear":
+            return Pattern.LINEAR
         elif pattern == "RelativeLinear":
             return Pattern.RELATIVE_LINEAR
         elif pattern == "SynapseReplay":
@@ -134,6 +137,14 @@ class Stimulus:
                 amp_start=stimulus_entry["AmpStart"],
                 width=stimulus_entry["Width"],
                 frequency=stimulus_entry["Frequency"],
+            )
+        elif pattern == Pattern.LINEAR:
+            return Linear(
+                target=stimulus_entry["Target"],
+                delay=stimulus_entry["Delay"],
+                duration=stimulus_entry["Duration"],
+                amp_start=stimulus_entry["AmpStart"],
+                amp_end=stimulus_entry["AmpEnd"],
             )
         elif pattern == Pattern.RELATIVE_LINEAR:
             return RelativeLinear(
@@ -231,6 +242,14 @@ class Stimulus:
                 width=stimulus_entry["width"],
                 frequency=stimulus_entry["frequency"],
             )
+        elif pattern == Pattern.LINEAR:
+            return Linear(
+                target=stimulus_entry["Target"],
+                delay=stimulus_entry["Delay"],
+                duration=stimulus_entry["Duration"],
+                amp_start=stimulus_entry["AmpStart"],
+                amp_end=stimulus_entry["AmpEnd"],
+            )
         elif pattern == Pattern.RELATIVE_LINEAR:
             return RelativeLinear(
                 target=stimulus_entry["node_set"],
@@ -322,6 +341,12 @@ class Pulse(Stimulus):
     amp_start: float
     width: float
     frequency: float
+
+
+@dataclass(frozen=True, config=dict(extra="forbid"))
+class Linear(Stimulus):
+    amp_start: float
+    amp_end: float
 
 
 @dataclass(frozen=True, config=dict(extra="forbid"))
