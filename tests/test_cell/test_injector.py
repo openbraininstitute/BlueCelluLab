@@ -216,12 +216,25 @@ class TestInjector:
 
     def test_add_replay_relativelinear(self):
         """Unit test for add_replay_relativelinear."""
+
+        # If percent_start and percent_end are equal, the stimulus behaves like a step
         stimulus = RelativeLinear(
             target="single-cell",
-            delay=4, duration=20, percent_start=60)
+            delay=4, duration=20, percent_start=60, percent_end=60)
         tstim = self.cell.add_replay_relativelinear(stimulus)
-        assert tstim.stim.to_python() == [0.0, 0.1104372, 0.1104372, 0.0, 0.0]
-        assert tstim.tvec.to_python() == [4.0, 4.0, 24.0, 24.0, 24.0]
+
+        percent_60 = 0.1104372  # Amplitude at 60%
+        assert tstim.stim.to_python() == [0.0, 0.0, percent_60, percent_60, 0.0, 0.0]
+        assert tstim.tvec.to_python() == [0.0, 4.0, 4.0, 24.0, 24.0, 24.0]
+
+        # ramp from 60% to 100%
+        stimulus = RelativeLinear(
+            target="single-cell",
+            delay=0, duration=20, percent_start=60, percent_end=100)
+        tstim = self.cell.add_replay_relativelinear(stimulus)
+        percent_100 = (100 / 60) * percent_60
+        assert tstim.stim.to_python() == [0.0, 0.0, percent_60, percent_100, 0.0, 0.0]
+        assert tstim.tvec.to_python() == [0.0, 0.0, 0.0, 20.0, 20.0, 20.0]
 
     def test_get_ornstein_uhlenbeck_rand(self):
         """Unit test to check RNG generated for ornstein_uhlenbeck."""

@@ -262,8 +262,18 @@ class InjectableMixin:
     def add_replay_relativelinear(self, stimulus):
         """Add a relative linear stimulus."""
         tstim = neuron.h.TStim(0.5, sec=self.soma)
-        amp = stimulus.percent_start / 100.0 * self.threshold
-        tstim.pulse(stimulus.delay, stimulus.duration, amp)
+        amp_start = stimulus.percent_start / 100.0 * self.threshold
+        amp_end = stimulus.percent_end / 100.0 * self.threshold
+
+        tstim.ramp(
+            0.0,
+            stimulus.delay,       # Time when the ramp starts
+            amp_start,      # Initial amplitude (amp_start)
+            amp_end,       # Final amplitude (amp_end)
+            stimulus.duration,    # Duration of the ramp
+            0.0,
+            0.0
+        )
         self.persistent.append(tstim)
 
         return tstim

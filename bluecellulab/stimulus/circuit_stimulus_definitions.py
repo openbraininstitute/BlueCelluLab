@@ -141,6 +141,7 @@ class Stimulus:
                 delay=stimulus_entry["Delay"],
                 duration=stimulus_entry["Duration"],
                 percent_start=stimulus_entry["PercentStart"],
+                percent_end=stimulus_entry["PercentEnd"],
             )
         elif pattern == Pattern.SYNAPSE_REPLAY:
             warnings.warn("Ignoring syanpse replay stimulus as it is not supported")
@@ -236,6 +237,7 @@ class Stimulus:
                 delay=stimulus_entry["delay"],
                 duration=stimulus_entry["duration"],
                 percent_start=stimulus_entry["percent_start"],
+                percent_end=stimulus_entry["percent_end"],
             )
         elif pattern == Pattern.SYNAPSE_REPLAY:
             return SynapseReplay(
@@ -325,6 +327,7 @@ class Pulse(Stimulus):
 @dataclass(frozen=True, config=dict(extra="forbid"))
 class RelativeLinear(Stimulus):
     percent_start: float
+    percent_end: float
 
 
 @dataclass(frozen=True, config=dict(extra="forbid"))
