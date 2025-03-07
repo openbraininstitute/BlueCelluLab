@@ -25,7 +25,7 @@ from bluecellulab.circuit.config.sections import (
     ConnectionOverrides,
     MechanismConditions,
 )
-from bluecellulab.stimulus.circuit_stimulus_definitions import Noise, Hyperpolarizing
+from bluecellulab.stimulus.circuit_stimulus_definitions import Noise, Hyperpolarizing, Linear, Pulse, RelativeLinear, ShotNoise, RelativeShotNoise, OrnsteinUhlenbeck, RelativeOrnsteinUhlenbeck
 from tests.helpers.os_utils import cwd
 
 
@@ -74,10 +74,24 @@ def test_get_all_stimuli_entries():
     sim = SonataSimulationConfig(multi_input_conf_path)
     noise_stim = Noise("Mosaic_A", 10.0, 20.0, 200.0, 0.001)
     hyper_stim = Hyperpolarizing("Mosaic_A", 0.0, 50.0)
+    pulse_stim = Pulse("Mosaic_A", 10.0, 20.0, 0.1, 25, 10)
+    linear_stim = Linear("Mosaic_A", 10.0, 20.0, 0.1, 0.4)
+    relative_linear_stim = RelativeLinear("Mosaic_A", 10.0, 20.0, 50, 100)
+    shot_noise_stim = ShotNoise("Mosaic_A", 10.0, 20, 2, 5, 10, 0.1, 0.02, 0.25, 42)
+    relative_shot_noise_stim = RelativeShotNoise("Mosaic_A", 10.0, 20, 2, 5, 50, 10, 0.5, 0.25, 42)
+    ornstein_uhlenbeck_stim = OrnsteinUhlenbeck("Mosaic_A", 10.0, 20.0, 5, 0.1, 0, 0.25, 42)
+    relative_ornstein_uhlenbeck_stim = RelativeOrnsteinUhlenbeck("Mosaic_A", 10.0, 20.0, 5, 50, 10, 0.25, 42)
     entries = sim.get_all_stimuli_entries()
-    assert len(entries) == 2
-    assert entries[0] == noise_stim
-    assert entries[1] == hyper_stim
+    assert len(entries) == 9
+    assert entries[0] == linear_stim
+    assert entries[1] == ornstein_uhlenbeck_stim
+    assert entries[2] == pulse_stim
+    assert entries[3] == relative_linear_stim
+    assert entries[4] == relative_ornstein_uhlenbeck_stim
+    assert entries[5] == relative_shot_noise_stim
+    assert entries[6] == shot_noise_stim
+    assert entries[7] == noise_stim
+    assert entries[8] == hyper_stim
 
 
 def test_condition_parameters():
