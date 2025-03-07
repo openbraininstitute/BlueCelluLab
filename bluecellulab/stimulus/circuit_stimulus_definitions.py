@@ -83,6 +83,8 @@ class Pattern(Enum):
             return Pattern.HYPERPOLARIZING
         elif pattern == "pulse":
             return Pattern.PULSE
+        elif pattern == "linear":
+            return Pattern.LINEAR
         elif pattern == "relative_linear":
             return Pattern.RELATIVE_LINEAR
         elif pattern == "synapse_replay":
@@ -244,11 +246,11 @@ class Stimulus:
             )
         elif pattern == Pattern.LINEAR:
             return Linear(
-                target=stimulus_entry["Target"],
-                delay=stimulus_entry["Delay"],
-                duration=stimulus_entry["Duration"],
-                amp_start=stimulus_entry["AmpStart"],
-                amp_end=stimulus_entry["AmpEnd"],
+                target=stimulus_entry["node_set"],
+                delay=stimulus_entry["delay"],
+                duration=stimulus_entry["duration"],
+                amp_start=stimulus_entry["amp_start"],
+                amp_end=stimulus_entry["amp_end"],
             )
         elif pattern == Pattern.RELATIVE_LINEAR:
             return RelativeLinear(
