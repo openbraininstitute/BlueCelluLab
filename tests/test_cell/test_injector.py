@@ -37,6 +37,7 @@ from bluecellulab.stimulus.circuit_stimulus_definitions import (
     ShotNoise,
     RelativeShotNoise,
     ClampMode,
+    Sinusoidal,
 )
 from bluecellulab import RNGSettings
 from bluecellulab.exceptions import BluecellulabError
@@ -58,7 +59,7 @@ class TestInjector:
         cls.sim = bluecellulab.Simulation()
         cls.sim.add_cell(cls.cell)
 
-    def test_inject_pulse(self):
+    def test_add_pulse(self):
         """Test the pulse train injection."""
         stimulus = Pulse(
             target="single-cell",
@@ -84,13 +85,13 @@ class TestInjector:
             )
             self.cell.add_pulse(unsupported_stimulus)
 
-    def test_inject_step(self):
+    def test_add_step(self):
         """Test the step current injection."""
         tstim = self.cell.add_step(start_time=2.0, stop_time=6.0, level=1.0)
         assert tstim.stim.to_python() == [0.0, 1.0, 1.0, 0.0, 0.0]
         assert tstim.tvec.to_python() == [2.0, 2.0, 6.0, 6.0, 6.0]
 
-    def test_inject_ramp(self):
+    def test_add_ramp(self):
         """Test the ramp injection."""
         tstim = self.cell.add_ramp(start_time=2.0, stop_time=6.0, start_level=0.5, stop_level=1)
         assert tstim.stim.to_python() == [0.0, 0.0, 0.5, 1.0, 0.0, 0.0]
@@ -452,6 +453,54 @@ class TestInjector:
         assert tstim.stim.as_numpy()[195:205] == approx(np.array(
             [11.99074843, 11.99407872, 11.99666916, 11.99851959, 11.99962989,
              12., 11.99962989, 11.99851959, 11.99666916, 11.99407872]))
+
+    def test_add_sinusoidal(self):
+        """Test the sinusoidal train injection."""
+        stimulus = Sinusoidal(
+            target="single-cell",
+            delay=0,
+            duration=250,
+            amp_start=0.25,
+            frequency=10,
+        )
+        tstim = self.cell.add_sinusoidal(stimulus)
+
+        time_values = np.array(tstim.tvec.to_python())
+        current_values = np.array(tstim.stim.to_python())
+        assert len(time_values) == len(current_values), "Time and current arrays must have the same length."
+        assert len(time_values) > 0, "Time vector should not be empty."
+
+        # Check amplitude bounds
+        assert np.isclose(current_values.max(), stimulus.amp_start, atol=0.1), "Max amplitude mismatch."
+        assert np.isclose(current_values.min(), -stimulus.amp_start, atol=0.1), "Min amplitude mismatch."
+
+        # Ensure sinusoid starts at zero (or close)
+        assert np.isclose(current_values[0], 0, atol=0.1), "Waveform should start at zero."
+
+        # Ensure the sinusoid oscillates (crosses zero multiple times)
+        zero_crossings = np.where(np.diff(np.sign(current_values)))[0]
+        # Ignore first and last zero crossing (due to TStim behavior)
+        zero_crossings = zero_crossings[1:-1]
+        assert len(zero_crossings) > 2, "Sinusoid should oscillate."
+
+        # SIMPLE FREQUENCY VALIDATION
+        expected_period = 1 / stimulus.frequency * 1000
+        # Compute estimated period using half-cycle crossings
+        half_periods = np.diff(time_values[zero_crossings])  # Time difference between crossings
+        estimated_period = np.mean(half_periods) * 2
+        assert np.isclose(estimated_period, expected_period, rtol=0.1), \
+            f"Estimated period {estimated_period:.2f} ms does not match expected {expected_period:.2f} ms"
+
+        with raises(ValidationError):
+            unsupported_stimulus = Sinusoidal(
+                target="single-cell",
+                delay=2,
+                duration=20,
+                amp_start=4,
+                frequency=5,
+                offset=1,
+            )
+            self.cell.add_sinusoidal(unsupported_stimulus)
 
 
 class TestInjectorSonata:

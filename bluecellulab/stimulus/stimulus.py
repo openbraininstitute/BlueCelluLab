@@ -18,6 +18,7 @@ from abc import ABC, abstractmethod
 from typing import Optional
 import logging
 import matplotlib.pyplot as plt
+import neuron
 import numpy as np
 from bluecellulab.cell.stimuli_generator import get_relative_shotnoise_params
 from bluecellulab.exceptions import BluecellulabError
@@ -57,7 +58,6 @@ class Stimulus(ABC):
         ax.plot(self.time, self.current, **kwargs)
         ax.set_xlabel("Time (ms)")
         ax.set_ylabel("Current (nA)")
-        ax.set_title(self.__class__.__name__)
         return ax
 
     def __add__(self, other: Stimulus) -> CombinedStimulus:
@@ -203,7 +203,6 @@ class OUProcess(Stimulus):
         """Generates an Ornstein-Uhlenbeck noise signal."""
         from bluecellulab.cell.stimuli_generator import gen_ornstein_uhlenbeck
         from bluecellulab.rngsettings import RNGSettings
-        import neuron
 
         rng_settings = RNGSettings.get_instance()
         rng = neuron.h.Random()
@@ -251,7 +250,6 @@ class ShotNoiseProcess(Stimulus):
         """Generates the shot noise time and current vectors."""
         from bluecellulab.cell.stimuli_generator import gen_shotnoise_signal
         from bluecellulab.rngsettings import RNGSettings
-        import neuron
 
         rng_settings = RNGSettings.get_instance()
         rng = neuron.h.Random()
@@ -310,12 +308,11 @@ class StepNoiseProcess(Stimulus):
     def _generate_step_noise(self):
         """Generates the step noise time and current vectors using NEURON’s
         random generator."""
-        from neuron import h
         from bluecellulab.rngsettings import RNGSettings
 
         # Get NEURON RNG settings
         rng_settings = RNGSettings.get_instance()
-        rng = h.Random()
+        rng = neuron.h.Random()
 
         if rng_settings.mode == "Random123":
             seed1, seed2, seed3 = 2997, 19216, self.seed if self.seed else 123
@@ -339,6 +336,37 @@ class StepNoiseProcess(Stimulus):
             time += self.step_interval
 
         return np.array(time_values), np.array(current_values)
+
+
+class SinusoidalWave(Stimulus):
+    """Generates a sinusoidal current wave."""
+
+    def __init__(self, dt: float, duration: float, amplitude: float, frequency: float):
+        super().__init__(dt)
+        self.duration = duration
+        self.amplitude = amplitude
+        self.frequency = frequency
+
+        self._time, self._current = self._generate_sinusoidal_signal()
+
+    @property
+    def time(self) -> np.ndarray:
+        return self._time
+
+    @property
+    def current(self) -> np.ndarray:
+        return self._current
+
+    def _generate_sinusoidal_signal(self):
+        """Generate the sinusoidal waveform."""
+        tvec = neuron.h.Vector()
+        tvec.indgen(0.0, self.duration, self.dt)  # Time points using NEURON
+
+        stim = neuron.h.Vector(len(tvec))
+        stim.sin(self.frequency, 0.0, self.dt)  # Generate sinusoidal wave using NEURON
+        stim.mul(self.amplitude)  # Scale by amplitude
+
+        return np.array(tvec.to_python()), np.array(stim.to_python())
 
 
 class Step(Stimulus):
@@ -779,4 +807,74 @@ class StepNoise(Stimulus):
             mean=mean,
             sigma=sigma,
             seed=seed,
+        )
+
+
+class Sinusoidal(Stimulus):
+    """Factory-compatible Sinusoidal Stimulus."""
+
+    def __init__(self):
+        """Prevents direct instantiation."""
+        raise NotImplementedError(
+            "This class cannot be instantiated directly. "
+            "Please use 'amplitude_based' or 'threshold_based' methods."
+        )
+
+    @classmethod
+    def amplitude_based(
+        cls,
+        dt: float,
+        pre_delay: float,
+        duration: float,
+        post_delay: float,
+        amplitude: float,
+        frequency: float,
+    ) -> CombinedStimulus:
+        """Creates a sinusoidal stimulus with a specified amplitude.
+
+        Args:
+            dt: Time step of the stimulus.
+            pre_delay: Delay before the sinusoidal wave starts.
+            duration: Duration of the sinusoidal signal.
+            post_delay: Delay after the wave ends.
+            amplitude: Amplitude of the sinusoidal wave.
+            frequency: Frequency of the wave in Hz.
+        """
+        return (
+            Empty(dt, duration=pre_delay)
+            + SinusoidalWave(dt, duration, amplitude, frequency)
+            + Empty(dt, duration=post_delay)
+        )
+
+    @classmethod
+    def threshold_based(
+        cls,
+        dt: float,
+        pre_delay: float,
+        duration: float,
+        post_delay: float,
+        frequency: float,
+        threshold_current: float,
+        amplitude_percent: float,
+    ) -> CombinedStimulus:
+        """Creates a sinusoidal stimulus relative to the threshold current.
+
+        Args:
+            dt: Time step of the stimulus.
+            pre_delay: Delay before the sinusoidal wave starts.
+            duration: Duration of the sinusoidal signal.
+            post_delay: Delay after the wave ends.
+            frequency: Frequency of the wave in Hz.
+            threshold_current: Baseline threshold current.
+            amplitude_percent: Amplitude as a percentage of the threshold current.
+        """
+        amplitude = (amplitude_percent / 100) * threshold_current
+
+        return cls.amplitude_based(
+            dt,
+            pre_delay=pre_delay,
+            duration=duration,
+            post_delay=post_delay,
+            amplitude=amplitude,
+            frequency=frequency,
         )

@@ -515,3 +515,12 @@ class InjectableMixin:
         syn.e = e
         self.persistent.append(syn)  # type: ignore
         return syn
+
+    def add_sinusoidal(self, stimulus) -> TStim:
+        """Inject sinusoidal stimulus for replay."""
+        return self.add_sin_current(
+            stimulus.amp_start,
+            stimulus.delay,
+            stimulus.duration,
+            stimulus.frequency,
+        )

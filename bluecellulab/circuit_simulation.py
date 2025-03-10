@@ -139,6 +139,7 @@ class CircuitSimulation:
         pre_spike_trains: None | dict[tuple[str, int], Iterable] | dict[int, Iterable] = None,
         add_shotnoise_stimuli: bool = False,
         add_ornstein_uhlenbeck_stimuli: bool = False,
+        add_sinusoidal_stimuli: bool = False,
         add_linear_stimuli: bool = False,
     ):
         """Instantiate a list of cells.
@@ -210,6 +211,11 @@ class CircuitSimulation:
                             of the simulation config,
                             Setting add_stimuli=True,
                             will automatically set this option to True.
+        add_sinusoidal_stimuli : Process the 'sinusoidal' stimuli
+                            blocks of the simulation config.
+                            Setting add_stimuli=True,
+                            will automatically set this option to
+                            True.
         add_linear_stimuli : Process the 'linear' stimuli
                                 blocks of the simulation config.
                                 Setting add_stimuli=True,
@@ -271,6 +277,7 @@ class CircuitSimulation:
             add_hyperpolarizing_stimuli = True
             add_relativelinear_stimuli = True
             add_pulse_stimuli = True
+            add_sinusoidal_stimuli = True
             add_shotnoise_stimuli = True
             add_ornstein_uhlenbeck_stimuli = True
             add_linear_stimuli = True
@@ -281,6 +288,7 @@ class CircuitSimulation:
                 add_relativelinear_stimuli or \
                 add_shotnoise_stimuli or \
                 add_ornstein_uhlenbeck_stimuli or \
+                add_sinusoidal_stimuli or \
                 add_linear_stimuli:
             self._add_stimuli(
                 add_noise_stimuli=add_noise_stimuli,
@@ -289,6 +297,7 @@ class CircuitSimulation:
                 add_pulse_stimuli=add_pulse_stimuli,
                 add_shotnoise_stimuli=add_shotnoise_stimuli,
                 add_ornstein_uhlenbeck_stimuli=add_ornstein_uhlenbeck_stimuli,
+                add_sinusoidal_stimuli=add_sinusoidal_stimuli,
                 add_linear_stimuli=add_linear_stimuli
             )
 
@@ -298,6 +307,7 @@ class CircuitSimulation:
                      add_pulse_stimuli=False,
                      add_shotnoise_stimuli=False,
                      add_ornstein_uhlenbeck_stimuli=False,
+                     add_sinusoidal_stimuli=False,
                      add_linear_stimuli=False
                      ):
         """Instantiate all the stimuli."""
@@ -352,6 +362,9 @@ class CircuitSimulation:
                         self.cells[cell_id].add_relative_ornstein_uhlenbeck(
                             self.cells[cell_id].soma, 0.5, stimulus,
                             stim_count=ornstein_uhlenbeck_stim_count)
+                elif isinstance(stimulus, circuit_stimulus_definitions.Sinusoidal):
+                    if add_sinusoidal_stimuli:
+                        self.cells[cell_id].add_sinusoidal(stimulus)
                 elif isinstance(stimulus, circuit_stimulus_definitions.SynapseReplay):  # sonata only
                     if self.circuit_access.target_contains_cell(
                         stimulus.target, cell_id

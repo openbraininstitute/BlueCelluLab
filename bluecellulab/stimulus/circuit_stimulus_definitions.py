@@ -49,6 +49,7 @@ class Pattern(Enum):
     RELATIVE_SHOT_NOISE = "relative_shot_noise"
     ORNSTEIN_UHLENBECK = "ornstein_uhlenbeck"
     RELATIVE_ORNSTEIN_UHLENBECK = "relative_ornstein_uhlenbeck"
+    SINUSOIDAL = "sinusoidal"
 
     @classmethod
     def from_blueconfig(cls, pattern: str) -> Pattern:
@@ -95,6 +96,8 @@ class Pattern(Enum):
             return Pattern.ORNSTEIN_UHLENBECK
         elif pattern == "relative_ornstein_uhlenbeck":
             return Pattern.RELATIVE_ORNSTEIN_UHLENBECK
+        elif pattern == "sinusoidal":
+            return Pattern.SINUSOIDAL
         else:
             raise ValueError(f"Unknown pattern {pattern}")
 
@@ -313,6 +316,14 @@ class Stimulus:
                 mode=ClampMode(stimulus_entry.get("input_type", "current_clamp").lower()),
                 reversal=stimulus_entry.get("reversal", 0.0)
             )
+        elif pattern == Pattern.SINUSOIDAL:
+            return Sinusoidal(
+                target=stimulus_entry["node_set"],
+                delay=stimulus_entry["delay"],
+                duration=stimulus_entry["duration"],
+                amp_start=stimulus_entry["amp_start"],
+                frequency=stimulus_entry["frequency"],
+            )
         else:
             raise ValueError(f"Unknown pattern {pattern}")
 
@@ -436,3 +447,9 @@ class RelativeOrnsteinUhlenbeck(Stimulus):
     seed: Optional[int] = None
     mode: ClampMode = ClampMode.CURRENT
     reversal: float = 0.0
+
+
+@dataclass(frozen=True, config=dict(extra="forbid"))
+class Sinusoidal(Stimulus):
+    amp_start: float
+    frequency: float
