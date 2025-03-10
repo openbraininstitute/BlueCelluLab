@@ -203,7 +203,6 @@ class OUProcess(Stimulus):
         """Generates an Ornstein-Uhlenbeck noise signal."""
         from bluecellulab.cell.stimuli_generator import gen_ornstein_uhlenbeck
         from bluecellulab.rngsettings import RNGSettings
-        import neuron
 
         rng_settings = RNGSettings.get_instance()
         rng = neuron.h.Random()
@@ -251,7 +250,6 @@ class ShotNoiseProcess(Stimulus):
         """Generates the shot noise time and current vectors."""
         from bluecellulab.cell.stimuli_generator import gen_shotnoise_signal
         from bluecellulab.rngsettings import RNGSettings
-        import neuron
 
         rng_settings = RNGSettings.get_instance()
         rng = neuron.h.Random()
@@ -310,12 +308,11 @@ class StepNoiseProcess(Stimulus):
     def _generate_step_noise(self):
         """Generates the step noise time and current vectors using NEURON’s
         random generator."""
-        from neuron import h
         from bluecellulab.rngsettings import RNGSettings
 
         # Get NEURON RNG settings
         rng_settings = RNGSettings.get_instance()
-        rng = h.Random()
+        rng = neuron.h.Random()
 
         if rng_settings.mode == "Random123":
             seed1, seed2, seed3 = 2997, 19216, self.seed if self.seed else 123
