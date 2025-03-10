@@ -152,8 +152,9 @@ class SonataCircuitAccess:
 
                 # make multiindex
                 synapses = synapses.reset_index(drop=True)
+                synapse_ids = list(synapses.index)
                 synapses.index = pd.MultiIndex.from_tuples(
-                    zip([edge_population_name] * len(synapses), synapses.index),
+                    [(edge_population_name, syn_id) for syn_id in synapse_ids],
                     names=["edge_name", "synapse_id"],
                 )
 
