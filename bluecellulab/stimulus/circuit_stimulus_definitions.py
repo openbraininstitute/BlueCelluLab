@@ -42,6 +42,7 @@ class Pattern(Enum):
     NOISE = "noise"
     HYPERPOLARIZING = "hyperpolarizing"
     PULSE = "pulse"
+    LINEAR = "linear"
     RELATIVE_LINEAR = "relative_linear"
     SYNAPSE_REPLAY = "synapse_replay"
     SHOT_NOISE = "shot_noise"
@@ -81,6 +82,8 @@ class Pattern(Enum):
             return Pattern.HYPERPOLARIZING
         elif pattern == "pulse":
             return Pattern.PULSE
+        elif pattern == "linear":
+            return Pattern.LINEAR
         elif pattern == "relative_linear":
             return Pattern.RELATIVE_LINEAR
         elif pattern == "synapse_replay":
@@ -144,6 +147,7 @@ class Stimulus:
                 delay=stimulus_entry["Delay"],
                 duration=stimulus_entry["Duration"],
                 percent_start=stimulus_entry["PercentStart"],
+                percent_end=stimulus_entry["PercentEnd"],
             )
         elif pattern == Pattern.SYNAPSE_REPLAY:
             warnings.warn("Ignoring syanpse replay stimulus as it is not supported")
@@ -233,12 +237,21 @@ class Stimulus:
                 width=stimulus_entry["width"],
                 frequency=stimulus_entry["frequency"],
             )
+        elif pattern == Pattern.LINEAR:
+            return Linear(
+                target=stimulus_entry["node_set"],
+                delay=stimulus_entry["delay"],
+                duration=stimulus_entry["duration"],
+                amp_start=stimulus_entry["amp_start"],
+                amp_end=stimulus_entry["amp_end"],
+            )
         elif pattern == Pattern.RELATIVE_LINEAR:
             return RelativeLinear(
                 target=stimulus_entry["node_set"],
                 delay=stimulus_entry["delay"],
                 duration=stimulus_entry["duration"],
                 percent_start=stimulus_entry["percent_start"],
+                percent_end=stimulus_entry["percent_end"],
             )
         elif pattern == Pattern.SYNAPSE_REPLAY:
             return SynapseReplay(
@@ -334,8 +347,15 @@ class Pulse(Stimulus):
 
 
 @dataclass(frozen=True, config=dict(extra="forbid"))
+class Linear(Stimulus):
+    amp_start: float
+    amp_end: float
+
+
+@dataclass(frozen=True, config=dict(extra="forbid"))
 class RelativeLinear(Stimulus):
     percent_start: float
+    percent_end: float
 
 
 @dataclass(frozen=True, config=dict(extra="forbid"))

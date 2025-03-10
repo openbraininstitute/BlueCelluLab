@@ -30,6 +30,8 @@ from bluecellulab.exceptions import BluecellulabError
 from bluecellulab.rngsettings import RNGSettings
 from bluecellulab.stimulus.circuit_stimulus_definitions import (
     ClampMode,
+    Linear,
+    RelativeLinear,
     Hyperpolarizing,
     Noise,
     OrnsteinUhlenbeck,
@@ -259,12 +261,32 @@ class InjectableMixin:
         self.persistent.append(tstim)  # type: ignore
         return tstim
 
-    def add_replay_relativelinear(self, stimulus):
+    def add_replay_linear(self, stimulus: Linear):
+        """Add a linear stimulus."""
+
+        return self.add_ramp(
+            stimulus.delay,
+            stimulus.delay + stimulus.duration,
+            stimulus.amp_start,
+            stimulus.amp_end
+        )
+
+    def add_replay_relativelinear(self, stimulus: RelativeLinear):
         """Add a relative linear stimulus."""
-        tstim = neuron.h.TStim(0.5, sec=self.soma)
-        amp = stimulus.percent_start / 100.0 * self.threshold
-        tstim.pulse(stimulus.delay, stimulus.duration, amp)
-        self.persistent.append(tstim)
+        tstim = neuron.h.TStim(0.5, sec=self.soma)  # type: ignore
+        amp_start = stimulus.percent_start / 100.0 * self.threshold  # type: ignore
+        amp_end = stimulus.percent_end / 100.0 * self.threshold  # type: ignore
+
+        tstim.ramp(
+            0.0,
+            stimulus.delay,       # Time when the ramp starts
+            amp_start,      # Initial amplitude (amp_start)
+            amp_end,       # Final amplitude (amp_end)
+            stimulus.duration,    # Duration of the ramp
+            0.0,
+            0.0
+        )
+        self.persistent.append(tstim)  # type: ignore
 
         return tstim
 

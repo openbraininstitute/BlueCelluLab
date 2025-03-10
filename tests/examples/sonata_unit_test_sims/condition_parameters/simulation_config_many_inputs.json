@@ -35,6 +35,15 @@
       "spikes_sort_order": "by_time"
     },
     "inputs": {
+      "Threshold":{
+        "module": "noise",
+        "mean_percent": 200,
+        "variance": 0.001,
+        "delay": 10.0,
+        "duration": 20.0,
+        "input_type": "current_clamp",
+        "node_set": "Mosaic_A"
+      },
       "hypamp_mosaic": {
         "module": "hyperpolarizing",
         "input_type": "current_clamp",
@@ -42,12 +51,78 @@
         "duration": 50.0,
         "node_set": "Mosaic_A"
       },
-      "Threshold":{
-        "module": "noise",
-        "mean_percent": 200,
-        "variance": 0.001,
+      "Pulse":{
+        "module": "pulse",
         "delay": 10.0,
         "duration": 20.0,
+        "amp_start": 0.1,
+        "width": 25,
+        "frequency": 10,
+        "input_type": "current_clamp",
+        "node_set": "Mosaic_A"
+      },
+      "Linear":{
+        "module": "linear",
+        "delay": 10.0,
+        "duration": 20.0,
+        "amp_start": 0.1,
+        "amp_end": 0.4,
+        "input_type": "current_clamp",
+        "node_set": "Mosaic_A"
+      },
+      "RelativeLinear":{
+        "module": "relative_linear",
+        "delay": 10.0,
+        "duration": 20.0,
+        "percent_start": 50,
+        "percent_end": 100,
+        "input_type": "current_clamp",
+        "node_set": "Mosaic_A"
+      },
+      "ShotNoise":{
+        "module": "shot_noise",
+        "delay": 10.0,
+        "duration": 20.0,
+        "rise_time": 2,
+        "decay_time": 5,
+        "rate": 10.0,
+        "amp_mean": 0.1,
+        "amp_var": 0.02,
+        "random_seed": 42,
+        "input_type": "current_clamp",
+        "node_set": "Mosaic_A"
+      },
+      "RelativeShotNoise":{
+        "module": "relative_shot_noise",
+        "delay": 10.0,
+        "duration": 20.0,
+        "rise_time": 2,
+        "decay_time": 5,
+        "mean_percent": 50,
+        "sd_percent": 10,
+        "random_seed": 42,
+        "input_type": "current_clamp",
+        "node_set": "Mosaic_A"
+      },
+      "OrnsteinUhlenbeck":{
+        "module": "ornstein_uhlenbeck",
+        "delay": 10.0,
+        "duration": 20.0,
+        "tau": 5,
+        "sigma": 0.1,
+        "mean": 0,
+        "random_seed": 42,
+        "input_type": "current_clamp",
+        "node_set": "Mosaic_A"
+      },
+      "RelativeOrnsteinUhlenbeck":{
+        "module": "relative_ornstein_uhlenbeck",
+        "delay": 10.0,
+        "duration": 20.0,
+        "tau": 5,
+        "sd_percent": 10,
+        "mean_percent": 50,
+        "random_seed": 42,
         "input_type": "current_clamp",
         "node_set": "Mosaic_A"
       }
@@ -63,7 +138,6 @@
         "sections": "soma",
         "file_name": "soma",
         "compartments": "center"
-      } 
+      }
     }
   }
-  
