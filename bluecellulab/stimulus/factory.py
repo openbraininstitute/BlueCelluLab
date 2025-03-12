@@ -16,7 +16,7 @@
 from __future__ import annotations
 from typing import Optional
 import logging
-from bluecellulab.stimulus.stimulus import DelayedZap, Empty, Ramp, Slope, Step, StepNoise, Stimulus, OrnsteinUhlenbeck, ShotNoise, Sinusoidal
+from bluecellulab.stimulus.stimulus import DelayedZap, Empty, Ramp, Slope, Step, StepNoise, Stimulus, OrnsteinUhlenbeck, ShotNoise, Sinusoidal, Pulse
 from bluecellulab.stimulus.circuit_stimulus_definitions import Stimulus as CircuitStimulus
 
 logger = logging.getLogger(__name__)
@@ -678,6 +678,39 @@ class StimulusFactory:
 
         raise TypeError("You must provide either `mean` and `sigma`, or `threshold_current` and `mean_percent` and `sigma_percent`  with percentage values.")
 
-    def from_sonata(cls, circuit_stimulus: CircuitStimulus):
-        """Convert a SONATA stimulus into a factory-based stimulus."""
-        raise ValueError(f"Unsupported circuit stimulus type: {type(circuit_stimulus)}")
+    def pulse(
+        self,
+        threshold_current: Optional[float] = None,
+        threshold_percentage: Optional[float] = 200.0,
+        amplitude: Optional[float] = None,
+        pre_delay: float = 250.0,
+        duration: float = 1000.0,
+        post_delay: float = 250.0,
+        frequency: float = 10.0,
+        width: float = 5.0,
+    ) -> Stimulus:
+        """Creates a pulse stimulus.
+
+        Args:
+            threshold_current: The threshold current of the Cell.
+            threshold_percentage: Percentage of desired threshold_current amplification.
+            amplitude: Raw amplitude of input current.
+            pre_delay: Delay before the first pulse (ms).
+            duration: Duration of the pulse train (ms).
+            post_delay: Delay after the last pulse (ms).
+            frequency: Frequency of the pulses (Hz).
+            width: Width of each pulse (ms).
+        """
+        if amplitude is not None:
+            if threshold_current is not None and threshold_current != 0 and threshold_percentage is not None:
+                logger.info(
+                    "amplitude, threshold_current and threshold_percentage are all set in pulse."
+                    " Will only keep amplitude value."
+                )
+            return Pulse.amplitude_based(self.dt, pre_delay, duration, post_delay, amplitude, frequency, width)
+
+        if threshold_current is not None and threshold_current != 0 and threshold_percentage is not None:
+            return Pulse.threshold_based(self.dt, pre_delay, duration, post_delay, threshold_current, threshold_percentage, frequency, width)
+
+        raise TypeError("You have to give either threshold_current or amplitude")
+
