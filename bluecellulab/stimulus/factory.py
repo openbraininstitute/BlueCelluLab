@@ -679,14 +679,14 @@ class StimulusFactory:
 
     def pulse(
         self,
+        pre_delay: float,
+        duration: float,
+        post_delay: float,
+        frequency: float,
+        width: float,
         threshold_current: Optional[float] = None,
-        threshold_percentage: Optional[float] = 200.0,
+        threshold_percentage: Optional[float] = None,
         amplitude: Optional[float] = None,
-        pre_delay: float = 250.0,
-        duration: float = 1000.0,
-        post_delay: float = 250.0,
-        frequency: float = 10.0,
-        width: float = 5.0,
     ) -> Stimulus:
         """Creates a pulse stimulus.
 
