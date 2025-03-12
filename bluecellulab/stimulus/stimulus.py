@@ -370,7 +370,7 @@ class SinusoidalWave(Stimulus):
 
 
 class PulseTrain(Stimulus):
-    """Generates a pulse train signal"""
+    """Generates a pulse train signal."""
 
     def __init__(self, dt: float, duration: float, amplitude: float, frequency: float, width: float):
         super().__init__(dt)

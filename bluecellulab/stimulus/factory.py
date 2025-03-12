@@ -17,7 +17,6 @@ from __future__ import annotations
 from typing import Optional
 import logging
 from bluecellulab.stimulus.stimulus import DelayedZap, Empty, Ramp, Slope, Step, StepNoise, Stimulus, OrnsteinUhlenbeck, ShotNoise, Sinusoidal, Pulse
-from bluecellulab.stimulus.circuit_stimulus_definitions import Stimulus as CircuitStimulus
 
 logger = logging.getLogger(__name__)
 
@@ -713,4 +712,3 @@ class StimulusFactory:
             return Pulse.threshold_based(self.dt, pre_delay, duration, post_delay, threshold_current, threshold_percentage, frequency, width)
 
         raise TypeError("You have to give either threshold_current or amplitude")
-
