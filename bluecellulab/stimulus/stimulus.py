@@ -369,6 +369,41 @@ class SinusoidalWave(Stimulus):
         return np.array(tvec.to_python()), np.array(stim.to_python())
 
 
+class PulseTrain(Stimulus):
+    """Generates a pulse train signal."""
+
+    def __init__(self, dt: float, duration: float, amplitude: float, frequency: float, width: float):
+        super().__init__(dt)
+        self.duration = duration
+        self.amplitude = amplitude
+        self.frequency = frequency
+        self.width = width
+
+        self._time, self._current = self._generate_pulse_train()
+
+    @property
+    def time(self) -> np.ndarray:
+        return self._time
+
+    @property
+    def current(self) -> np.ndarray:
+        return self._current
+
+    def _generate_pulse_train(self):
+        total_duration = self.duration
+        time_steps = int(total_duration / self.dt)
+        time = np.linspace(0, total_duration, time_steps)
+        current = np.zeros_like(time)
+
+        start_time = 0
+        while start_time + self.width < self.duration:
+            pulse_indices = (time >= start_time) & (time < start_time + self.width)
+            current[pulse_indices] = self.amplitude
+            start_time += 1000.0 / self.frequency
+
+        return time, current
+
+
 class Step(Stimulus):
 
     def __init__(self):
@@ -878,3 +913,34 @@ class Sinusoidal(Stimulus):
             amplitude=amplitude,
             frequency=frequency,
         )
+
+
+class Pulse(Stimulus):
+    """Factory-compatible Pulse Stimulus."""
+
+    def __init__(self):
+        """Prevents direct instantiation of the class."""
+        raise NotImplementedError(
+            "This class cannot be instantiated directly. "
+            "Please use 'amplitude_based' or 'threshold_based' methods."
+        )
+
+    @classmethod
+    def amplitude_based(
+        cls, dt: float, pre_delay: float, duration: float, post_delay: float, amplitude: float, frequency: float, width: float
+    ) -> CombinedStimulus:
+        """Creates a Pulse stimulus from given time events and amplitude."""
+        return (
+            Empty(dt, duration=pre_delay)
+            + PulseTrain(dt, duration, amplitude, frequency, width)
+            + Empty(dt, duration=post_delay)
+        )
+
+    @classmethod
+    def threshold_based(
+        cls, dt: float, pre_delay: float, duration: float, post_delay: float, threshold_current: float, threshold_percentage: float,
+        frequency: float, width: float
+    ) -> CombinedStimulus:
+        """Creates a Pulse stimulus with respect to the threshold current."""
+        amplitude = threshold_current * (threshold_percentage / 100)
+        return cls.amplitude_based(dt, pre_delay, duration, post_delay, amplitude, frequency, width)
