@@ -206,6 +206,22 @@ class TestStimulusFactory:
 
         assert any("Relative Ornstein-Uhlenbeck signal is mostly zero." in record.message for record in caplog.records)
 
+    def test_create_pulse(self):
+        s = self.factory.pulse(pre_delay=50.0, duration=250.0, post_delay=50.0, width=10.0, frequency=10.0, amplitude=0.5)
+        assert isinstance(s, CombinedStimulus)
+        assert np.isclose(s.stimulus_time, 50 + 250 + 50, atol=self.dt), f"Expected {50 + 250 + 50} ms, but got {s.stimulus_time} ms"
+        assert np.max(s.current) == 0.5, "Pulse amplitude is incorrect"
+
+        pulse_intervals = 1000.0 / 10.0  # 100 ms intervals
+        expected_pulse_times = np.arange(50, 50 + 250, pulse_intervals)
+        actual_pulse_times = np.where(np.diff(s.current) > 0)[0] * self.dt
+
+        assert len(actual_pulse_times) == len(expected_pulse_times), "Number of pulses does not match expectation"
+        np.testing.assert_allclose(actual_pulse_times, expected_pulse_times, atol=self.dt)
+
+        with pytest.raises(TypeError, match="You have to give either threshold_current or amplitude"):
+            self.factory.pulse(pre_delay=50, duration=250, post_delay=50, width=10, frequency=10)
+
 
 class TestSinusoidalStimulus:
 
