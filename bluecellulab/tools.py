@@ -268,7 +268,8 @@ def detect_spike_step(
     inj_stop: float,
     step_level: float,
     section: str = "soma[0]",
-    segx: float = 0.5
+    segx: float = 0.5,
+    step_thresh: float = -20.
 ) -> bool:
     """Detect if there is a spike at a certain step level."""
     with IsolatedProcess() as runner:
@@ -284,7 +285,8 @@ def detect_spike_step(
                 inj_stop,
                 step_level,
                 section,
-                segx
+                segx,
+                step_thresh
             ],
         )
     return spike_detected
@@ -300,7 +302,8 @@ def detect_spike_step_subprocess(
     inj_stop: float,
     step_level: float,
     section: str = "soma[0]",
-    segx: float = 0.5
+    segx: float = 0.5,
+    step_thresh: float = -20.
 ) -> bool:
     """Detect if there is a spike at a certain step level."""
     cell = bluecellulab.Cell(
@@ -321,19 +324,19 @@ def detect_spike_step_subprocess(
     time = cell.get_time()
     voltage = cell.get_voltage_recording(section=neuron_section, segx=segx)
     voltage_step = voltage[np.where((time > inj_start) & (time < inj_stop))]
-    spike_detected = detect_spike(voltage_step)
+    spike_detected = detect_spike(voltage_step, step_thresh)
 
     cell.delete()
 
     return spike_detected
 
 
-def detect_spike(voltage: np.ndarray) -> bool:
+def detect_spike(voltage: np.ndarray, step_thresh: float = -20.) -> bool:
     """Detect if there is a spike in the voltage trace."""
     if len(voltage) == 0:
         return False
     else:
-        return bool(np.max(voltage) > -20)  # bool not np.bool_
+        return bool(np.max(voltage) > step_thresh)  # bool not np.bool_
 
 
 def search_threshold_current(
@@ -348,7 +351,8 @@ def search_threshold_current(
     max_current: float,
     current_precision: float = 0.01,
     section: str = "soma[0]",
-    segx: float = 0.5
+    segx: float = 0.5,
+    step_thresh: float = -20.
 ):
     """Search current necessary to reach threshold."""
     if abs(max_current - min_current) < current_precision:
@@ -359,7 +363,7 @@ def search_threshold_current(
     spike_detected = detect_spike_step(
         template_name, morphology_path, template_format, emodel_properties,
         hyp_level, inj_start, inj_stop, med_current,
-        section=section, segx=segx
+        section=section, segx=segx, step_thresh=step_thresh
     )
     logger.info("Spike threshold detection at: %f nA" % med_current)
 
@@ -369,14 +373,16 @@ def search_threshold_current(
                                         hyp_level, inj_start, inj_stop,
                                         min_current, med_current,
                                         current_precision,
-                                        section=section, segx=segx)
+                                        section=section, segx=segx,
+                                        step_thresh=step_thresh)
     else:
         return search_threshold_current(template_name, morphology_path,
                                         template_format, emodel_properties,
                                         hyp_level, inj_start, inj_stop,
                                         med_current, max_current,
                                         current_precision,
-                                        section=section, segx=segx)
+                                        section=section, segx=segx,
+                                        step_thresh=step_thresh)
 
 
 def check_empty_topology() -> bool:
@@ -435,7 +441,8 @@ def calculate_rheobase(cell: Cell,
                        threshold_search_stim_start: float = 300.0,
                        threshold_search_stim_stop: float = 1000.0,
                        section: str = "soma[0]",
-                       segx: float = 0.5) -> float:
+                       segx: float = 0.5,
+                       step_thresh: float = -20.) -> float:
     """Calculate the rheobase by first computing the upper bound threshold
     current.
 
@@ -474,7 +481,8 @@ def calculate_rheobase(cell: Cell,
         max_current=upperbound_threshold_current,
         current_precision=0.005,
         section=section,
-        segx=segx
+        segx=segx,
+        step_thresh=threshold_voltage
     )
 
     return rheobase
