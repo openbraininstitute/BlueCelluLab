@@ -1,9 +1,21 @@
 """Module for plotting analysis results of cell simulations."""
 
 import matplotlib.pyplot as plt
+import pathlib
 
 
-def plot_iv_curve(currents, voltages, injecting_section, injecting_segment, recording_section, recording_segment):
+def plot_iv_curve(
+    currents,
+    voltages,
+    injecting_section,
+    injecting_segment,
+    recording_section,
+    recording_segment,
+    show_figure=True,
+    save_figure=False,
+    output_dir="./",
+    output_fname="iv_curve.png",
+):
     """Plots the IV curve.
 
     Args:
@@ -13,6 +25,10 @@ def plot_iv_curve(currents, voltages, injecting_section, injecting_segment, reco
         injecting_segment (float): The segment position (0.0 to 1.0) where the current was injected.
         recording_section (str): The section in the cell where spikes were recorded.
         recording_segment (float): The segment position (0.0 to 1.0) where spikes were recorded.
+        show_figure (bool): Whether to display the figure. Default is True.
+        save_figure (bool): Whether to save the figure. Default is False.
+        output_dir (str): The directory to save the figure if save_figure is True. Default is "./".
+        output_fname (str): The filename to save the figure as if save_figure is True. Default is "iv_curve.png".
 
     Raises:
         ValueError: If the lengths of currents and voltages do not match.
@@ -27,10 +43,27 @@ def plot_iv_curve(currents, voltages, injecting_section, injecting_segment, reco
     plt.ylabel(f"Steady state voltage [mV] at {recording_section}({recording_segment:.2f})")
     plt.grid(True)
     plt.tight_layout()
-    plt.show()
+    if show_figure:
+        plt.show()
+
+    if save_figure:
+        pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
+        plt.savefig(pathlib.Path(output_dir) / output_fname, format='png', dpi=300)
+        plt.close()
 
 
-def plot_fi_curve(currents, spike_count, injecting_section, injecting_segment, recording_section, recording_segment):
+def plot_fi_curve(
+    currents,
+    spike_count,
+    injecting_section,
+    injecting_segment,
+    recording_section,
+    recording_segment,
+    show_figure=True,
+    save_figure=False,
+    output_dir="./",
+    output_fname="fi_curve.png",
+):
     """Plots the F-I (Frequency-Current) curve.
 
     Args:
@@ -40,6 +73,10 @@ def plot_fi_curve(currents, spike_count, injecting_section, injecting_segment, r
         injecting_segment (float): The segment position (0.0 to 1.0) where the current was injected.
         recording_section (str): The section in the cell where spikes were recorded.
         recording_segment (float): The segment position (0.0 to 1.0) where spikes were recorded.
+        show_figure (bool): Whether to display the figure. Default is True.
+        save_figure (bool): Whether to save the figure. Default is False.
+        output_dir (str): The directory to save the figure if save_figure is True. Default is "./".
+        output_fname (str): The filename to save the figure as if save_figure is True. Default is "fi_curve.png".
 
     Raises:
         ValueError: If the lengths of currents and spike counts do not match.
@@ -54,4 +91,10 @@ def plot_fi_curve(currents, spike_count, injecting_section, injecting_segment, r
     plt.ylabel(f"Spike Count recorded at {recording_section}({recording_segment:.2f})")
     plt.grid(True)
     plt.tight_layout()
-    plt.show()
+    if show_figure:
+        plt.show()
+
+    if save_figure:
+        pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
+        plt.savefig(pathlib.Path(output_dir) / output_fname, format='png', dpi=300)
+        plt.close()

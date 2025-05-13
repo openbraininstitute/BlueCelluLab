@@ -20,7 +20,12 @@ def compute_plot_iv_curve(cell,
                           duration=500.0,
                           post_delay=100.0,
                           threshold_voltage=-30,
-                          nb_bins=11):
+                          nb_bins=11,
+                          rheobase=None,
+                          show_figure=True,
+                          save_figure=False,
+                          output_dir="./",
+                          output_fname="iv_curve.png"):
     """Compute and plot the Current-Voltage (I-V) curve for a given cell by
     injecting a range of currents.
 
@@ -46,6 +51,12 @@ def compute_plot_iv_curve(cell,
             response. Default is -30 mV.
         nb_bins (int, optional): The number of discrete current levels between 0 and the maximum current.
             Default is 11.
+        rheobase (float, optional): The rheobase current (in nA) for the cell. If not provided, it will
+            be calculated using the `calculate_rheobase` function.
+        show_figure (bool): Whether to display the figure. Default is True.
+        save_figure (bool): Whether to save the figure. Default is False.
+        output_dir (str): The directory to save the figure if save_figure is True. Default is "./".
+        output_fname (str): The filename to save the figure as if save_figure is True. Default is "iv_curve.png".
 
     Returns:
         tuple: A tuple containing:
@@ -57,7 +68,8 @@ def compute_plot_iv_curve(cell,
         ValueError: If the cell object is invalid, the specified sections/segments are not found, or if
             the simulation results are inconsistent.
     """
-    rheobase = calculate_rheobase(cell=cell, section=injecting_section, segx=injecting_segment)
+    if rheobase is None:
+        rheobase = calculate_rheobase(cell=cell, section=injecting_section, segx=injecting_segment)
 
     list_amp = np.linspace(rheobase - 2, rheobase - 0.1, nb_bins)  # [nA]
 
@@ -89,7 +101,7 @@ def compute_plot_iv_curve(cell,
             'stim_end': [stim_start + duration]
         }
         features_results = efel.get_feature_values([trace], ['steady_state_voltage_stimend'])
-        steady_state = features_results[0]['steady_state_voltage_stimend']
+        steady_state = features_results[0]['steady_state_voltage_stimend'][0]
         steady_states.append(steady_state)
 
     plot_iv_curve(list_amp,
@@ -97,7 +109,11 @@ def compute_plot_iv_curve(cell,
                   injecting_section=injecting_section,
                   injecting_segment=injecting_segment,
                   recording_section=recording_section,
-                  recording_segment=recording_segment)
+                  recording_segment=recording_segment,
+                  show_figure=show_figure,
+                  save_figure=save_figure,
+                  output_dir=output_dir,
+                  output_fname=output_fname)
 
     return np.array(list_amp), np.array(steady_states)
 
@@ -111,7 +127,13 @@ def compute_plot_fi_curve(cell,
                           duration=500.0,
                           post_delay=100.0,
                           max_current=0.8,
-                          nb_bins=11):
+                          threshold_voltage=-30,
+                          nb_bins=11,
+                          rheobase=None,
+                          show_figure=True,
+                          save_figure=False,
+                          output_dir="./",
+                          output_fname="fi_curve.png"):
     """Compute and plot the Frequency-Current (F-I) curve for a given cell by
     injecting a range of currents.
 
@@ -135,8 +157,16 @@ def compute_plot_fi_curve(cell,
             (in ms). Default is 100.0 ms.
         max_current (float, optional): The maximum amplitude of the injected current (in nA).
             Default is 0.8 nA.
+        threshold_voltage (float, optional): The voltage threshold (in mV) for detecting a steady-state
+            response. Default is -30 mV.
         nb_bins (int, optional): The number of discrete current levels between 0 and `max_current`.
             Default is 11.
+        rheobase (float, optional): The rheobase current (in nA) for the cell. If not provided, it will
+            be calculated using the `calculate_rheobase` function.
+        show_figure (bool): Whether to display the figure. Default is True.
+        save_figure (bool): Whether to save the figure. Default is False.
+        output_dir (str): The directory to save the figure if save_figure is True. Default is "./".
+        output_fname (str): The filename to save the figure as if save_figure is True. Default is "iv_curve.png".
 
     Returns:
         tuple: A tuple containing:
@@ -146,7 +176,8 @@ def compute_plot_fi_curve(cell,
     Raises:
         ValueError: If the cell object is invalid or the specified sections/segments are not found.
     """
-    rheobase = calculate_rheobase(cell=cell, section=injecting_section, segx=injecting_segment)
+    if rheobase is None:
+        rheobase = calculate_rheobase(cell=cell, section=injecting_section, segx=injecting_segment)
 
     list_amp = np.linspace(rheobase, max_current, nb_bins)  # [nA]
     steps = []
@@ -161,7 +192,8 @@ def compute_plot_fi_curve(cell,
                                  segment=injecting_segment,
                                  recording_section=recording_section,
                                  recording_segment=recording_segment,
-                                 enable_spike_detection=True)
+                                 enable_spike_detection=True,
+                                 threshold_spike_detection=threshold_voltage)
         steps.append(step_stimulus)
         spikes.append(recording.spike)
 
@@ -172,6 +204,10 @@ def compute_plot_fi_curve(cell,
                   injecting_section=injecting_section,
                   injecting_segment=injecting_segment,
                   recording_section=recording_section,
-                  recording_segment=recording_segment)
+                  recording_segment=recording_segment,
+                  show_figure=show_figure,
+                  save_figure=save_figure,
+                  output_dir=output_dir,
+                  output_fname=output_fname)
 
     return np.array(list_amp), np.array(spike_count)
