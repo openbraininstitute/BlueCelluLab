@@ -47,6 +47,7 @@ def plot_trace(recording, out_dir, fname, title):
 
     return outpath
 
+
 def plot_traces(recordings, out_dir, fname, title, labels=None, xlim=None):
     """Plot a trace with inout current given a recording."""
     outpath = out_dir / fname
@@ -77,7 +78,7 @@ def plot_traces(recordings, out_dir, fname, title, labels=None, xlim=None):
     return outpath
 
 
-def spiking_test(cell, rheobase, out_dir):
+def spiking_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
     """Spiking test: cell should spike."""
     stim_factory = StimulusFactory(dt=1.0)
     step_stimulus = stim_factory.idrest(threshold_current=rheobase, threshold_percentage=200)
@@ -88,6 +89,7 @@ def spiking_test(cell, rheobase, out_dir):
         0.5,
         add_hypamp=False,
         enable_spike_detection=True,
+        threshold_spike_detection=spike_threshold_voltage,
     )
     passed = recording.spike is not None and len(recording.spike) > 0
 
@@ -144,7 +146,7 @@ def depolarization_block_test(cell, rheobase, out_dir):
     }
 
 
-def ais_spiking_test(cell, rheobase, out_dir):
+def ais_spiking_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
     """AIS spiking test: axon should spike before soma."""
     # Check that the cell has an axon
     if len(cell.axonal) == 0:
@@ -165,6 +167,7 @@ def ais_spiking_test(cell, rheobase, out_dir):
         add_hypamp=False,
         recording_locations=[("axon[0]", 0.5), ("soma[0]", 0.5)],
         enable_spike_detection=True,
+        threshold_spike_detection=spike_threshold_voltage,
     )
     axon_recording, soma_recording = recordings
 
@@ -261,13 +264,13 @@ def rin_test(cell, rin):
     }
 
 
-def iv_test(cell, rheobase, out_dir):
+def iv_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
     """IV curve should have a positive slope."""
     amps, steady_states = compute_plot_iv_curve(
         cell,
         rheobase=rheobase,
-        threshold_voltage=-30,
-        nb_bins=3,
+        threshold_voltage=spike_threshold_voltage,
+        nb_bins=7,
         show_figure=False,
         save_figure=True,
         output_dir=out_dir,
@@ -291,13 +294,13 @@ def iv_test(cell, rheobase, out_dir):
     }
 
 
-def fi_test(cell, rheobase, out_dir):
+def fi_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
     """FI curve should have a positive slope."""
     amps, spike_counts = compute_plot_fi_curve(
         cell,
         rheobase=rheobase,
-        threshold_voltage=-30,
-        nb_bins=3,
+        threshold_voltage=spike_threshold_voltage,
+        nb_bins=7,
         show_figure=False,
         save_figure=True,
         output_dir=out_dir,
@@ -321,21 +324,23 @@ def fi_test(cell, rheobase, out_dir):
     }
 
 
-def run_validations(cell, cell_name):
+def run_validations(cell, cell_name, spike_threshold_voltage=-30):
     """Run all the validations on the cell.
     
     Args:
         cell (Cell): The cell to validate.
         cell_name (str): The name of the cell, used in the output directory.
+        spike_threshold_voltage (float): The voltage threshold for spike detection.
     """
-    # TODO: add a variable to set spike_threshold_detection for rheobase and all tests
     out_dir = pathlib.Path("memodel_validation_figures") / cell_name
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # cell = Cell.from_template_parameters(template_params)
     # do we already have rheobase in the cell? -> new me-model, so probably not
     # get me-model properties
-    rheobase = calculate_rheobase(cell=cell, section="soma[0]", segx=0.5)
+    rheobase = calculate_rheobase(
+        cell=cell, section="soma[0]", segx=0.5, threshold_voltage=spike_threshold_voltage
+    )
     rin = calculate_input_resistance(
         template_path=cell.template_params.template_filepath,
         morphology_path=cell.template_params.morph_filepath,
@@ -345,15 +350,21 @@ def run_validations(cell, cell_name):
 
     # Validation 1: Spiking Test
     logger.debug("Running spiking test")
-    spiking_test_result = spiking_test(cell, rheobase, out_dir)
+    spiking_test_result = spiking_test(cell, rheobase, out_dir, spike_threshold_voltage)
 
     # Validation 2: Depolarization Block Test
     logger.debug("Running depolarization block test")
     depolarization_block_result = depolarization_block_test(cell, rheobase, out_dir)
 
+    # Validation 3: Backpropagating AP Test
+    logger.debug("Running backpropagating AP test")
+
+    # Validation 4: Postsynaptic Potential Test
+    logger.debug("Running postsynaptic potential test")
+
     # Validation 5: AIS Spiking Test
     logger.debug("Running AIS spiking test")
-    ais_spiking_test_result = ais_spiking_test(cell, rheobase, out_dir)
+    ais_spiking_test_result = ais_spiking_test(cell, rheobase, out_dir, spike_threshold_voltage)
 
     # Validation 6: Hyperpolarization Test
     logger.debug("Running hyperpolarization test")
@@ -365,17 +376,17 @@ def run_validations(cell, cell_name):
 
     # Validation 8: IV Test
     logger.debug("Running IV test")
-    iv_test_result = iv_test(cell, rheobase, out_dir)
+    iv_test_result = iv_test(cell, rheobase, out_dir, spike_threshold_voltage)
 
     # Validation 9: FI Test
     logger.debug("Running FI test")
-    fi_test_result = fi_test(cell, rheobase, out_dir)
+    fi_test_result = fi_test(cell, rheobase, out_dir, spike_threshold_voltage)
 
     
 
     return {
         "memodel_properties": {
-            "holding_current": 0.0,
+            "holding_current": 0.0,  # is there any case where cell have this set already?
             "rheobase": rheobase,
             "rin": rin,
         },
