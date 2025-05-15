@@ -253,8 +253,8 @@ def hyperpolarization_test(cell, rheobase, out_dir):
     }
 
 
-def rin_test(cell, rin):
-    """Rin (input resistance) should have an acceptable biological range (< 1000 MOhm)."""
+def rin_test(rin):
+    """Rin should have an acceptable biological range (< 1000 MOhm)"""
     passed = bool(rin < 1000)
 
     return {
@@ -372,7 +372,7 @@ def run_validations(cell, cell_name, spike_threshold_voltage=-30):
 
     # Validation 7: Rin Test
     logger.debug("Running Rin test")
-    rin_result = rin_test(cell, rin)
+    rin_result = rin_test(rin)
 
     # Validation 8: IV Test
     logger.debug("Running IV test")
