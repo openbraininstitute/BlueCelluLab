@@ -28,11 +28,13 @@ class APWaveformTimings(Enum):
     DURATION = 50.0
     POST_DELAY = 250.0
 
+
 class IDRestTimings(Enum):
     """IDRest timings."""
     PRE_DELAY = 250.0
     DURATION = 1350.0
     POST_DELAY = 250.0
+
 
 class IVTimings(Enum):
     """IV timings."""
@@ -40,11 +42,13 @@ class IVTimings(Enum):
     DURATION = 3000.0
     POST_DELAY = 250.0
 
-class FirePatternTimings(Enum): 
+
+class FirePatternTimings(Enum):
     """FirePattern timings."""
     PRE_DELAY = 250.0
     DURATION = 3600.0
     POST_DELAY = 250.0
+
 
 class PosCheopsTimings(Enum):
     """PosCheops timings."""
@@ -55,6 +59,7 @@ class PosCheopsTimings(Enum):
     INTER_DELAY = 2000.0
     POST_DELAY = 250.0
 
+
 class NegCheopsTimings(Enum):
     """NegCheops timings."""
     PRE_DELAY = 1750.0
@@ -63,6 +68,7 @@ class NegCheopsTimings(Enum):
     RAMP3_DURATION = 1111.0
     INTER_DELAY = 2000.0
     POST_DELAY = 250.0
+
 
 class SineSpecTimings(Enum):
     """SineSpec timings."""

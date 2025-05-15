@@ -57,7 +57,7 @@ def plot_traces(recordings, out_dir, fname, title, labels=None, xlim=None):
     N_colors = len(colors)
     for i, recording in enumerate(recordings):
         if i == 0:
-            color="black"
+            color = "black"
         else:
             color = colors[(i - 1) % N_colors]
         label = labels[i] if labels is not None else None
@@ -131,7 +131,7 @@ def depolarization_block_test(cell, rheobase, out_dir):
     features_results = efel.get_feature_values([trace], ["depol_block_bool"])
     depol_block = bool(features_results[0]["depol_block_bool"][0])
 
-     # plotting
+    # plotting
     outpath = plot_trace(
         recording,
         out_dir,
@@ -196,7 +196,7 @@ def ais_spiking_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
                 "passed": False,
                 "figures": [outpath1, outpath2],
             }
-    
+
     # Check if axon spike happens before soma spike
     passed = bool(axon_recording.spike[0] < soma_recording.spike[0])
     return {
@@ -275,7 +275,7 @@ def iv_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
         save_figure=True,
         output_dir=out_dir,
         output_fname="iv_curve.png")
-    
+
     outpath = pathlib.Path(out_dir) / "iv_curve.png"
 
     # Check for positive slope
@@ -285,7 +285,7 @@ def iv_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
             "passed": False,
             "figures": [outpath],
         }
-    slope  = numpy.polyfit(amps, steady_states, 1)[0]
+    slope = numpy.polyfit(amps, steady_states, 1)[0]
     passed = bool(slope > 0)
     return {
         "skipped": False,
@@ -305,7 +305,7 @@ def fi_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
         save_figure=True,
         output_dir=out_dir,
         output_fname="fi_curve.png")
-    
+
     outpath = pathlib.Path(out_dir) / "fi_curve.png"
 
     # Check for positive slope
@@ -315,7 +315,7 @@ def fi_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
             "passed": False,
             "figures": [outpath],
         }
-    slope  = numpy.polyfit(amps, spike_counts, 1)[0]
+    slope = numpy.polyfit(amps, spike_counts, 1)[0]
     passed = bool(slope > 0)
     return {
         "skipped": False,
@@ -326,7 +326,7 @@ def fi_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
 
 def run_validations(cell, cell_name, spike_threshold_voltage=-30):
     """Run all the validations on the cell.
-    
+
     Args:
         cell (Cell): The cell to validate.
         cell_name (str): The name of the cell, used in the output directory.
@@ -382,8 +382,6 @@ def run_validations(cell, cell_name, spike_threshold_voltage=-30):
     logger.debug("Running FI test")
     fi_test_result = fi_test(cell, rheobase, out_dir, spike_threshold_voltage)
 
-    
-
     return {
         "memodel_properties": {
             "holding_current": 0.0,  # is there any case where cell have this set already?
@@ -398,4 +396,3 @@ def run_validations(cell, cell_name, spike_threshold_voltage=-30):
         "iv_test": iv_test_result,
         "fi_test": fi_test_result,
     }
-
