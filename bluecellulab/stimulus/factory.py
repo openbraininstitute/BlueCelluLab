@@ -388,7 +388,7 @@ class StimulusFactory:
             return DelayedZap.amplitude_based(
                 self.dt,
                 pre_delay=pre_delay,
-                duration=SineSpecTimings,
+                duration=SineSpecTimings.DURATION.value,
                 post_delay=SineSpecTimings.POST_DELAY.value,
                 amplitude=amplitude,
             )
