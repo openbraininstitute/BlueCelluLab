@@ -87,7 +87,7 @@ def spiking_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
         step_stimulus,
         "soma[0]",
         0.5,
-        add_hypamp=False,
+        add_hypamp=True,
         enable_spike_detection=True,
         threshold_spike_detection=spike_threshold_voltage,
     )
@@ -118,7 +118,7 @@ def depolarization_block_test(cell, rheobase, out_dir):
         step_stimulus,
         "soma[0]",
         0.5,
-        add_hypamp=False,
+        add_hypamp=True,
         enable_spike_detection=False,
     )
     # Check for depolarization block
@@ -164,7 +164,7 @@ def ais_spiking_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
         step_stimulus,
         "soma[0]",
         0.5,
-        add_hypamp=False,
+        add_hypamp=True,
         recording_locations=[("axon[0]", 0.5), ("soma[0]", 0.5)],
         enable_spike_detection=True,
         threshold_spike_detection=spike_threshold_voltage,
@@ -216,7 +216,7 @@ def hyperpolarization_test(cell, rheobase, out_dir):
         step_stimulus,
         "soma[0]",
         0.5,
-        add_hypamp=False,
+        add_hypamp=True,
         enable_spike_detection=False,
     )
 
@@ -270,7 +270,7 @@ def iv_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
         cell,
         rheobase=rheobase,
         threshold_voltage=spike_threshold_voltage,
-        nb_bins=7,
+        nb_bins=5,
         show_figure=False,
         save_figure=True,
         output_dir=out_dir,
@@ -300,7 +300,7 @@ def fi_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
         cell,
         rheobase=rheobase,
         threshold_voltage=spike_threshold_voltage,
-        nb_bins=7,
+        nb_bins=5,
         show_figure=False,
         save_figure=True,
         output_dir=out_dir,
@@ -336,11 +336,14 @@ def run_validations(cell, cell_name, spike_threshold_voltage=-30):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # cell = Cell.from_template_parameters(template_params)
-    # do we already have rheobase in the cell? -> new me-model, so probably not
+    holding_current = cell.hypamp if cell.hypamp else 0.0
+    if cell.threshold:
+        rheobase = cell.threshold
+    else:
     # get me-model properties
-    rheobase = calculate_rheobase(
-        cell=cell, section="soma[0]", segx=0.5, threshold_voltage=spike_threshold_voltage
-    )
+        rheobase = calculate_rheobase(
+            cell=cell, section="soma[0]", segx=0.5, threshold_voltage=spike_threshold_voltage
+        )
     rin = calculate_input_resistance(
         template_path=cell.template_params.template_filepath,
         morphology_path=cell.template_params.morph_filepath,
@@ -357,10 +360,10 @@ def run_validations(cell, cell_name, spike_threshold_voltage=-30):
     depolarization_block_result = depolarization_block_test(cell, rheobase, out_dir)
 
     # Validation 3: Backpropagating AP Test
-    logger.debug("Running backpropagating AP test")
+    # logger.debug("Running backpropagating AP test")
 
     # Validation 4: Postsynaptic Potential Test
-    logger.debug("Running postsynaptic potential test")
+    # logger.debug("Running postsynaptic potential test")
 
     # Validation 5: AIS Spiking Test
     logger.debug("Running AIS spiking test")
@@ -384,7 +387,7 @@ def run_validations(cell, cell_name, spike_threshold_voltage=-30):
 
     return {
         "memodel_properties": {
-            "holding_current": 0.0,  # is there any case where cell have this set already?
+            "holding_current": holding_current,
             "rheobase": rheobase,
             "rin": rin,
         },
