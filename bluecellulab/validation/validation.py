@@ -336,11 +336,11 @@ def run_validations(cell, cell_name, spike_threshold_voltage=-30):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # cell = Cell.from_template_parameters(template_params)
+    # get me-model properties
     holding_current = cell.hypamp if cell.hypamp else 0.0
     if cell.threshold:
         rheobase = cell.threshold
     else:
-    # get me-model properties
         rheobase = calculate_rheobase(
             cell=cell, section="soma[0]", segx=0.5, threshold_voltage=spike_threshold_voltage
         )
