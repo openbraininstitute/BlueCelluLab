@@ -441,8 +441,7 @@ def calculate_rheobase(cell: Cell,
                        threshold_search_stim_start: float = 300.0,
                        threshold_search_stim_stop: float = 1000.0,
                        section: str = "soma[0]",
-                       segx: float = 0.5,
-                       step_thresh: float = -20.) -> float:
+                       segx: float = 0.5) -> float:
     """Calculate the rheobase by first computing the upper bound threshold
     current.
 
