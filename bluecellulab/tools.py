@@ -437,7 +437,7 @@ def calculate_max_thresh_current(cell: Cell,
 
 
 def calculate_rheobase(cell: Cell,
-                       threshold_voltage: float = -30.0,
+                       threshold_voltage: float = -20.0,
                        threshold_search_stim_start: float = 300.0,
                        threshold_search_stim_stop: float = 1000.0,
                        section: str = "soma[0]",
@@ -447,7 +447,7 @@ def calculate_rheobase(cell: Cell,
 
     Args:
         cell (bluecellulab.cell.Cell): The initialized cell model.
-        threshold_voltage (float, optional): Voltage threshold for spike detection. Default is -30.0 mV.
+        threshold_voltage (float, optional): Voltage threshold for spike detection. Default is -20.0 mV.
         threshold_search_stim_start (float, optional): Start time for threshold search stimulation (in ms). Default is 300.0 ms.
         threshold_search_stim_stop (float, optional): Stop time for threshold search stimulation (in ms). Default is 1000.0 ms.
         section (str, optional): The section where current is injected.
