@@ -45,7 +45,7 @@ def run_multirecordings_stimulus(
     add_hypamp: bool = True,
     recording_locations: list[tuple[str, float]] = [("soma[0]", 0.5)],
     enable_spike_detection: bool = False,
-    threshold_spike_detection: float = -30.0,
+    threshold_spike_detection: float = -20.0,
 ) -> list[Recording]:
     """Creates a cell from template parameters, applies a stimulus, and records
     the response.
@@ -150,7 +150,7 @@ def run_stimulus(
     recording_section: str = "soma[0]",
     recording_segment: float = 0.5,
     enable_spike_detection: bool = False,
-    threshold_spike_detection: float = -30.0,
+    threshold_spike_detection: float = -20.0,
 ) -> Recording:
     """Creates a cell from template parameters, applies a stimulus, and records
     the response.
