@@ -3,16 +3,11 @@ try:
     import efel
 except ImportError:
     efel = None
-from itertools import islice
-import neuron
 import numpy as np
 
-from bluecellulab import Cell
 from bluecellulab.analysis.inject_sequence import run_stimulus
 from bluecellulab.analysis.plotting import plot_iv_curve, plot_fi_curve
-from bluecellulab.simulation import Simulation
 from bluecellulab.stimulus import StimulusFactory
-from bluecellulab.stimulus.circuit_stimulus_definitions import Hyperpolarizing
 from bluecellulab.tools import calculate_rheobase
 
 
@@ -216,96 +211,3 @@ def compute_plot_fi_curve(cell,
                   output_fname=output_fname)
 
     return np.array(list_amp), np.array(spike_count)
-
-
-class BPAP:
-    # taken from the examples
-
-    def __init__(self, cell: Cell) -> None:
-        self.cell = cell
-        self.dt = 0.025
-        self.stim_start = 1000
-        self.stim_duration = 1
-        self.soma_rec = None
-        self.dend_rec = {}
-        self.apic_rec = {}
-
-    @property
-    def start_index(self) -> int:
-        """Get the index of the start of the stimulus."""
-        return int(self.stim_start / self.dt)
-
-    @property
-    def end_index(self) -> int:
-        """Get the index of the end of the stimulus."""
-        return int((self.stim_start + self.stim_duration) / self.dt)
-
-    def get_recordings(self):
-        """Get the soma, basal and apical recordings."""
-        all_recordings = self.cell.get_allsections_voltagerecordings()
-        self.soma_rec = None
-        self.dend_rec = {}
-        self.apic_rec = {}
-        for key, value in all_recordings.items():
-            if "soma" in key:
-                self.soma_rec = value
-            elif "dend" in key:
-                self.dend_rec[key] = value
-            elif "apic" in key:
-                self.apic_rec[key] = value
-
-    def run(self, duration: float, amplitude: float) -> None:
-        """Apply depolarization and hyperpolarization at the same time."""
-        sim = Simulation()
-        sim.add_cell(self.cell)
-        self.cell.add_allsections_voltagerecordings()
-        self.cell.add_step(start_time=self.stim_start, stop_time=self.stim_start + self.stim_duration, level=amplitude)
-        # not sure why we use delay and duration instead of totduration
-        hyperpolarizing = Hyperpolarizing("single-cell", delay=self.stim_start, duration=self.stim_duration)
-        self.cell.add_replay_hypamp(hyperpolarizing)
-        sim.run(duration, dt=self.dt, cvode=False)
-
-    def voltage_attenuation(self) -> dict[str, float]:
-        """Return soma peak voltage across all sections."""
-        # TODO: re-implement this
-        # all_recordings = self.cell.get_allsections_voltagerecordings()
-        # dendritic_recordings = self.select_dendritic_recordings(all_recordings)
-        # soma_peak_index = get_peak_index(self.soma_rec, self.start_index, self.end_index)
-        # res = {}
-        # for key, voltage in dendritic_recordings.items():
-        #     peak_index_volt = voltage[soma_peak_index]
-        #     res[key] = peak_index_volt
-        # return res
-        return
-
-    # not needed for our use case
-    # def peak_delays(self) -> dict[str, float]:
-    #     """Return the peak delays in each section."""
-    #     all_recordings = self.cell.get_allsections_voltagerecordings()
-    #     dendritic_recordings = self.select_dendritic_recordings(all_recordings)
-    #     soma_key = [key for key in dendritic_recordings.keys() if key.endswith("soma[0]")][0]
-    #     soma_voltage = dendritic_recordings[soma_key]
-    #     soma_peak_index = get_peak_index(soma_voltage, self.start_index, self.end_index)
-    #     res = {}
-    #     for key, voltage in dendritic_recordings.items():
-    #         peak_index = get_peak_index(voltage, self.start_index, self.end_index)
-    #         index_delay = peak_index - soma_peak_index
-    #         time_delay = index_delay * self.dt
-    #         res[key] = time_delay
-    #     return res
-
-    def distances_to_soma(self) -> dict[str, float]:
-        """Return the distance to the soma for each section."""
-        # TODO: re-implement this?
-        res = {}
-        all_recordings = self.cell.get_allsections_voltagerecordings()
-        dendritic_recordings = self.select_dendritic_recordings(all_recordings)
-        soma = self.cell.soma
-        for key in dendritic_recordings.keys():
-            section_name = key.rsplit(".")[-1].split("[")[0]  # e.g. "dend"
-            section_idx = int(key.rsplit(".")[-1].split("[")[1].split("]")[0])  # e.g. 0
-            attribute_value = getattr(self.cell.cell.getCell(), section_name)
-            section = next(islice(attribute_value, section_idx, None))
-            # section e.g. cADpyr_L2TPC_bluecellulab_x[0].dend[0]
-            res[key] = neuron.h.distance(soma(0.5), section(0.5))
-        return res
