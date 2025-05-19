@@ -43,7 +43,7 @@ def plot_trace(recording, out_dir, fname, title):
     ax1.set_xlabel("Time [ms]")
     ax1.set_ylabel("Voltage [mV]")
     fig.tight_layout()
-    fig.savefig(outpath, dpi=400)
+    fig.savefig(outpath)
 
     return outpath
 
@@ -73,7 +73,7 @@ def plot_traces(recordings, out_dir, fname, title, labels=None, xlim=None):
     if xlim is not None:
         ax1.set_xlim(xlim)
     fig.tight_layout()
-    fig.savefig(outpath, dpi=400)
+    fig.savefig(outpath)
 
     return outpath
 
@@ -97,7 +97,7 @@ def spiking_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
     outpath = plot_trace(
         recording,
         out_dir,
-        fname="spiking_test.png",
+        fname="spiking_test.pdf",
         title="Spiking Test - Step at 200% of Rheobase",
     )
 
@@ -135,7 +135,7 @@ def depolarization_block_test(cell, rheobase, out_dir):
     outpath = plot_trace(
         recording,
         out_dir,
-        fname="depolarization_block_test.png",
+        fname="depolarization_block_test.pdf",
         title="Depolarization Block Test - Step at 200% of Rheobase",
     )
 
@@ -175,14 +175,14 @@ def ais_spiking_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
     outpath1 = plot_traces(
         recordings,
         out_dir,
-        fname="ais_spiking_test.png",
+        fname="ais_spiking_test.pdf",
         title="AIS Spiking Test - Step at 200% of Rheobase",
         labels=["axon[0]", "soma[0]"],
     )
     outpath2 = plot_traces(
         recordings,
         out_dir,
-        fname="ais_spiking_test_zoomed.png",
+        fname="ais_spiking_test_zoomed.pdf",
         title="AIS Spiking Test - Step at 200% of Rheobase (zoomed)",
         labels=["axon[0]", "soma[0]"],
         xlim=(IDRestTimings.PRE_DELAY.value, IDRestTimings.PRE_DELAY.value + 100),
@@ -224,7 +224,7 @@ def hyperpolarization_test(cell, rheobase, out_dir):
     outpath = plot_trace(
         recording,
         out_dir,
-        fname="hyperpolarization_test.png",
+        fname="hyperpolarization_test.pdf",
         title="Hyperpolarization Test - Step at -40% of Rheobase",
     )
 
@@ -274,9 +274,9 @@ def iv_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
         show_figure=False,
         save_figure=True,
         output_dir=out_dir,
-        output_fname="iv_curve.png")
+        output_fname="iv_curve.pdf")
 
-    outpath = pathlib.Path(out_dir) / "iv_curve.png"
+    outpath = pathlib.Path(out_dir) / "iv_curve.pdf"
 
     # Check for positive slope
     if len(amps) < 2 or len(steady_states) < 2:
@@ -304,9 +304,9 @@ def fi_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
         show_figure=False,
         save_figure=True,
         output_dir=out_dir,
-        output_fname="fi_curve.png")
+        output_fname="fi_curve.pdf")
 
-    outpath = pathlib.Path(out_dir) / "fi_curve.png"
+    outpath = pathlib.Path(out_dir) / "fi_curve.pdf"
 
     # Check for positive slope
     if len(amps) < 2 or len(spike_counts) < 2:

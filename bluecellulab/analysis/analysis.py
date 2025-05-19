@@ -25,7 +25,7 @@ def compute_plot_iv_curve(cell,
                           show_figure=True,
                           save_figure=False,
                           output_dir="./",
-                          output_fname="iv_curve.png"):
+                          output_fname="iv_curve.pdf"):
     """Compute and plot the Current-Voltage (I-V) curve for a given cell by
     injecting a range of currents.
 
@@ -133,7 +133,7 @@ def compute_plot_fi_curve(cell,
                           show_figure=True,
                           save_figure=False,
                           output_dir="./",
-                          output_fname="fi_curve.png"):
+                          output_fname="fi_curve.pdf"):
     """Compute and plot the Frequency-Current (F-I) curve for a given cell by
     injecting a range of currents.
 
