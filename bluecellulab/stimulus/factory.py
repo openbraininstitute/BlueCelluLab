@@ -14,11 +14,67 @@
 # limitations under the License.
 
 from __future__ import annotations
+from enum import Enum
 from typing import Optional
 import logging
 from bluecellulab.stimulus.stimulus import DelayedZap, Empty, Ramp, Slope, Step, StepNoise, Stimulus, OrnsteinUhlenbeck, ShotNoise, Sinusoidal, Pulse
 
 logger = logging.getLogger(__name__)
+
+
+class APWaveformTimings(Enum):
+    """APWaveform timings."""
+    PRE_DELAY = 250.0
+    DURATION = 50.0
+    POST_DELAY = 250.0
+
+
+class IDRestTimings(Enum):
+    """IDRest timings."""
+    PRE_DELAY = 250.0
+    DURATION = 1350.0
+    POST_DELAY = 250.0
+
+
+class IVTimings(Enum):
+    """IV timings."""
+    PRE_DELAY = 250.0
+    DURATION = 3000.0
+    POST_DELAY = 250.0
+
+
+class FirePatternTimings(Enum):
+    """FirePattern timings."""
+    PRE_DELAY = 250.0
+    DURATION = 3600.0
+    POST_DELAY = 250.0
+
+
+class PosCheopsTimings(Enum):
+    """PosCheops timings."""
+    PRE_DELAY = 250.0
+    RAMP1_DURATION = 4000.0
+    RAMP2_DURATION = 2000.0
+    RAMP3_DURATION = 1333.0
+    INTER_DELAY = 2000.0
+    POST_DELAY = 250.0
+
+
+class NegCheopsTimings(Enum):
+    """NegCheops timings."""
+    PRE_DELAY = 1750.0
+    RAMP1_DURATION = 3333.0
+    RAMP2_DURATION = 1666.0
+    RAMP3_DURATION = 1111.0
+    INTER_DELAY = 2000.0
+    POST_DELAY = 250.0
+
+
+class SineSpecTimings(Enum):
+    """SineSpec timings."""
+    PRE_DELAY = 0
+    DURATION = 5000.0
+    POST_DELAY = 0
 
 
 class StimulusFactory:
@@ -84,9 +140,6 @@ class StimulusFactory:
             threshold_percentage: Percentage of desired threshold_current amplification.
             amplitude: Raw amplitude of input current.
         """
-        pre_delay = 250.0
-        duration = 50.0
-        post_delay = 250.0
 
         if amplitude is not None:
             if threshold_current is not None and threshold_current != 0 and threshold_percentage is not None:
@@ -96,18 +149,18 @@ class StimulusFactory:
                 )
             return Step.amplitude_based(
                 self.dt,
-                pre_delay=pre_delay,
-                duration=duration,
-                post_delay=post_delay,
+                pre_delay=APWaveformTimings.PRE_DELAY.value,
+                duration=APWaveformTimings.DURATION.value,
+                post_delay=APWaveformTimings.POST_DELAY.value,
                 amplitude=amplitude,
             )
 
         if threshold_current is not None and threshold_current != 0 and threshold_percentage is not None:
             return Step.threshold_based(
                 self.dt,
-                pre_delay=pre_delay,
-                duration=duration,
-                post_delay=post_delay,
+                pre_delay=APWaveformTimings.PRE_DELAY.value,
+                duration=APWaveformTimings.DURATION.value,
+                post_delay=APWaveformTimings.POST_DELAY.value,
                 threshold_current=threshold_current,
                 threshold_percentage=threshold_percentage,
             )
@@ -127,9 +180,6 @@ class StimulusFactory:
             threshold_percentage: Percentage of desired threshold_current amplification.
             amplitude: Raw amplitude of input current.
         """
-        pre_delay = 250.0
-        duration = 1350.0
-        post_delay = 250.0
 
         if amplitude is not None:
             if threshold_current is not None and threshold_current != 0 and threshold_percentage is not None:
@@ -139,18 +189,18 @@ class StimulusFactory:
                 )
             return Step.amplitude_based(
                 self.dt,
-                pre_delay=pre_delay,
-                duration=duration,
-                post_delay=post_delay,
+                pre_delay=IDRestTimings.PRE_DELAY.value,
+                duration=IDRestTimings.DURATION.value,
+                post_delay=IDRestTimings.POST_DELAY.value,
                 amplitude=amplitude,
             )
 
         if threshold_current is not None and threshold_current != 0 and threshold_percentage is not None:
             return Step.threshold_based(
                 self.dt,
-                pre_delay=pre_delay,
-                duration=duration,
-                post_delay=post_delay,
+                pre_delay=IDRestTimings.PRE_DELAY.value,
+                duration=IDRestTimings.DURATION.value,
+                post_delay=IDRestTimings.POST_DELAY.value,
                 threshold_current=threshold_current,
                 threshold_percentage=threshold_percentage,
             )
@@ -170,9 +220,6 @@ class StimulusFactory:
             threshold_percentage: Percentage of desired threshold_current amplification.
             amplitude: Raw amplitude of input current.
         """
-        pre_delay = 250.0
-        duration = 3000.0
-        post_delay = 250.0
 
         if amplitude is not None:
             if threshold_current is not None and threshold_current != 0 and threshold_percentage is not None:
@@ -182,18 +229,18 @@ class StimulusFactory:
                 )
             return Step.amplitude_based(
                 self.dt,
-                pre_delay=pre_delay,
-                duration=duration,
-                post_delay=post_delay,
+                pre_delay=IVTimings.PRE_DELAY.value,
+                duration=IVTimings.DURATION.value,
+                post_delay=IVTimings.POST_DELAY.value,
                 amplitude=amplitude,
             )
 
         if threshold_current is not None and threshold_current != 0 and threshold_percentage is not None:
             return Step.threshold_based(
                 self.dt,
-                pre_delay=pre_delay,
-                duration=duration,
-                post_delay=post_delay,
+                pre_delay=IVTimings.PRE_DELAY.value,
+                duration=IVTimings.DURATION.value,
+                post_delay=IVTimings.POST_DELAY.value,
                 threshold_current=threshold_current,
                 threshold_percentage=threshold_percentage,
             )
@@ -213,9 +260,6 @@ class StimulusFactory:
             threshold_percentage: Percentage of desired threshold_current amplification.
             amplitude: Raw amplitude of input current.
         """
-        pre_delay = 250.0
-        duration = 3600.0
-        post_delay = 250.0
 
         if amplitude is not None:
             if threshold_current is not None and threshold_current != 0 and threshold_percentage is not None:
@@ -225,18 +269,18 @@ class StimulusFactory:
                 )
             return Step.amplitude_based(
                 self.dt,
-                pre_delay=pre_delay,
-                duration=duration,
-                post_delay=post_delay,
+                pre_delay=FirePatternTimings.PRE_DELAY.value,
+                duration=FirePatternTimings.DURATION.value,
+                post_delay=FirePatternTimings.POST_DELAY.value,
                 amplitude=amplitude,
             )
 
         if threshold_current is not None and threshold_current != 0 and threshold_percentage is not None:
             return Step.threshold_based(
                 self.dt,
-                pre_delay=pre_delay,
-                duration=duration,
-                post_delay=post_delay,
+                pre_delay=FirePatternTimings.PRE_DELAY.value,
+                duration=FirePatternTimings.DURATION.value,
+                post_delay=FirePatternTimings.POST_DELAY.value,
                 threshold_current=threshold_current,
                 threshold_percentage=threshold_percentage,
             )
@@ -257,12 +301,6 @@ class StimulusFactory:
             threshold_percentage: Percentage of desired threshold_current amplification.
             amplitude: Raw amplitude of input current.
         """
-        delay = 250.0
-        ramp1_duration = 4000.0
-        ramp2_duration = 2000.0
-        ramp3_duration = 1333.0
-        inter_delay = 2000.0
-        post_delay = 250.0
 
         if amplitude is None:
             if threshold_current is None or threshold_current == 0 or threshold_percentage is None:
@@ -274,16 +312,16 @@ class StimulusFactory:
                 " Will only keep amplitude value."
             )
         result = (
-            Empty(self.dt, duration=delay)
-            + Slope(self.dt, duration=ramp1_duration, amplitude_start=0.0, amplitude_end=amplitude)
-            + Slope(self.dt, duration=ramp1_duration, amplitude_start=amplitude, amplitude_end=0.0)
-            + Empty(self.dt, duration=inter_delay)
-            + Slope(self.dt, duration=ramp2_duration, amplitude_start=0.0, amplitude_end=amplitude)
-            + Slope(self.dt, duration=ramp2_duration, amplitude_start=amplitude, amplitude_end=0.0)
-            + Empty(self.dt, duration=inter_delay)
-            + Slope(self.dt, duration=ramp3_duration, amplitude_start=0.0, amplitude_end=amplitude)
-            + Slope(self.dt, duration=ramp3_duration, amplitude_start=amplitude, amplitude_end=0.0)
-            + Empty(self.dt, duration=post_delay)
+            Empty(self.dt, duration=PosCheopsTimings.PRE_DELAY.value)
+            + Slope(self.dt, duration=PosCheopsTimings.RAMP1_DURATION.value, amplitude_start=0.0, amplitude_end=amplitude)
+            + Slope(self.dt, duration=PosCheopsTimings.RAMP1_DURATION.value, amplitude_start=amplitude, amplitude_end=0.0)
+            + Empty(self.dt, duration=PosCheopsTimings.INTER_DELAY.value)
+            + Slope(self.dt, duration=PosCheopsTimings.RAMP2_DURATION.value, amplitude_start=0.0, amplitude_end=amplitude)
+            + Slope(self.dt, duration=PosCheopsTimings.RAMP2_DURATION.value, amplitude_start=amplitude, amplitude_end=0.0)
+            + Empty(self.dt, duration=PosCheopsTimings.INTER_DELAY.value)
+            + Slope(self.dt, duration=PosCheopsTimings.RAMP3_DURATION.value, amplitude_start=0.0, amplitude_end=amplitude)
+            + Slope(self.dt, duration=PosCheopsTimings.RAMP3_DURATION.value, amplitude_start=amplitude, amplitude_end=0.0)
+            + Empty(self.dt, duration=PosCheopsTimings.POST_DELAY.value)
         )
         return result
 
@@ -301,12 +339,6 @@ class StimulusFactory:
             threshold_percentage: Percentage of desired threshold_current amplification.
             amplitude: Raw amplitude of input current.
         """
-        delay = 1750.0
-        ramp1_duration = 3333.0
-        ramp2_duration = 1666.0
-        ramp3_duration = 1111.0
-        inter_delay = 2000.0
-        post_delay = 250.0
 
         if amplitude is None:
             if threshold_current is None or threshold_current == 0 or threshold_percentage is None:
@@ -318,16 +350,16 @@ class StimulusFactory:
                 " Will only keep amplitude value."
             )
         result = (
-            Empty(self.dt, duration=delay)
-            + Slope(self.dt, duration=ramp1_duration, amplitude_start=0.0, amplitude_end=amplitude)
-            + Slope(self.dt, duration=ramp1_duration, amplitude_start=amplitude, amplitude_end=0.0)
-            + Empty(self.dt, duration=inter_delay)
-            + Slope(self.dt, duration=ramp2_duration, amplitude_start=0.0, amplitude_end=amplitude)
-            + Slope(self.dt, duration=ramp2_duration, amplitude_start=amplitude, amplitude_end=0.0)
-            + Empty(self.dt, duration=inter_delay)
-            + Slope(self.dt, duration=ramp3_duration, amplitude_start=0.0, amplitude_end=amplitude)
-            + Slope(self.dt, duration=ramp3_duration, amplitude_start=amplitude, amplitude_end=0.0)
-            + Empty(self.dt, duration=post_delay)
+            Empty(self.dt, duration=NegCheopsTimings.PRE_DELAY.value)
+            + Slope(self.dt, duration=NegCheopsTimings.RAMP1_DURATION.value, amplitude_start=0.0, amplitude_end=amplitude)
+            + Slope(self.dt, duration=NegCheopsTimings.RAMP1_DURATION.value, amplitude_start=amplitude, amplitude_end=0.0)
+            + Empty(self.dt, duration=NegCheopsTimings.INTER_DELAY.value)
+            + Slope(self.dt, duration=NegCheopsTimings.RAMP2_DURATION.value, amplitude_start=0.0, amplitude_end=amplitude)
+            + Slope(self.dt, duration=NegCheopsTimings.RAMP2_DURATION.value, amplitude_start=amplitude, amplitude_end=0.0)
+            + Empty(self.dt, duration=NegCheopsTimings.INTER_DELAY.value)
+            + Slope(self.dt, duration=NegCheopsTimings.RAMP3_DURATION.value, amplitude_start=0.0, amplitude_end=amplitude)
+            + Slope(self.dt, duration=NegCheopsTimings.RAMP3_DURATION.value, amplitude_start=amplitude, amplitude_end=0.0)
+            + Empty(self.dt, duration=NegCheopsTimings.POST_DELAY.value)
         )
         return result
 
@@ -346,8 +378,6 @@ class StimulusFactory:
             amplitude: Raw amplitude of input current.
             pre_delay: delay before the start of the stimulus
         """
-        duration = 5000.0
-        post_delay = 0
 
         if amplitude is not None:
             if threshold_current is not None and threshold_current != 0 and threshold_percentage is not None:
@@ -358,8 +388,8 @@ class StimulusFactory:
             return DelayedZap.amplitude_based(
                 self.dt,
                 pre_delay=pre_delay,
-                duration=duration,
-                post_delay=post_delay,
+                duration=SineSpecTimings.DURATION.value,
+                post_delay=SineSpecTimings.POST_DELAY.value,
                 amplitude=amplitude,
             )
 
@@ -367,8 +397,8 @@ class StimulusFactory:
             return DelayedZap.threshold_based(
                 self.dt,
                 pre_delay=pre_delay,
-                duration=duration,
-                post_delay=post_delay,
+                duration=SineSpecTimings.DURATION.value,
+                post_delay=SineSpecTimings.POST_DELAY.value,
                 threshold_current=threshold_current,
                 threshold_percentage=threshold_percentage,
             )
