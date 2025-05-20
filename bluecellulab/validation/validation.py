@@ -324,7 +324,9 @@ def fi_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
     }
 
 
-def run_validations(cell, cell_name, spike_threshold_voltage=-30, output_dir="./memodel_validation_figures"):
+def run_validations(
+    cell, cell_name, spike_threshold_voltage=-30, output_dir="./memodel_validation_figures"
+):
     """Run all the validations on the cell.
 
     Args:
