@@ -324,15 +324,16 @@ def fi_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
     }
 
 
-def run_validations(cell, cell_name, spike_threshold_voltage=-30):
+def run_validations(cell, cell_name, spike_threshold_voltage=-30, output_dir="./memodel_validation_figures"):
     """Run all the validations on the cell.
 
     Args:
         cell (Cell): The cell to validate.
         cell_name (str): The name of the cell, used in the output directory.
         spike_threshold_voltage (float): The voltage threshold for spike detection.
+        output_dir (str): The directory to save the validation figures.
     """
-    out_dir = pathlib.Path("memodel_validation_figures") / cell_name
+    out_dir = pathlib.Path(output_dir) / cell_name
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # cell = Cell.from_template_parameters(template_params)
@@ -387,9 +388,9 @@ def run_validations(cell, cell_name, spike_threshold_voltage=-30):
 
     return {
         "memodel_properties": {
-            "holding_current": holding_current,
-            "rheobase": rheobase,
-            "rin": rin,
+            "holding_current": float(holding_current),
+            "rheobase": float(rheobase),
+            "rin": float(rin),
         },
         "spiking_test": spiking_test_result,
         "depolarization_block_test": depolarization_block_result,
