@@ -24,13 +24,13 @@ def compute_plot_iv_curve(cell,
                           stim_start=100.0,
                           duration=500.0,
                           post_delay=100.0,
-                          threshold_voltage=-30,
+                          threshold_voltage=-20,
                           nb_bins=11,
                           rheobase=None,
                           show_figure=True,
                           save_figure=False,
                           output_dir="./",
-                          output_fname="iv_curve.png"):
+                          output_fname="iv_curve.pdf"):
     """Compute and plot the Current-Voltage (I-V) curve for a given cell by
     injecting a range of currents.
 
@@ -53,7 +53,7 @@ def compute_plot_iv_curve(cell,
         post_delay (float, optional): The delay after the stimulation ends before the simulation stops
             (in ms). Default is 100.0 ms.
         threshold_voltage (float, optional): The voltage threshold (in mV) for detecting a steady-state
-            response. Default is -30 mV.
+            response. Default is -20 mV.
         nb_bins (int, optional): The number of discrete current levels between 0 and the maximum current.
             Default is 11.
         rheobase (float, optional): The rheobase current (in nA) for the cell. If not provided, it will
@@ -132,13 +132,13 @@ def compute_plot_fi_curve(cell,
                           duration=500.0,
                           post_delay=100.0,
                           max_current=0.8,
-                          threshold_voltage=-30,
+                          threshold_voltage=-20,
                           nb_bins=11,
                           rheobase=None,
                           show_figure=True,
                           save_figure=False,
                           output_dir="./",
-                          output_fname="fi_curve.png"):
+                          output_fname="fi_curve.pdf"):
     """Compute and plot the Frequency-Current (F-I) curve for a given cell by
     injecting a range of currents.
 
@@ -163,7 +163,7 @@ def compute_plot_fi_curve(cell,
         max_current (float, optional): The maximum amplitude of the injected current (in nA).
             Default is 0.8 nA.
         threshold_voltage (float, optional): The voltage threshold (in mV) for detecting a steady-state
-            response. Default is -30 mV.
+            response. Default is -20 mV.
         nb_bins (int, optional): The number of discrete current levels between 0 and `max_current`.
             Default is 11.
         rheobase (float, optional): The rheobase current (in nA) for the cell. If not provided, it will
@@ -372,7 +372,7 @@ class BPAP:
         fig.suptitle('Back-propagating Action Potential Analysis')
         fig.tight_layout()
         if save_figure:
-            fig.savefig(outpath, dpi=400)
+            fig.savefig(outpath)
         if show_figure:
             plt.show()
 

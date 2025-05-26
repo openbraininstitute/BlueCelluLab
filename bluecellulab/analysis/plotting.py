@@ -14,7 +14,7 @@ def plot_iv_curve(
     show_figure=True,
     save_figure=False,
     output_dir="./",
-    output_fname="iv_curve.png",
+    output_fname="iv_curve.pdf",
 ):
     """Plots the IV curve.
 
@@ -28,7 +28,7 @@ def plot_iv_curve(
         show_figure (bool): Whether to display the figure. Default is True.
         save_figure (bool): Whether to save the figure. Default is False.
         output_dir (str): The directory to save the figure if save_figure is True. Default is "./".
-        output_fname (str): The filename to save the figure as if save_figure is True. Default is "iv_curve.png".
+        output_fname (str): The filename to save the figure as if save_figure is True. Default is "iv_curve.pdf".
 
     Raises:
         ValueError: If the lengths of currents and voltages do not match.
@@ -48,7 +48,7 @@ def plot_iv_curve(
 
     if save_figure:
         pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
-        plt.savefig(pathlib.Path(output_dir) / output_fname, format='png', dpi=300)
+        plt.savefig(pathlib.Path(output_dir) / output_fname, format='pdf')
         plt.close()
 
 
@@ -62,7 +62,7 @@ def plot_fi_curve(
     show_figure=True,
     save_figure=False,
     output_dir="./",
-    output_fname="fi_curve.png",
+    output_fname="fi_curve.pdf",
 ):
     """Plots the F-I (Frequency-Current) curve.
 
@@ -76,7 +76,7 @@ def plot_fi_curve(
         show_figure (bool): Whether to display the figure. Default is True.
         save_figure (bool): Whether to save the figure. Default is False.
         output_dir (str): The directory to save the figure if save_figure is True. Default is "./".
-        output_fname (str): The filename to save the figure as if save_figure is True. Default is "fi_curve.png".
+        output_fname (str): The filename to save the figure as if save_figure is True. Default is "fi_curve.pdf".
 
     Raises:
         ValueError: If the lengths of currents and spike counts do not match.
@@ -96,5 +96,5 @@ def plot_fi_curve(
 
     if save_figure:
         pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
-        plt.savefig(pathlib.Path(output_dir) / output_fname, format='png', dpi=300)
+        plt.savefig(pathlib.Path(output_dir) / output_fname, format='pdf')
         plt.close()
