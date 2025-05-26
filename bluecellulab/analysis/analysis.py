@@ -226,9 +226,6 @@ class BPAP:
         self.dt = 0.025
         self.stim_start = 1000
         self.stim_duration = 1
-        self.soma_rec = None
-        self.dend_rec = {}
-        self.apic_rec = {}
 
     @property
     def start_index(self) -> int:
@@ -243,16 +240,18 @@ class BPAP:
     def get_recordings(self):
         """Get the soma, basal and apical recordings."""
         all_recordings = self.cell.get_allsections_voltagerecordings()
-        self.soma_rec = None
-        self.dend_rec = {}
-        self.apic_rec = {}
+        soma_rec = None
+        dend_rec = {}
+        apic_rec = {}
         for key, value in all_recordings.items():
             if "soma" in key:
-                self.soma_rec = value
+                soma_rec = value
             elif "dend" in key:
-                self.dend_rec[key] = value
+                dend_rec[key] = value
             elif "apic" in key:
-                self.apic_rec[key] = value
+                apic_rec[key] = value
+
+        return soma_rec, dend_rec, apic_rec
 
     def run(self, duration: float, amplitude: float) -> None:
         """Apply depolarization and hyperpolarization at the same time."""
@@ -260,52 +259,136 @@ class BPAP:
         sim.add_cell(self.cell)
         self.cell.add_allsections_voltagerecordings()
         self.cell.add_step(start_time=self.stim_start, stop_time=self.stim_start + self.stim_duration, level=amplitude)
-        # not sure why we use delay and duration instead of totduration
-        hyperpolarizing = Hyperpolarizing("single-cell", delay=self.stim_start, duration=self.stim_duration)
+        hyperpolarizing = Hyperpolarizing("single-cell", delay=0, duration=duration)
         self.cell.add_replay_hypamp(hyperpolarizing)
         sim.run(duration, dt=self.dt, cvode=False)
 
-    def voltage_attenuation(self) -> dict[str, float]:
-        """Return soma peak voltage across all sections."""
-        # TODO: re-implement this
-        # all_recordings = self.cell.get_allsections_voltagerecordings()
-        # dendritic_recordings = self.select_dendritic_recordings(all_recordings)
-        # soma_peak_index = get_peak_index(self.soma_rec, self.start_index, self.end_index)
-        # res = {}
-        # for key, voltage in dendritic_recordings.items():
-        #     peak_index_volt = voltage[soma_peak_index]
-        #     res[key] = peak_index_volt
-        # return res
-        return
+    def amplitudes(self, recs) -> list[float]:
+        """Return amplitude across given sections."""
+        efel_feature_name = "maximum_voltage_from_voltagebase"
+        traces = [
+            {
+                'T': self.cell.get_time(),
+                'V': rec,
+                'stim_start': [self.stim_start],
+                'stim_end': [self.stim_start + self.stim_duration]
+            }
+            for rec in self.recs.values()
+        ]
+        features_results = efel.get_feature_values(traces, [efel_feature_name])
+        amps = [feat_res[efel_feature_name][0] for feat_res in features_results]
 
-    # not needed for our use case
-    # def peak_delays(self) -> dict[str, float]:
-    #     """Return the peak delays in each section."""
-    #     all_recordings = self.cell.get_allsections_voltagerecordings()
-    #     dendritic_recordings = self.select_dendritic_recordings(all_recordings)
-    #     soma_key = [key for key in dendritic_recordings.keys() if key.endswith("soma[0]")][0]
-    #     soma_voltage = dendritic_recordings[soma_key]
-    #     soma_peak_index = get_peak_index(soma_voltage, self.start_index, self.end_index)
-    #     res = {}
-    #     for key, voltage in dendritic_recordings.items():
-    #         peak_index = get_peak_index(voltage, self.start_index, self.end_index)
-    #         index_delay = peak_index - soma_peak_index
-    #         time_delay = index_delay * self.dt
-    #         res[key] = time_delay
-    #     return res
+        return amps
 
-    def distances_to_soma(self) -> dict[str, float]:
+    def distances_to_soma(self, recs) -> list[float]:
         """Return the distance to the soma for each section."""
-        # TODO: re-implement this?
-        res = {}
-        all_recordings = self.cell.get_allsections_voltagerecordings()
-        dendritic_recordings = self.select_dendritic_recordings(all_recordings)
+        res = []
         soma = self.cell.soma
-        for key in dendritic_recordings.keys():
+        for key in recs.keys():
             section_name = key.rsplit(".")[-1].split("[")[0]  # e.g. "dend"
             section_idx = int(key.rsplit(".")[-1].split("[")[1].split("]")[0])  # e.g. 0
             attribute_value = getattr(self.cell.cell.getCell(), section_name)
             section = next(islice(attribute_value, section_idx, None))
             # section e.g. cADpyr_L2TPC_bluecellulab_x[0].dend[0]
-            res[key] = neuron.h.distance(soma(0.5), section(0.5))
+            res.append(neuron.h.distance(soma(0.5), section(0.5)))
         return res
+
+    def get_amplitudes_and_distances(self):
+        soma_rec, dend_rec, apic_rec = self.get_recordings()
+        soma_amp = amplitudes(soma_rec)[0]
+        dend_amps = None
+        dend_dist = None
+        apic_amps = None
+        apic_dist = None
+        if self.dend_rec:
+            dend_amps = self.amplitudes(dend_rec)
+            dend_dist = self.distances_to_soma(dend_rec)
+        if self.apic_rec:
+            apic_amps = self.amplitudes(apic_rec)
+            apic_dist = self.distances_to_soma(apic_rec)
+
+        return soma_amp, dend_amps, dend_dist, apic_amps, apic_dist
+
+    def fit(self, soma_amp, dend_amps, dend_dist, apic_amps, apic_dist):
+        """Fit the amplitudes vs distances to an exponential decay function."""
+        from scipy.optimize import curve_fit
+
+        def exp_decay(x, a, b, c):
+            return a * np.exp(-b * x) + c
+
+        popt_dend = None
+        if dend_amps and dend_dist:
+            dend_dist.append(0)  # Add soma distance
+            dend_amps.append(soma_amp)  # Add soma amplitude
+            popt_dend, _ = curve_fit(exp_decay, dend_dist, dend_amps)
+
+        popt_apic = None
+        if apic_amps and apic_dist:
+            apic_dist.append(0)
+            apic_amps.append(soma_amp)
+            popt_apic, _ = curve_fit(exp_decay, apic_dist, apic_amps)
+
+        return popt_dend, popt_apic
+
+    def validate(soma_amp, dend_amps, dend_dist, apic_amps, apic_dist):
+        """Check that the exponential fit is decaying"""
+        validated = True
+        notes = ""
+        popt_dend, popt_apic = self.fit(soma_amp, dend_amps, dend_dist, apic_amps, apic_dist)
+        if not popt_dend:
+            notes += "No dendritic recordings found.\n"
+        elif popt_dend[1] >= 0:
+            validated = False
+            notes += "Dendritic fit is not decaying.\n"
+        if not popt_apic:
+            notes += "No apical recordings found.\n"
+        elif popt_apic[1] >= 0:
+            validated = False
+            notes += "Apical fit is not decaying.\n"
+
+        return validated, notes
+
+    def plot(self, soma_amp, dend_amps, dend_dist, apic_amps, apic_dist, show_figure=True, save_figure=False, output_dir="./", output_fname="bpap.pdf"):
+        """Plot the results of the BPAP analysis."""
+        popt_dend, popt_apic = self.fit(soma_amp, dend_amps, dend_dist, apic_amps, apic_dist)
+
+        outpath = out_dir / fname
+        fig, ax1 = plt.subplots(figsize=(10, 6))
+        plt.scatter([0], [soma_amp], color='black', label='Soma')
+        if dend_amps and dend_dist:
+            ax1.scatter(dend_dist, dend_amps, color='green', label='Dendrites')
+            if popt_dend:
+                x = np.linspace(0, max(dend_dist), 100)
+                y = exp_decay(x, *popt_dend)
+                ax1.plot(x, y, color='darkgreen', linestyle='--', label='Dendritic Fit')
+        if apic_amps and apic_dist:
+            ax1.scatter(apic_dist, apic_amps, color='blue', label='Apical Dendrites')
+            if popt_apic:
+                x = np.linspace(0, max(apic_dist), 100)
+                y = exp_decay(x, *popt_apic)
+                ax1.plot(x, y, color='darkblue', linestyle='--', label='Apical Fit')
+        ax1.set_xlabel('Distance to Soma (um)')
+        ax1.set_ylabel('Amplitude (mV)')
+        fig.suptitle('Back-propagating Action Potential Analysis')
+        fig.tight_layout()
+        if save_figure:
+            fig.savefig(outpath, dpi=400)
+        if show_figure:
+            plt.show()
+
+        return outpath
+
+    def run_and_validate(self, duration: float, amplitude: float,
+                           show_figure=True, save_figure=False,
+                           output_dir="./", output_fname="bpap.pdf"):
+        """Run the BPAP analysis and validate the results."""
+        self.run(duration, amplitude)
+        soma_amp, dend_amps, dend_dist, apic_amps, apic_dist = self.get_amplitudes_and_distances()
+        validated, notes = self.validate(soma_amp, dend_amps, dend_dist, apic_amps, apic_dist)
+        outpath = self.plot(soma_amp, dend_amps, dend_dist, apic_amps, apic_dist, show_figure=show_figure, save_figure=save_figure,
+                            output_dir=output_dir, output_fname=output_fname)
+        return {
+            "validation_details": notes,
+            "passed": validated,
+            "figures": [outpath],
+        }

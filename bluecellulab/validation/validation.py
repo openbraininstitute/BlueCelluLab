@@ -19,6 +19,7 @@ import pathlib
 
 import efel
 
+from bluecellulab.analysis.analysis import BPAP
 from bluecellulab.analysis.analysis import compute_plot_fi_curve
 from bluecellulab.analysis.analysis import compute_plot_iv_curve
 from bluecellulab.analysis.inject_sequence import run_multirecordings_stimulus
@@ -30,6 +31,7 @@ from bluecellulab.tools import calculate_rheobase
 
 logger = logging.getLogger(__name__)
 
+# TODO: replace skipped by validation_details(str): notes about the validation
 
 def plot_trace(recording, out_dir, fname, title):
     """Plot a trace with inout current given a recording."""
@@ -360,7 +362,9 @@ def run_validations(cell, cell_name, spike_threshold_voltage=-30):
     depolarization_block_result = depolarization_block_test(cell, rheobase, out_dir)
 
     # Validation 3: Backpropagating AP Test
-    # logger.debug("Running backpropagating AP test")
+    logger.debug("Running backpropagating AP test")
+    bpap = BPAP(cell)
+    bpap_result = bpap.run_and_validate(duration=1500., amplitude=rheobase * 2, show_figure=False, save_figure=True, output_dir=out_dir, output_fname="bpap.pdf")
 
     # Validation 4: Postsynaptic Potential Test
     # logger.debug("Running postsynaptic potential test")
@@ -393,6 +397,7 @@ def run_validations(cell, cell_name, spike_threshold_voltage=-30):
         },
         "spiking_test": spiking_test_result,
         "depolarization_block_test": depolarization_block_result,
+        "bpap_test": bpap_result,
         "ais_spiking_test": ais_spiking_test_result,
         "hyperpolarization_test": hyperpolarization_result,
         "rin_test": rin_result,
