@@ -28,7 +28,6 @@ from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.exceptions import UnsteadyCellError
 from bluecellulab.simulation.parallel import IsolatedProcess
 from bluecellulab.utils import CaptureOutput
-from bluecellulab.type_aliases import NeuronSection
 
 
 logger = logging.getLogger(__name__)
@@ -394,14 +393,14 @@ def check_empty_topology() -> bool:
 
 
 def calculate_max_thresh_current(cell: Cell,
-                                 threshold_voltage: float = -30.0,
+                                 threshold_voltage: float = -20.0,
                                  section: str = "soma[0]",
                                  segx: float = 0.5) -> float:
     """Calculate the upper bound threshold current.
 
     Args:
         cell (bluecellulab.cell.Cell): The initialized cell model.
-        threshold_voltage (float, optional): Voltage threshold for spike detection. Default is -30.0 mV.
+        threshold_voltage (float, optional): Voltage threshold for spike detection. Default is -20.0 mV.
         section (str, optional): The section where current is injected.
         segx (float, optional): Fractional location within the section for current injection.
 
@@ -507,20 +506,59 @@ def validate_section_and_segment(cell: Cell, section_name: str, segment_position
         raise ValueError(f"Segment position must be between 0.0 and 1.0, got {segment_position}.")
 
 
-def get_section(cell: Cell, section_name: str) -> NeuronSection:
-    """Retrieve a NEURON section from the cell by its name.
+def get_section(cell: Cell, section_name: str):
+    """Retrieve a NEURON Section from the cell.sections mapping.
+
+    Supports both 'soma' and 'soma[0]' style names.
 
     Args:
-        cell (Cell): The cell object containing the sections.
-        section_name (str): The name of the section to retrieve.
+        cell (Cell): The cell object containing NEURON sections.
+        section_name (str): The section name from the report config.
 
     Returns:
-        NeuronSection: The NEURON section corresponding to the provided name.
+        List[NeuronSection]: A list of NEURON Section objects.
 
     Raises:
-        ValueError: If the section with the specified name does not exist.
+        ValueError: If the section cannot be resolved or is not a NEURON Section.
     """
-    try:
-        return cell.sections[section_name]
-    except KeyError:
-        raise ValueError(f"Section '{section_name}' not found in the cell.")
+    # Direct match
+    if section_name in cell.sections:
+        section = cell.sections[section_name]
+        if hasattr(section, "nseg"):
+            return [section]
+        raise TypeError(f"'{section_name}' exists but is not a NEURON Section.")
+
+    # Fallback: if "soma" is missing but "soma[0]" is there
+    if section_name == "soma" and "soma[0]" in cell.sections:
+        logger.warning("Section 'soma' not found. Falling back to 'soma[0]'.")
+        section = cell.sections["soma[0]"]
+        if hasattr(section, "nseg"):
+            return [section]
+        raise TypeError("'soma[0]' found but is not a NEURON Section.")
+
+    # Suggest available options for debugging
+    available = ", ".join(cell.sections.keys())
+    raise ValueError(
+        f"Section '{section_name}' not found in cell.sections. "
+        f"Available: [{available}]"
+    )
+
+
+def resolve_segments(cell, report_cfg, node_id, compartment_nodes, source_type):
+    """Determine which segments to record from."""
+    section = report_cfg.get("section", "soma")
+    compartment = report_cfg.get("compartments", "center")
+
+    if source_type == "compartment_set":
+        return [(sec, seg) for _, sec, seg in compartment_nodes if _ == node_id]
+    else:
+        sec_list = get_section(cell, section)
+        targets = []
+        for sec in sec_list:
+            sec_name = sec.name().split(".")[-1]
+            if compartment == "center":
+                targets.append((sec_name, 0.5))
+            else:
+                for seg in sec:
+                    targets.append((sec_name, seg.x))
+        return targets

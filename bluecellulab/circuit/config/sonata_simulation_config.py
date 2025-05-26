@@ -13,6 +13,8 @@
 # limitations under the License.
 from __future__ import annotations
 from functools import lru_cache
+import json
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -20,6 +22,8 @@ from bluecellulab.circuit.config.sections import Conditions, ConnectionOverrides
 from bluecellulab.stimulus.circuit_stimulus_definitions import Stimulus
 
 from bluepysnap import Simulation as SnapSimulation
+
+logger = logging.getLogger(__name__)
 
 
 class SonataSimulationConfig:
@@ -73,6 +77,34 @@ class SonataSimulationConfig:
         for conn_entry in conn_overrides:
             result.append(ConnectionOverrides.from_sonata(conn_entry))
         return result
+
+    @lru_cache(maxsize=1)
+    def get_compartment_sets(self) -> dict[str, dict]:
+        filepath = self.impl.config.get("compartment_sets_file")
+        if not filepath:
+            raise ValueError("No 'compartment_sets_file' entry found in SONATA config.")
+        with open(filepath, 'r') as f:
+            return json.load(f)
+
+    @lru_cache(maxsize=1)
+    def get_node_sets(self) -> dict[str, dict]:
+        print(self.impl.circuit.config.get("node_sets_file"))
+        filepath = self.impl.circuit.config.get("node_sets_file")
+        if not filepath:
+            raise ValueError("No 'node_sets_file' entry found in SONATA config.")
+        with open(filepath, 'r') as f:
+            return json.load(f)
+
+    @lru_cache(maxsize=1)
+    def get_report_entries(self) -> dict[str, dict]:
+        """Returns the 'reports' dictionary from the SONATA simulation config.
+
+        Each key is a report name, and the value is its configuration.
+        """
+        reports = self.impl.config.get("reports", {})
+        if not isinstance(reports, dict):
+            raise ValueError("Invalid format for 'reports' in SONATA config.")
+        return reports
 
     def connection_entries(self) -> list[ConnectionOverrides]:
         return self._connection_entries() + self._connection_overrides
@@ -136,6 +168,12 @@ class SonataSimulationConfig:
     @property
     def output_root_path(self) -> str:
         return self.impl.config["output"]["output_dir"]
+
+    @property
+    def spikes_file_path(self) -> Path:
+        output_dir = Path(self.output_root_path)
+        spikes_file = self.impl.config.get("output", {}).get("spikes_file", "spikes.h5")
+        return output_dir / spikes_file
 
     @property
     def extracellular_calcium(self) -> Optional[float]:

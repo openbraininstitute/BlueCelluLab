@@ -43,8 +43,10 @@ from bluecellulab.circuit.format import determine_circuit_format, CircuitFormat
 from bluecellulab.circuit.node_id import create_cell_id, create_cell_ids
 from bluecellulab.circuit.simulation_access import BluepySimulationAccess, SimulationAccess, SonataSimulationAccess, _sample_array
 from bluecellulab.importer import load_mod_files
+from bluecellulab.circuit.iotools import write_compartment_report
 from bluecellulab.rngsettings import RNGSettings
 from bluecellulab.simulation.neuron_globals import NeuronGlobals
+from bluecellulab.simulation.report import configure_all_reports
 from bluecellulab.stimulus.circuit_stimulus_definitions import Noise, OrnsteinUhlenbeck, RelativeOrnsteinUhlenbeck, RelativeShotNoise, ShotNoise
 import bluecellulab.stimulus.circuit_stimulus_definitions as circuit_stimulus_definitions
 from bluecellulab.exceptions import BluecellulabError
@@ -300,6 +302,11 @@ class CircuitSimulation:
                 add_sinusoidal_stimuli=add_sinusoidal_stimuli,
                 add_linear_stimuli=add_linear_stimuli
             )
+
+        configure_all_reports(
+            cells=self.cells,
+            simulation_config=self.circuit_access.config
+        )
 
     def _add_stimuli(self, add_noise_stimuli=False,
                      add_hyperpolarizing_stimuli=False,
@@ -646,6 +653,8 @@ class CircuitSimulation:
             forward_skip_value=forward_skip_value,
             show_progress=show_progress)
 
+        self.write_reports()
+
     def get_mainsim_voltage_trace(
             self, cell_id: int | tuple[str, int], t_start=None, t_stop=None, t_step=None
     ) -> np.ndarray:
@@ -779,3 +788,44 @@ class CircuitSimulation:
                                  record_dt=cell_kwargs['record_dt'],
                                  template_format=cell_kwargs['template_format'],
                                  emodel_properties=cell_kwargs['emodel_properties'])
+
+    def write_reports(self):
+        report_entries = self.circuit_access.config.get_report_entries()
+
+        for report_name, report_cfg in report_entries.items():
+            report_type = report_cfg.get("type", "compartment")
+            section = report_cfg.get("sections")
+
+            if report_type != "compartment":
+                raise NotImplementedError(f"Report type '{report_type}' is not supported.")
+
+            output_path = f"./{report_name}.h5"
+
+            if section == "compartment_set":
+                if report_cfg.get("cells") is not None:
+                    raise ValueError(
+                        "Report config error: 'cells' must not be set when using 'compartment_set' sections."
+                    )
+                compartment_sets = self.circuit_access.config.get_compartment_sets()
+                write_compartment_report(
+                    output_path=output_path,
+                    cells=self.cells,
+                    report_cfg=report_cfg,
+                    source_sets=compartment_sets,
+                    source_type="compartment_set"
+                )
+
+            else:
+                node_sets = self.circuit_access.config.get_node_sets()
+                if report_cfg.get("compartments") not in ("center", "all"):
+                    raise ValueError(
+                        f"Unsupported 'compartments' value '{report_cfg.get('compartments')}' "
+                        "for node-based section recording (must be 'center' or 'all')."
+                    )
+                write_compartment_report(
+                    output_path=output_path,
+                    cells=self.cells,
+                    report_cfg=report_cfg,
+                    source_sets=node_sets,
+                    source_type="node_set"
+                )
