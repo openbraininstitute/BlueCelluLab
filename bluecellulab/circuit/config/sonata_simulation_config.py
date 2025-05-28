@@ -172,7 +172,7 @@ class SonataSimulationConfig:
 
     @property
     def output_root_path(self) -> str:
-        return self.impl.config["output"]["output_dir"]
+        return self.impl.config.get("output", {}).get("output_dir", "output")
 
     @property
     def spikes_file_path(self) -> Path:

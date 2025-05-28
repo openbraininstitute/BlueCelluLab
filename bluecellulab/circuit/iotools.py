@@ -118,6 +118,7 @@ def write_sonata_report_file(
         report_cfg.get("dt", 0.1)
     ], dtype=np.float64)
 
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     with h5py.File(output_path, "w") as f:
         grp = f.require_group(f"/report/{population}")
         data_ds = grp.create_dataset("data", data=data_array.astype(np.float32))
