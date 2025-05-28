@@ -80,11 +80,11 @@ def test_resolve_segments_node_set_all(mock_cell):
 
 def test_resolve_segments_compartment_set(mock_cell):
     """Test resolve_segments for compartment_set recording."""
-    compartment_nodes = [[1, "soma", 0.5], [1, "dend[0]", 0.25]]
+    compartment_nodes = [[1, "soma[0]", 0.5], [1, "dend[0]", 0.25]]
     targets = resolve_segments(mock_cell, {}, 1, compartment_nodes, "compartment_set")
     assert len(targets) == 2
     _, sec_name, seg = targets[0]
-    assert sec_name == "soma"
+    assert sec_name == "soma[0]"
     assert seg == 0.5
     _, sec_name, seg = targets[1]
     assert sec_name == "dend[0]"

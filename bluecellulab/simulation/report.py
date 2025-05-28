@@ -15,7 +15,7 @@
 
 import logging
 
-from bluecellulab.tools import resolve_segments
+from bluecellulab.tools import resolve_segments, resolve_source_nodes
 
 logger = logging.getLogger(__name__)
 
@@ -63,15 +63,7 @@ def configure_all_reports(cells, simulation_config):
             continue
 
         population = source["population"]
-
-        if source_type == "compartment_set":
-            node_ids = [entry[0] for entry in source.get("compartment_set", [])]
-        else:  # node_set
-            if "node_id" in source:
-                node_ids = source["node_id"]
-            else:
-                # Fallback: use all available node IDs from this population
-                node_ids = [node_id for (pop, node_id) in cells.keys() if pop == population]
+        node_ids, _ = resolve_source_nodes(source, source_type, cells, population)
 
         for node_id in node_ids:
             cell = cells.get((population, node_id))

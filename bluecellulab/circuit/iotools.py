@@ -21,7 +21,7 @@ from typing import List
 import numpy as np
 import h5py
 
-from bluecellulab.tools import resolve_segments
+from bluecellulab.tools import resolve_segments, resolve_source_nodes
 from bluecellulab.cell.cell_dict import CellDict
 from bluecellulab.circuit.node_id import CellId
 
@@ -85,16 +85,7 @@ def write_compartment_report(
 
     population = source["population"]
 
-    if source_type == "compartment_set":
-        compartment_nodes = source.get("compartment_set", [])
-        node_ids = [n[0] for n in compartment_nodes]
-    else:
-        if "node_id" in source:
-            node_ids = source["node_id"]
-        else:
-            # Fallback: get all node IDs for the population from cells
-            node_ids = [node_id for (pop, node_id) in cells.keys() if pop == population]
-        compartment_nodes = None  # Not used for node_set
+    node_ids, compartment_nodes = resolve_source_nodes(source, source_type, cells, population)
 
     data_matrix: List[np.ndarray] = []
     recorded_node_ids: List[int] = []
@@ -121,9 +112,9 @@ def write_compartment_report(
             except Exception as e:
                 logger.warning(f"Failed recording: GID {node_id} sec {sec_name} seg {seg}: {e}")
 
-        if not data_matrix:
-            logger.warning(f"No data recorded for report '{source_name}'. Skipping write.")
-            return
+    if not data_matrix:
+        logger.warning(f"No data recorded for report '{source_name}'. Skipping write.")
+        return
 
     write_sonata_report_file(
         output_path, population, data_matrix, recorded_node_ids, index_pointers, element_ids, report_cfg
@@ -143,6 +134,7 @@ def write_sonata_report_file(
         report_cfg.get("dt", 0.1)
     ], dtype=np.float64)
 
+    output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with h5py.File(output_path, "w") as f:
         grp = f.require_group(f"/report/{population}")

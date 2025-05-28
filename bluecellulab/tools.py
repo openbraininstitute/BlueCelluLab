@@ -28,6 +28,7 @@ from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.exceptions import UnsteadyCellError
 from bluecellulab.simulation.parallel import IsolatedProcess
 from bluecellulab.utils import CaptureOutput
+from bluecellulab.type_aliases import NeuronSection
 
 
 logger = logging.getLogger(__name__)
@@ -506,7 +507,7 @@ def validate_section_and_segment(cell: Cell, section_name: str, segment_position
         raise ValueError(f"Segment position must be between 0.0 and 1.0, got {segment_position}.")
 
 
-def get_section(cell, section_name: str):
+def get_section(cell: Cell, section_name: str) -> NeuronSection:
     """Return a single, fully specified NEURON section (e.g., 'soma[0]',
     'dend[3]').
 
@@ -557,7 +558,7 @@ def resolve_segments(cell, report_cfg, node_id, compartment_nodes, source_type):
 
     if source_type == "compartment_set":
         return [
-            (get_sections(cell, sec)[0], sec, seg)
+            (get_section(cell, sec), sec, seg)
             for _, sec, seg in compartment_nodes if _ == node_id
         ]
 
@@ -577,3 +578,15 @@ def resolve_segments(cell, report_cfg, node_id, compartment_nodes, source_type):
             )
 
     return targets
+
+
+def resolve_source_nodes(source, source_type, cells, population):
+    if source_type == "compartment_set":
+        compartment_nodes = source.get("compartment_set", [])
+        node_ids = [entry[0] for entry in compartment_nodes]
+    else:  # node_set
+        node_ids = source.get("node_id")
+        if node_ids is None:
+            node_ids = [node_id for (pop, node_id) in cells.keys() if pop == population]
+        compartment_nodes = None
+    return node_ids, compartment_nodes
