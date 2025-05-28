@@ -13,6 +13,7 @@
 # limitations under the License.
 """Unit tests for circuit/config/simulation_config.py."""
 
+import json
 from pathlib import Path
 
 from bluepysnap import Simulation as SnapSimulation
@@ -227,3 +228,52 @@ def test_output_root_path():
 def test_extracellular_calcium():
     sim = SonataSimulationConfig(cond_params_conf_path)
     assert sim.extracellular_calcium is None
+
+
+def test_get_compartment_sets(tmp_path):
+    file = tmp_path / "compartment_sets.json"
+    file.write_text(json.dumps({
+        "soma_set": {
+            "population": "Mosaic",
+            "compartment_set": [[0, "soma", 0.5]]
+        }
+    }))
+    sim = SonataSimulationConfig.__new__(SonataSimulationConfig)
+    sim.impl = type("impl", (), {"config": {"compartment_sets_file": str(file)}})
+    result = sim.get_compartment_sets()
+    assert "soma_set" in result
+    assert result["soma_set"]["population"] == "Mosaic"
+
+
+def test_get_node_sets(tmp_path):
+    file = tmp_path / "node_sets.json"
+    file.write_text(json.dumps({
+        "target_cells": {
+            "population": "Mosaic",
+            "node_id": [0, 1, 2]
+        }
+    }))
+    sim = SonataSimulationConfig.__new__(SonataSimulationConfig)
+    sim.impl = type("impl", (), {"circuit": type("circuit", (), {"config": {"node_sets_file": str(file)}})})
+    result = sim.get_node_sets()
+    assert "target_cells" in result
+    assert result["target_cells"]["node_id"] == [0, 1, 2]
+
+
+def test_get_report_entries():
+    sim = SonataSimulationConfig.__new__(SonataSimulationConfig)
+    sim.impl = type("impl", (), {
+        "config": {
+            "reports": {
+                "soma_v": {
+                    "cells": "target_cells",
+                    "section": "soma",
+                    "variable_name": "v",
+                    "compartments": "center"
+                }
+            }
+        }
+    })
+    result = sim.get_report_entries()
+    assert "soma_v" in result
+    assert result["soma_v"]["variable_name"] == "v"

@@ -394,14 +394,14 @@ def check_empty_topology() -> bool:
 
 
 def calculate_max_thresh_current(cell: Cell,
-                                 threshold_voltage: float = -30.0,
+                                 threshold_voltage: float = -20.0,
                                  section: str = "soma[0]",
                                  segx: float = 0.5) -> float:
     """Calculate the upper bound threshold current.
 
     Args:
         cell (bluecellulab.cell.Cell): The initialized cell model.
-        threshold_voltage (float, optional): Voltage threshold for spike detection. Default is -30.0 mV.
+        threshold_voltage (float, optional): Voltage threshold for spike detection. Default is -20.0 mV.
         section (str, optional): The section where current is injected.
         segx (float, optional): Fractional location within the section for current injection.
 
@@ -508,19 +508,85 @@ def validate_section_and_segment(cell: Cell, section_name: str, segment_position
 
 
 def get_section(cell: Cell, section_name: str) -> NeuronSection:
-    """Retrieve a NEURON section from the cell by its name.
-
-    Args:
-        cell (Cell): The cell object containing the sections.
-        section_name (str): The name of the section to retrieve.
-
-    Returns:
-        NeuronSection: The NEURON section corresponding to the provided name.
+    """Return a single, fully specified NEURON section (e.g., 'soma[0]',
+    'dend[3]').
 
     Raises:
-        ValueError: If the section with the specified name does not exist.
+        ValueError or TypeError if the section is not found or invalid.
     """
+    if section_name in cell.sections:
+        section = cell.sections[section_name]
+        if hasattr(section, "nseg"):
+            return section
+        raise TypeError(f"'{section_name}' exists but is not a NEURON section.")
+
+    available = ", ".join(cell.sections.keys())
+    raise ValueError(f"Section '{section_name}' not found. Available: [{available}]")
+
+
+def get_sections(cell, section_name: str):
+    """Return a list of NEURON sections.
+
+    If the section name is a fully specified one (e.g., 'dend[3]'), return it as a list of one.
+    If the section name is a base name (e.g., 'dend'), return all matching sections like 'dend[0]', 'dend[1]', etc.
+
+    Raises:
+        ValueError or TypeError if no valid sections are found.
+    """
+    # Try to interpret as fully qualified section name
     try:
-        return cell.sections[section_name]
-    except KeyError:
-        raise ValueError(f"Section '{section_name}' not found in the cell.")
+        return [get_section(cell, section_name)]
+    except ValueError:
+        pass  # Not a precise match; try prefix match
+
+    # Fallback to prefix-based match (e.g., 'dend' → 'dend[0]', 'dend[1]', ...)
+    matched = [
+        section for name, section in cell.sections.items()
+        if name.startswith(f"{section_name}[")
+    ]
+    if matched:
+        return matched
+
+    available = ", ".join(cell.sections.keys())
+    raise ValueError(f"Section '{section_name}' not found. Available: [{available}]")
+
+
+def resolve_segments(cell, report_cfg, node_id, compartment_nodes, source_type):
+    """Determine which segments to record from one or more NEURON sections."""
+    section_name = report_cfg.get("sections", "soma")
+    compartment = report_cfg.get("compartments", "center")
+
+    if source_type == "compartment_set":
+        return [
+            (get_section(cell, sec), sec, seg)
+            for _, sec, seg in compartment_nodes if _ == node_id
+        ]
+
+    sections = get_sections(cell, section_name)
+    targets = []
+
+    for sec in sections:
+        sec_name = sec.name().split(".")[-1]
+        if compartment == "center":
+            targets.append((sec, sec_name, 0.5))
+        elif compartment == "all":
+            for seg in sec:
+                targets.append((sec, sec_name, seg.x))
+        else:
+            raise ValueError(
+                f"Unsupported 'compartments' value '{compartment}' — must be 'center' or 'all'."
+            )
+
+    return targets
+
+
+def resolve_source_nodes(source, source_type, cells, population):
+    if source_type == "compartment_set":
+        compartment_nodes = source.get("compartment_set", [])
+        node_ids = [entry[0] for entry in compartment_nodes]
+    else:  # node_set
+        node_ids = source.get("node_id")
+        if node_ids is None:
+            node_ids = [node_id for (pop, node_id) in cells.keys() if pop == population]
+        compartment_nodes = None
+    return node_ids, compartment_nodes

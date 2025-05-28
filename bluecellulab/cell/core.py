@@ -756,6 +756,18 @@ class Cell(InjectableMixin, PlottableMixin):
         """Get a vector of AIS voltage."""
         return self.get_recording('self.axonal[1](0.5)._ref_v')
 
+    def add_variable_recording(self, variable: str, section, segx):
+        if variable == "v":
+            self.add_voltage_recording(section, segx)
+        else:
+            raise ValueError(f"Unsupported variable for recording: {variable}")
+
+    def get_variable_recording(self, variable: str, section, segx) -> np.ndarray:
+        if variable == "v":
+            return self.get_voltage_recording(section=section, segx=segx)
+        else:
+            raise ValueError(f"Unsupported variable '{variable}'")
+
     @property
     def n_segments(self) -> int:
         """Get the number of segments in the cell."""
