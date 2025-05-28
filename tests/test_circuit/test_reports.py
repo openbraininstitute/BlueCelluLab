@@ -1,4 +1,4 @@
-# Copyright 2025 Blue Brain Project / EPFL
+# Copyright 2025 Open Brain Institute
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 
 from pathlib import Path
+from unittest.mock import Mock, patch
 import pytest
 
 from bluecellulab import CircuitSimulation
@@ -175,3 +176,37 @@ def test_unsupported_variable(mock_cell):
 
     # Should log warning but not raise error
     _configure_recording(mock_cell, report_cfg, {"population": "TestPop", "node_id": [1]}, "node_set", "test_report")
+
+def test_configure_recording_adds_variable_recording():
+    """Test that _configure_recording calls add_variable_recording correctly for a supported variable."""
+    cell = Mock()
+    cell.cell_id = 1
+    report_cfg = {"variable_name": "v"}
+    source = {"population": "TestPop", "node_id": [1]}
+    source_type = "node_set"
+    report_name = "test_report"
+    targets = [("soma_section", "soma", 0.5)]
+
+    with patch("bluecellulab.simulation.report.resolve_segments", return_value=targets):
+        _configure_recording(cell, report_cfg, source, source_type, report_name)
+
+    cell.add_variable_recording.assert_called_once_with(variable="v", section="soma_section", segx=0.5)
+
+
+def test_configure_recording_unsupported_variable_logs_warning():
+    """Test that _configure_recording logs a warning for unsupported variable (AttributeError)."""
+    cell = Mock()
+    cell.cell_id = 1
+    cell.add_variable_recording.side_effect = AttributeError("Unsupported variable")
+    report_cfg = {"variable_name": "unsupported"}
+    source = {"population": "TestPop", "node_id": [1]}
+    source_type = "node_set"
+    report_name = "test_report"
+    targets = [("soma_section", "soma", 0.5)]
+
+    with patch("bluecellulab.simulation.report.resolve_segments", return_value=targets), \
+         patch("bluecellulab.simulation.report.logger") as mock_logger:
+        _configure_recording(cell, report_cfg, source, source_type, report_name)
+
+    mock_logger.warning.assert_any_call("Recording for variable 'unsupported' is not implemented in Cell.")
+    cell.add_variable_recording.assert_called_once_with(variable="unsupported", section="soma_section", segx=0.5)

@@ -22,9 +22,6 @@ logger = logging.getLogger(__name__)
 
 def _configure_recording(cell, report_cfg, source, source_type, report_name):
     variable = report_cfg.get("variable_name", "v")
-    if variable != "v":
-        logger.warning(f"Unsupported variable '{variable}' for report '{report_name}'")
-        return
 
     node_id = cell.cell_id
     compartment_nodes = source.get("compartment_set") if source_type == "compartment_set" else None
@@ -32,12 +29,14 @@ def _configure_recording(cell, report_cfg, source, source_type, report_name):
     targets = resolve_segments(cell, report_cfg, node_id, compartment_nodes, source_type)
     for sec, sec_name, seg in targets:
         try:
-            cell.add_voltage_recording(section=sec, segx=seg)
+            cell.add_variable_recording(variable=variable, section=sec, segx=seg)
+        except AttributeError:
+            logger.warning(f"Recording for variable '{variable}' is not implemented in Cell.")
+            return
         except Exception as e:
             logger.warning(
-                f"Failed to record voltage at {sec_name}({seg}) on GID {node_id} for report '{report_name}': {e}"
+                f"Failed to record '{variable}' at {sec_name}({seg}) on GID {node_id} for report '{report_name}': {e}"
             )
-
 
 def configure_all_reports(cells, simulation_config):
     report_entries = simulation_config.get_report_entries()

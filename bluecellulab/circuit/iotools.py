@@ -88,7 +88,8 @@ def write_compartment_report(
         targets = resolve_segments(cell, report_cfg, node_id, compartment_nodes, source_type)
         for sec, sec_name, seg in targets:
             try:
-                trace = cell.get_voltage_recording(section=sec, segx=seg)
+                variable = report_cfg.get("variable_name", "v")
+                trace = cell.get_variable_recording(variable=variable, section=sec, segx=seg)
                 data_matrix.append(trace)
                 recorded_node_ids.append(node_id)
                 element_ids.append(len(element_ids))
