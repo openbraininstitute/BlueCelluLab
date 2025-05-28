@@ -505,60 +505,74 @@ def validate_section_and_segment(cell: Cell, section_name: str, segment_position
     if not (0.0 <= segment_position <= 1.0):
         raise ValueError(f"Segment position must be between 0.0 and 1.0, got {segment_position}.")
 
-
-def get_section(cell: Cell, section_name: str):
-    """Retrieve a NEURON Section from the cell.sections mapping.
-
-    Supports both 'soma' and 'soma[0]' style names.
-
-    Args:
-        cell (Cell): The cell object containing NEURON sections.
-        section_name (str): The section name from the report config.
-
-    Returns:
-        List[NeuronSection]: A list of NEURON Section objects.
+def get_section(cell, section_name: str):
+    """
+    Return a single, fully specified NEURON section (e.g., 'soma[0]', 'dend[3]').
 
     Raises:
-        ValueError: If the section cannot be resolved or is not a NEURON Section.
+        ValueError or TypeError if the section is not found or invalid.
     """
-    # Direct match
     if section_name in cell.sections:
         section = cell.sections[section_name]
         if hasattr(section, "nseg"):
-            return [section]
-        raise TypeError(f"'{section_name}' exists but is not a NEURON Section.")
+            return section
+        raise TypeError(f"'{section_name}' exists but is not a NEURON section.")
 
-    # Fallback: if "soma" is missing but "soma[0]" is there
-    if section_name == "soma" and "soma[0]" in cell.sections:
-        logger.warning("Section 'soma' not found. Falling back to 'soma[0]'.")
-        section = cell.sections["soma[0]"]
-        if hasattr(section, "nseg"):
-            return [section]
-        raise TypeError("'soma[0]' found but is not a NEURON Section.")
-
-    # Suggest available options for debugging
     available = ", ".join(cell.sections.keys())
-    raise ValueError(
-        f"Section '{section_name}' not found in cell.sections. "
-        f"Available: [{available}]"
-    )
+    raise ValueError(f"Section '{section_name}' not found. Available: [{available}]")
+
+def get_sections(cell, section_name: str):
+    """
+    Return a list of NEURON sections.
+
+    If the section name is a fully specified one (e.g., 'dend[3]'), return it as a list of one.
+    If the section name is a base name (e.g., 'dend'), return all matching sections like 'dend[0]', 'dend[1]', etc.
+
+    Raises:
+        ValueError or TypeError if no valid sections are found.
+    """
+    # Try to interpret as fully qualified section name
+    try:
+        return [get_section(cell, section_name)]
+    except ValueError:
+        pass  # Not a precise match; try prefix match
+
+    # Fallback to prefix-based match (e.g., 'dend' → 'dend[0]', 'dend[1]', ...)
+    matched = [
+        section for name, section in cell.sections.items()
+        if name.startswith(f"{section_name}[")
+    ]
+    if matched:
+        return matched
+
+    available = ", ".join(cell.sections.keys())
+    raise ValueError(f"Section '{section_name}' not found. Available: [{available}]")
 
 
 def resolve_segments(cell, report_cfg, node_id, compartment_nodes, source_type):
-    """Determine which segments to record from."""
-    section = report_cfg.get("section", "soma")
+    """Determine which segments to record from one or more NEURON sections."""
+    section_name = report_cfg.get("sections", "soma")
     compartment = report_cfg.get("compartments", "center")
 
     if source_type == "compartment_set":
-        return [(sec, seg) for _, sec, seg in compartment_nodes if _ == node_id]
-    else:
-        sec_list = get_section(cell, section)
-        targets = []
-        for sec in sec_list:
-            sec_name = sec.name().split(".")[-1]
-            if compartment == "center":
-                targets.append((sec_name, 0.5))
-            else:
-                for seg in sec:
-                    targets.append((sec_name, seg.x))
-        return targets
+        return [
+            (get_sections(cell, sec)[0], sec, seg)
+            for _, sec, seg in compartment_nodes if _ == node_id
+        ]
+
+    sections = get_sections(cell, section_name)
+    targets = []
+
+    for sec in sections:
+        sec_name = sec.name().split(".")[-1]
+        if compartment == "center":
+            targets.append((sec, sec_name, 0.5))
+        elif compartment == "all":
+            for seg in sec:
+                targets.append((sec, sec_name, seg.x))
+        else:
+            raise ValueError(
+                f"Unsupported 'compartments' value '{compartment}' — must be 'center' or 'all'."
+            )
+
+    return targets
