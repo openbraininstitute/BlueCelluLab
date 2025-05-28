@@ -53,7 +53,31 @@ def write_compartment_report(
     source_sets: dict,
     source_type: str,
 ):
-    """Write a SONATA-compatible compartment report to an HDF5 file."""
+    """
+    Write a SONATA-compatible compartment report to an HDF5 file.
+
+    This function collects time series data (e.g., membrane voltage, ion currents)
+    from a group of cells defined by either a node set or a compartment set, and
+    writes the data to a SONATA-style report file.
+
+    Args:
+        output_path (str): Path to the output HDF5 file.
+        cells (CellDict): Mapping of (population, node_id) to cell objects that
+            provide access to pre-recorded variable traces.
+        report_cfg (dict): Configuration for the report. Must include:
+            - "variable_name": Name of the variable to report (e.g., "v", "ica", "ina").
+            - "start_time", "end_time", "dt": Timing parameters.
+            - "cells" or "compartments": Name of the node or compartment set.
+        source_sets (dict): Dictionary of either node sets or compartment sets.
+        source_type (str): Either "node_set" or "compartment_set".
+
+    Raises:
+        ValueError: If the specified source set is not found.
+
+    Notes:
+        - Currently supports only variables explicitly handled in Cell.get_variable_recording().
+        - Cells without recordings for the requested variable will be skipped.
+    """
     source_name = report_cfg.get("cells") if source_type == "node_set" else report_cfg.get("compartments")
     source = source_sets.get(source_name)
     if not source:
@@ -123,7 +147,10 @@ def write_sonata_report_file(
     with h5py.File(output_path, "w") as f:
         grp = f.require_group(f"/report/{population}")
         data_ds = grp.create_dataset("data", data=data_array.astype(np.float32))
-        data_ds.attrs["units"] = "mV"
+
+        variable = report_cfg.get("variable_name", "v")
+        if variable == "v":
+            data_ds.attrs["units"] = "mV"
 
         mapping = grp.require_group("mapping")
         mapping.create_dataset("node_ids", data=node_ids_arr)
