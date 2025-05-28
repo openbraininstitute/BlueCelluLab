@@ -799,7 +799,6 @@ class CircuitSimulation:
                 raise NotImplementedError(f"Report type '{report_type}' is not supported.")
 
             output_path = self.circuit_access.config.report_file_path(report_cfg, report_name)
-            print(f"Writing report '{report_name}' to {output_path}")
             if section == "compartment_set":
                 if report_cfg.get("cells") is not None:
                     raise ValueError(

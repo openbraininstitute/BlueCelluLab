@@ -88,7 +88,6 @@ class SonataSimulationConfig:
 
     @lru_cache(maxsize=1)
     def get_node_sets(self) -> dict[str, dict]:
-        print(self.impl.circuit.config.get("node_sets_file"))
         filepath = self.impl.circuit.config.get("node_sets_file")
         if not filepath:
             raise ValueError("No 'node_sets_file' entry found in SONATA config.")
