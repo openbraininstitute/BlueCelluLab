@@ -177,6 +177,7 @@ def test_unsupported_variable(mock_cell):
     # Should log warning but not raise error
     _configure_recording(mock_cell, report_cfg, {"population": "TestPop", "node_id": [1]}, "node_set", "test_report")
 
+
 def test_configure_recording_adds_variable_recording():
     """Test that _configure_recording calls add_variable_recording correctly for a supported variable."""
     cell = Mock()

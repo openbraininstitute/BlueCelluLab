@@ -38,6 +38,7 @@ def _configure_recording(cell, report_cfg, source, source_type, report_name):
                 f"Failed to record '{variable}' at {sec_name}({seg}) on GID {node_id} for report '{report_name}': {e}"
             )
 
+
 def configure_all_reports(cells, simulation_config):
     report_entries = simulation_config.get_report_entries()
 

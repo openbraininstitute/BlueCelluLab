@@ -53,8 +53,7 @@ def write_compartment_report(
     source_sets: dict,
     source_type: str,
 ):
-    """
-    Write a SONATA-compatible compartment report to an HDF5 file.
+    """Write a SONATA-compatible compartment report to an HDF5 file.
 
     This function collects time series data (e.g., membrane voltage, ion currents)
     from a group of cells defined by either a node set or a compartment set, and
