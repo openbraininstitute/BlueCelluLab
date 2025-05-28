@@ -322,15 +322,15 @@ class BPAP:
 
         popt_dend = None
         if dend_amps and dend_dist:
-            dend_dist.append(0)  # Add soma distance
-            dend_amps.append(soma_amp)  # Add soma amplitude
-            popt_dend, _ = curve_fit(exp_decay, dend_dist, dend_amps)
+            dist = [0] + dend_dist  # add soma distance
+            amps = [soma_amp] + dend_amps  # add soma amplitude
+            popt_dend, _ = curve_fit(exp_decay, dist, amps)
 
         popt_apic = None
         if apic_amps and apic_dist:
-            apic_dist.append(0)
-            apic_amps.append(soma_amp)
-            popt_apic, _ = curve_fit(exp_decay, apic_dist, apic_amps)
+            dist = [0] + apic_dist  # add soma distance
+            amps = [soma_amp] + apic_amps  # add soma amplitude
+            popt_apic, _ = curve_fit(exp_decay, dist, amps)
 
         return popt_dend, popt_apic
 
