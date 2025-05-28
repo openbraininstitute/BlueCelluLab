@@ -505,9 +505,10 @@ def validate_section_and_segment(cell: Cell, section_name: str, segment_position
     if not (0.0 <= segment_position <= 1.0):
         raise ValueError(f"Segment position must be between 0.0 and 1.0, got {segment_position}.")
 
+
 def get_section(cell, section_name: str):
-    """
-    Return a single, fully specified NEURON section (e.g., 'soma[0]', 'dend[3]').
+    """Return a single, fully specified NEURON section (e.g., 'soma[0]',
+    'dend[3]').
 
     Raises:
         ValueError or TypeError if the section is not found or invalid.
@@ -521,9 +522,9 @@ def get_section(cell, section_name: str):
     available = ", ".join(cell.sections.keys())
     raise ValueError(f"Section '{section_name}' not found. Available: [{available}]")
 
+
 def get_sections(cell, section_name: str):
-    """
-    Return a list of NEURON sections.
+    """Return a list of NEURON sections.
 
     If the section name is a fully specified one (e.g., 'dend[3]'), return it as a list of one.
     If the section name is a base name (e.g., 'dend'), return all matching sections like 'dend[0]', 'dend[1]', etc.

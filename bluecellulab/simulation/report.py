@@ -15,7 +15,7 @@
 
 import logging
 
-from bluecellulab.tools import get_sections, resolve_segments
+from bluecellulab.tools import resolve_segments
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,7 @@ def _configure_recording(cell, report_cfg, source, source_type, report_name):
             logger.warning(
                 f"Failed to record voltage at {sec_name}({seg}) on GID {node_id} for report '{report_name}': {e}"
             )
+
 
 def configure_all_reports(cells, simulation_config):
     report_entries = simulation_config.get_report_entries()

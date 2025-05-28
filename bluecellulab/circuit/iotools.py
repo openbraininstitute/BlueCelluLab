@@ -21,7 +21,7 @@ from typing import List
 import numpy as np
 import h5py
 
-from bluecellulab.tools import get_sections, resolve_segments
+from bluecellulab.tools import resolve_segments
 from bluecellulab.cell.cell_dict import CellDict
 from bluecellulab.circuit.node_id import CellId
 
