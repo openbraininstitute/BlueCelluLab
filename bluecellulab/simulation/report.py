@@ -15,7 +15,7 @@
 
 import logging
 
-from bluecellulab.tools import get_section, resolve_segments
+from bluecellulab.tools import get_sections, resolve_segments
 
 logger = logging.getLogger(__name__)
 
@@ -30,20 +30,20 @@ def _configure_recording(cell, report_cfg, source, source_type, report_name):
     compartment_nodes = source.get("compartment_set") if source_type == "compartment_set" else None
 
     targets = resolve_segments(cell, report_cfg, node_id, compartment_nodes, source_type)
-    for section_name, seg in targets:
-        for sec in get_section(cell, section_name):
-            try:
-                cell.add_voltage_recording(section=sec, segx=seg)
-            except Exception as e:
-                logger.warning(f"Failed to record voltage at {section_name}({seg}) on GID {node_id} for report '{report_name}': {e}")
-
+    for sec, sec_name, seg in targets:
+        try:
+            cell.add_voltage_recording(section=sec, segx=seg)
+        except Exception as e:
+            logger.warning(
+                f"Failed to record voltage at {sec_name}({seg}) on GID {node_id} for report '{report_name}': {e}"
+            )
 
 def configure_all_reports(cells, simulation_config):
     report_entries = simulation_config.get_report_entries()
 
     for report_name, report_cfg in report_entries.items():
         report_type = report_cfg.get("type", "compartment")
-        section = report_cfg.get("section", "soma")
+        section = report_cfg.get("sections", "soma")
 
         if report_type != "compartment":
             raise NotImplementedError(f"Report type '{report_type}' is not supported.")
@@ -63,11 +63,15 @@ def configure_all_reports(cells, simulation_config):
             continue
 
         population = source["population"]
-        node_ids = (
-            [entry[0] for entry in source["compartment_set"]]
-            if source_type == "compartment_set"
-            else source["node_id"]
-        )
+
+        if source_type == "compartment_set":
+            node_ids = [entry[0] for entry in source.get("compartment_set", [])]
+        else:  # node_set
+            if "node_id" in source:
+                node_ids = source["node_id"]
+            else:
+                # Fallback: use all available node IDs from this population
+                node_ids = [node_id for (pop, node_id) in cells.keys() if pop == population]
 
         for node_id in node_ids:
             cell = cells.get((population, node_id))

@@ -21,7 +21,7 @@ from typing import List
 import numpy as np
 import h5py
 
-from bluecellulab.tools import get_section, resolve_segments
+from bluecellulab.tools import get_sections, resolve_segments
 from bluecellulab.cell.cell_dict import CellDict
 from bluecellulab.circuit.node_id import CellId
 
@@ -53,36 +53,24 @@ def write_compartment_report(
     source_sets: dict,
     source_type: str,
 ):
-    """Write a SONATA-compatible compartment report to an HDF5 file.
-
-    This function collects pre-recorded voltage traces from a group of cells defined by
-    either a node set or a compartment set, and writes the data to a SONATA-style report file.
-
-    Args:
-        output_path (str): Path to the output HDF5 file.
-        cells (CellDict): Dictionary mapping (population, node_id) to cell objects that
-            provide access to pre-recorded voltage data.
-        report_cfg (dict): SONATA Configuration dictionary for the report. Expected keys include:
-            - "variable_name": Name of the recorded variable (e.g., "v").
-            - "start_time", "end_time", "dt": Timing parameters for the report.
-            - "cells" or "compartments": Name of the source set to use, depending on source_type.
-        source_sets (dict): Dictionary of either node sets or compartment sets.
-        source_type (str): Either 'node_set' or 'compartment_set', determining how to interpret the source_sets.
-
-    Raises:
-        ValueError: If the specified source name is not found in source_sets.
-
-    Returns:
-        None: The report is written to disk; nothing is returned.
-    """
+    """Write a SONATA-compatible compartment report to an HDF5 file."""
     source_name = report_cfg.get("cells") if source_type == "node_set" else report_cfg.get("compartments")
     source = source_sets.get(source_name)
     if not source:
         raise ValueError(f"{source_type} '{source_name}' not found.")
 
     population = source["population"]
-    node_ids = source["node_id"] if source_type == "node_set" else [n[0] for n in source["compartment_set"]]
-    compartment_nodes = source.get("compartment_set") if source_type == "compartment_set" else None
+
+    if source_type == "compartment_set":
+        compartment_nodes = source.get("compartment_set", [])
+        node_ids = [n[0] for n in compartment_nodes]
+    else:
+        if "node_id" in source:
+            node_ids = source["node_id"]
+        else:
+            # Fallback: get all node IDs for the population from cells
+            node_ids = [node_id for (pop, node_id) in cells.keys() if pop == population]
+        compartment_nodes = None  # Not used for node_set
 
     data_matrix: List[np.ndarray] = []
     recorded_node_ids: List[int] = []
@@ -98,19 +86,19 @@ def write_compartment_report(
             continue
 
         targets = resolve_segments(cell, report_cfg, node_id, compartment_nodes, source_type)
-        for sec_name, seg in targets:
-            for neuron_section in get_section(cell, sec_name):
-                try:
-                    trace = cell.get_voltage_recording(section=neuron_section, segx=seg)
-                    data_matrix.append(trace)
-                    recorded_node_ids.append(node_id)
-                    element_ids.append(len(element_ids))
-                    index_pointers.append(index_pointers[-1] + 1)
-                except Exception as e:
-                    logger.warning(f"Failed recording: GID {node_id} sec {sec_name} seg {seg}: {e}")
-    if not data_matrix:
-        logger.warning(f"No data recorded for report '{source_name}'. Skipping write.")
-        return
+        for sec, sec_name, seg in targets:
+            try:
+                trace = cell.get_voltage_recording(section=sec, segx=seg)
+                data_matrix.append(trace)
+                recorded_node_ids.append(node_id)
+                element_ids.append(len(element_ids))
+                index_pointers.append(index_pointers[-1] + 1)
+            except Exception as e:
+                logger.warning(f"Failed recording: GID {node_id} sec {sec_name} seg {seg}: {e}")
+
+        if not data_matrix:
+            logger.warning(f"No data recorded for report '{source_name}'. Skipping write.")
+            return
 
     write_sonata_report_file(
         output_path, population, data_matrix, recorded_node_ids, index_pointers, element_ids, report_cfg
