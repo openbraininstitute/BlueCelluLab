@@ -109,6 +109,12 @@ class SonataSimulationConfig:
     def connection_entries(self) -> list[ConnectionOverrides]:
         return self._connection_entries() + self._connection_overrides
 
+    def report_file_path(self, report_cfg: dict, report_key: str) -> Path:
+        """Resolve the full path for the report output file."""
+        output_dir = Path(self.output_root_path)
+        file_name = report_cfg.get("file_name", f"{report_key}.h5")
+        return output_dir / file_name
+
     @property
     def base_seed(self) -> int:
         return self.impl.run.random_seed

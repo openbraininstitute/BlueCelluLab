@@ -653,7 +653,6 @@ class CircuitSimulation:
             forward_skip_value=forward_skip_value,
             show_progress=show_progress)
 
-        self.write_reports()
 
     def get_mainsim_voltage_trace(
             self, cell_id: int | tuple[str, int], t_start=None, t_stop=None, t_step=None
@@ -790,6 +789,7 @@ class CircuitSimulation:
                                  emodel_properties=cell_kwargs['emodel_properties'])
 
     def write_reports(self):
+        """Write all reports defined in the simulation config."""
         report_entries = self.circuit_access.config.get_report_entries()
 
         for report_name, report_cfg in report_entries.items():
@@ -799,8 +799,8 @@ class CircuitSimulation:
             if report_type != "compartment":
                 raise NotImplementedError(f"Report type '{report_type}' is not supported.")
 
-            output_path = f"./{report_name}.h5"
-
+            output_path = self.circuit_access.config.report_file_path(report_cfg, report_name)
+            print(f"Writing report '{report_name}' to {output_path}")
             if section == "compartment_set":
                 if report_cfg.get("cells") is not None:
                     raise ValueError(
