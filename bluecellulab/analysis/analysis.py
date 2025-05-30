@@ -5,10 +5,12 @@ except ImportError:
     efel = None
 from itertools import islice
 import logging
+from matplotlib.collections import LineCollection
 import matplotlib.pyplot as plt
 import neuron
 import numpy as np
 import pathlib
+import seaborn as sns
 
 from bluecellulab import Cell
 from bluecellulab.analysis.inject_sequence import run_stimulus
@@ -232,7 +234,9 @@ class BPAP:
         self.cell = cell
         self.dt = 0.025
         self.stim_start = 1000
-        self.stim_duration = 1
+        self.stim_duration = 3
+        self.basal_cmap = sns.color_palette("crest", as_cmap=True)
+        self.apical_cmap = sns.color_palette("YlOrBr_r", as_cmap=True)
 
     @property
     def start_index(self) -> int:
@@ -360,25 +364,48 @@ class BPAP:
 
         return validated, notes
 
-    def plot(self, soma_amp, dend_amps, dend_dist, apic_amps, apic_dist, show_figure=True, save_figure=False, output_dir="./", output_fname="bpap.pdf"):
+    def plot_amp_vs_dist(
+        self,
+        soma_amp,
+        dend_amps,
+        dend_dist,
+        apic_amps,
+        apic_dist,
+        show_figure=True,
+        save_figure=False,
+        output_dir="./",
+        output_fname="bpap.pdf",
+    ):
         """Plot the results of the BPAP analysis."""
         popt_dend, popt_apic = self.fit(soma_amp, dend_amps, dend_dist, apic_amps, apic_dist)
 
         outpath = pathlib.Path(output_dir) / output_fname
         fig, ax1 = plt.subplots(figsize=(10, 6))
-        ax1.scatter([0], [soma_amp], color='black', label='Soma')
+        ax1.scatter([0], [soma_amp], marker="^", color='black', label='Soma')
         if dend_amps and dend_dist:
-            ax1.scatter(dend_dist, dend_amps, color='green', label='Dendrites')
+            ax1.scatter(
+                dend_dist,
+                dend_amps,
+                c=dend_dist,
+                cmap=self.basal_cmap,
+                label='Basal Dendrites',
+            )
             if popt_dend is not None:
                 x = np.linspace(0, max(dend_dist), 100)
                 y = exp_decay(x, *popt_dend)
-                ax1.plot(x, y, color='darkgreen', linestyle='--', label='Dendritic Fit')
+                ax1.plot(x, y, color='darkgreen', linestyle='--', label='Basal Dendritic Fit')
         if apic_amps and apic_dist:
-            ax1.scatter(apic_dist, apic_amps, color='blue', label='Apical Dendrites')
+            ax1.scatter(
+                apic_dist,
+                apic_amps,
+                c=apic_dist,
+                cmap=self.apical_cmap,
+                label='Apical Dendrites'
+            )
             if popt_apic is not None:
                 x = np.linspace(0, max(apic_dist), 100)
                 y = exp_decay(x, *popt_apic)
-                ax1.plot(x, y, color='darkblue', linestyle='--', label='Apical Fit')
+                ax1.plot(x, y, color='goldenrod', linestyle='--', label='Apical Fit')
         ax1.set_xlabel('Distance to Soma (um)')
         ax1.set_ylabel('Amplitude (mV)')
         ax1.legend()
@@ -390,3 +417,73 @@ class BPAP:
             plt.show()
 
         return outpath
+
+    def plot_one_axis_recordings(self, fig, ax, rec_list, dist, cmap):
+        """Plot the soma and dendritic recordings on one axis.
+        
+        Args:
+            fig (matplotlib.figure.Figure): The figure to plot on.
+            ax (matplotlib.axes.Axes): The axis to plot on.
+            rec_list (list): List of recordings to plot.
+            dist (list): List of distances from the soma for each recording.
+            cmap (matplotlib.colors.Colormap): Colormap to use for the recordings.
+        """
+        time = self.cell.get_time()
+        line_collection = LineCollection(
+            [np.column_stack([time, rec]) for rec in rec_list],
+            array=dist,
+            cmap=cmap,
+        )
+        ax.set_xlim(
+            self.stim_start - 0.1,
+            self.stim_start + 30
+        )
+        ax.set_ylim(
+            min([min(rec[self.start_index:]) for rec in rec_list]) - 2,
+            max([max(rec[self.start_index:]) for rec in rec_list]) + 2
+        )
+        ax.add_collection(line_collection)
+        fig.colorbar(line_collection, label="soma distance (um)", ax=ax)
+
+    def plot_recordings(
+        self,
+        show_figure=True,
+        save_figure=False,
+        output_dir="./",
+        output_fname="bpap_recordings.pdf",
+    ):
+        """Plot the recordings from all dendrites."""
+        soma_rec, dend_rec, apic_rec = self.get_recordings()
+        dend_dist = []
+        apic_dist = []
+        if dend_rec:
+            dend_dist = self.distances_to_soma(dend_rec)
+        if apic_rec:
+            apic_dist = self.distances_to_soma(apic_rec)
+        # add soma_rec to the lists
+        dend_rec_list = [soma_rec] + list(dend_rec.values())
+        dend_dist = [0] + dend_dist
+        apic_rec_list = [soma_rec] + list(apic_rec.values())
+        apic_dist = [0] + apic_dist
+
+        outpath = pathlib.Path(output_dir) / output_fname
+        fig, (ax1, ax2) = plt.subplots(figsize=(10, 12), nrows=2, sharex=True)
+
+        self.plot_one_axis_recordings(fig, ax1, dend_rec_list, dend_dist, self.basal_cmap)
+        self.plot_one_axis_recordings(fig, ax2, apic_rec_list, apic_dist, self.apical_cmap)
+
+        # plt.setp(ax1.get_xticklabels(), visible=False)
+        ax1.set_title('Basal Dendritic Recordings')
+        ax2.set_title('Apical Dendritic Recordings')
+        ax1.set_ylabel('Voltage (mV)')
+        ax2.set_ylabel('Voltage (mV)')
+        ax2.set_xlabel('Time (ms)')
+        fig.suptitle('Back-propagating Action Potential Recordings')
+        fig.tight_layout()
+        if save_figure:
+            fig.savefig(outpath)
+        if show_figure:
+            plt.show()
+
+        return outpath
+

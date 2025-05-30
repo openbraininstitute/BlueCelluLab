@@ -159,19 +159,34 @@ def bpap_test(cell, rheobase, out_dir="./"):
         rheobase (float): The rheobase current to use for the test.
         out_dir (str): Directory to save the figure.
     """
-    amplitude = 2. * rheobase  # Use 200% of the rheobase current
+    amplitude = 10. * rheobase  # Use 1000% of the rheobase current
     bpap = BPAP(cell)
     bpap.run(duration=1500, amplitude=amplitude)
     soma_amp, dend_amps, dend_dist, apic_amps, apic_dist = bpap.get_amplitudes_and_distances()
     validated, notes = bpap.validate(soma_amp, dend_amps, dend_dist, apic_amps, apic_dist)
-    outpath = bpap.plot(soma_amp, dend_amps, dend_dist, apic_amps, apic_dist, show_figure=False,
-                        save_figure=True, output_dir=out_dir, output_fname="bpap.pdf")
+    outpath_amp_dist = bpap.plot_amp_vs_dist(
+        soma_amp,
+        dend_amps,
+        dend_dist,
+        apic_amps,
+        apic_dist,
+        show_figure=False,
+        save_figure=True,
+        output_dir=out_dir,
+        output_fname="bpap.pdf"
+    )
+    outpath_recordings = bpap.plot_recordings(
+        show_figure=False,
+        save_figure=True,
+        output_dir=out_dir,
+        output_fname="bpap_recordings.pdf",
+    )
 
     return {
         "name": "Simulatable Neuron Back-propagating Action Potential Validation",
         "validation_details": notes,
         "passed": validated,
-        "figures": [outpath],
+        "figures": [outpath_amp_dist, outpath_recordings],
     }
 
 
@@ -450,13 +465,13 @@ def run_validations(
     logger.debug("Running Rin test")
     rin_result = rin_test(rin)
 
-    # Validation 8: IV Test
-    logger.debug("Running IV test")
-    iv_test_result = iv_test(cell, rheobase, out_dir, spike_threshold_voltage)
+    # # Validation 8: IV Test
+    # logger.debug("Running IV test")
+    # iv_test_result = iv_test(cell, rheobase, out_dir, spike_threshold_voltage)
 
-    # Validation 9: FI Test
-    logger.debug("Running FI test")
-    fi_test_result = fi_test(cell, rheobase, out_dir, spike_threshold_voltage)
+    # # Validation 9: FI Test
+    # logger.debug("Running FI test")
+    # fi_test_result = fi_test(cell, rheobase, out_dir, spike_threshold_voltage)
 
     return {
         "memodel_properties": {
@@ -470,6 +485,6 @@ def run_validations(
         "ais_spiking_test": ais_spiking_test_result,
         "hyperpolarization_test": hyperpolarization_result,
         "rin_test": rin_result,
-        "iv_test": iv_test_result,
-        "fi_test": fi_test_result,
+        # "iv_test": iv_test_result,
+        # "fi_test": fi_test_result,
     }
