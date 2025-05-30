@@ -466,12 +466,12 @@ def run_validations(
     rin_result = rin_test(rin)
 
     # # Validation 8: IV Test
-    # logger.debug("Running IV test")
-    # iv_test_result = iv_test(cell, rheobase, out_dir, spike_threshold_voltage)
+    logger.debug("Running IV test")
+    iv_test_result = iv_test(cell, rheobase, out_dir, spike_threshold_voltage)
 
     # # Validation 9: FI Test
-    # logger.debug("Running FI test")
-    # fi_test_result = fi_test(cell, rheobase, out_dir, spike_threshold_voltage)
+    logger.debug("Running FI test")
+    fi_test_result = fi_test(cell, rheobase, out_dir, spike_threshold_voltage)
 
     return {
         "memodel_properties": {
@@ -485,6 +485,6 @@ def run_validations(
         "ais_spiking_test": ais_spiking_test_result,
         "hyperpolarization_test": hyperpolarization_result,
         "rin_test": rin_result,
-        # "iv_test": iv_test_result,
-        # "fi_test": fi_test_result,
+        "iv_test": iv_test_result,
+        "fi_test": fi_test_result,
     }
