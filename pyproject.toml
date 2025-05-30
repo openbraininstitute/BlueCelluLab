@@ -37,6 +37,7 @@ dependencies = [
     "typing-extensions>=4.8.0",
     "networkx>=3.1",
     "h5py>=3.8.0",
+    "seaborn",
 ]
 requires-python = ">=3.9"
 

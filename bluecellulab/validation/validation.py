@@ -19,6 +19,7 @@ import pathlib
 
 import efel
 
+from bluecellulab.analysis.analysis import BPAP
 from bluecellulab.analysis.analysis import compute_plot_fi_curve
 from bluecellulab.analysis.analysis import compute_plot_iv_curve
 from bluecellulab.analysis.inject_sequence import run_multirecordings_stimulus
@@ -101,9 +102,11 @@ def spiking_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
         title="Spiking Test - Step at 200% of Rheobase",
     )
 
+    notes = "Validation passed: Spikes detected." if passed else "Validation failed: No spikes detected."
     return {
-        "skipped": False,
+        "name": "Simulatable Neuron Spiking Validation",
         "passed": passed,
+        "validation_details": notes,
         "figures": [outpath],
     }
 
@@ -139,20 +142,63 @@ def depolarization_block_test(cell, rheobase, out_dir):
         title="Depolarization Block Test - Step at 200% of Rheobase",
     )
 
+    notes = "Validation passed: No depolarization block detected." if not depol_block else "Validation failed: Depolarization block detected."
     return {
-        "skipped": False,
+        "name": "Simulatable Neuron Depolarization Block Validation",
         "passed": not depol_block,
+        "validation_details": notes,
         "figures": [outpath],
+    }
+
+
+def bpap_test(cell, rheobase, out_dir="./"):
+    """Back-propagating action potential test: exponential fit should decay.
+
+    Args:
+        cell (Cell): The cell to test.
+        rheobase (float): The rheobase current to use for the test.
+        out_dir (str): Directory to save the figure.
+    """
+    amplitude = 10. * rheobase  # Use 1000% of the rheobase current
+    bpap = BPAP(cell)
+    bpap.run(duration=1500, amplitude=amplitude)
+    soma_amp, dend_amps, dend_dist, apic_amps, apic_dist = bpap.get_amplitudes_and_distances()
+    validated, notes = bpap.validate(soma_amp, dend_amps, dend_dist, apic_amps, apic_dist)
+    outpath_amp_dist = bpap.plot_amp_vs_dist(
+        soma_amp,
+        dend_amps,
+        dend_dist,
+        apic_amps,
+        apic_dist,
+        show_figure=False,
+        save_figure=True,
+        output_dir=out_dir,
+        output_fname="bpap.pdf"
+    )
+    outpath_recordings = bpap.plot_recordings(
+        show_figure=False,
+        save_figure=True,
+        output_dir=out_dir,
+        output_fname="bpap_recordings.pdf",
+    )
+
+    return {
+        "name": "Simulatable Neuron Back-propagating Action Potential Validation",
+        "validation_details": notes,
+        "passed": validated,
+        "figures": [outpath_amp_dist, outpath_recordings],
     }
 
 
 def ais_spiking_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
     """AIS spiking test: axon should spike before soma."""
+    name = "Simulatable Neuron AIS Spiking Validation"
     # Check that the cell has an axon
     if len(cell.axonal) == 0:
         return {
-            "skipped": True,
-            "passed": False,
+            "name": name,
+            "passed": True,
+            "validation_details": "Validation skipped: Cell does not have an axon section.",
             "figures": [],
         }
 
@@ -192,22 +238,30 @@ def ais_spiking_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
     for recording in recordings:
         if recording.spike is None or len(recording.spike) == 0:
             return {
-                "skipped": False,
+                "name": name,
                 "passed": False,
+                "validation_details": "Validation failed: No spikes detected in one or both recordings.",
                 "figures": [outpath1, outpath2],
             }
 
     # Check if axon spike happens before soma spike
     passed = bool(axon_recording.spike[0] < soma_recording.spike[0])
+    notes = (
+        "Validation passed: Axon spikes before soma."
+        if passed
+        else "Validation failed: Axon does not spike before soma."
+    )
     return {
-        "skipped": False,
+        "name": name,
         "passed": passed,
+        "validation_details": notes,
         "figures": [outpath1, outpath2],
     }
 
 
 def hyperpolarization_test(cell, rheobase, out_dir):
     """Hyperpolarization test: hyperpolarized voltage should be lower than RMP."""
+    name = "Simulatable Neuron Hyperpolarization Validation"
     # Run the stimulus
     stim_factory = StimulusFactory(dt=1.0)
     step_stimulus = stim_factory.iv(threshold_current=rheobase, threshold_percentage=-40)
@@ -240,15 +294,22 @@ def hyperpolarization_test(cell, rheobase, out_dir):
     ss_voltage = features_results[0]["steady_state_voltage_stimend"][0]
     if rmp is None or ss_voltage is None:
         return {
-            "skipped": False,
+            "name": name,
             "passed": False,
+            "validation_details": "Validation failed: Could not determine RMP or steady state voltage.",
             "figures": [outpath],
         }
     hyperpol_bool = bool(ss_voltage < rmp)
 
+    notes = (
+        f"Validation passed: Hyperpolarized voltage ({ss_voltage:.2f} mV) is lower than RMP ({rmp:.2f} mV)."
+        if hyperpol_bool
+        else f"Validation failed: Hyperpolarized voltage ({ss_voltage:.2f} mV) is not lower than RMP ({rmp:.2f} mV)."
+    )
     return {
-        "skipped": False,
+        "name": name,
         "passed": hyperpol_bool,
+        "validation_details": notes,
         "figures": [outpath],
     }
 
@@ -257,15 +318,22 @@ def rin_test(rin):
     """Rin should have an acceptable biological range (< 1000 MOhm)"""
     passed = bool(rin < 1000)
 
+    notes = (
+        f"Validation passed: Input resistance (Rin) = {rin:.2f} MOhm is smaller than 1000 MOhm."
+        if passed
+        else f"Validation failed: Input resistance (Rin) = {rin:.2f} MOhm is higher than 1000 MOhm, which is not realistic."
+    )
     return {
-        "skipped": False,
+        "name": "Simulatable Neuron Input Resistance Validation",
         "passed": passed,
+        "validation_details": notes,
         "figures": [],
     }
 
 
 def iv_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
     """IV curve should have a positive slope."""
+    name = "Simulatable Neuron IV Curve Validation"
     amps, steady_states = compute_plot_iv_curve(
         cell,
         rheobase=rheobase,
@@ -281,14 +349,21 @@ def iv_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
     # Check for positive slope
     if len(amps) < 2 or len(steady_states) < 2:
         return {
-            "skipped": False,
+            "name": name,
             "passed": False,
+            "validation_details": "Validation failed: Not enough data points to determine slope.",
             "figures": [outpath],
         }
     slope = numpy.polyfit(amps, steady_states, 1)[0]
     passed = bool(slope > 0)
+    notes = (
+        f"Validation passed: Slope of IV curve = {slope:.2f} is positive."
+        if passed
+        else f"Validation failed: Slope of IV curve = {slope:.2f} is not positive."
+    )
     return {
-        "skipped": False,
+        "name": name,
+        "validation_details": notes,
         "passed": passed,
         "figures": [outpath],
     }
@@ -296,6 +371,7 @@ def iv_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
 
 def fi_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
     """FI curve should have a positive slope."""
+    name = "Simulatable Neuron FI Curve Validation"
     amps, spike_counts = compute_plot_fi_curve(
         cell,
         rheobase=rheobase,
@@ -311,14 +387,21 @@ def fi_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
     # Check for positive slope
     if len(amps) < 2 or len(spike_counts) < 2:
         return {
-            "skipped": False,
+            "name": name,
             "passed": False,
+            "validation_details": "Validation failed: Not enough data points to determine slope.",
             "figures": [outpath],
         }
     slope = numpy.polyfit(amps, spike_counts, 1)[0]
     passed = bool(slope > 0)
+    notes = (
+        f"Validation passed: Slope of FI curve = {slope:.2f} is positive."
+        if passed
+        else f"Validation failed: Slope of FI curve = {slope:.2f} is not positive."
+    )
     return {
-        "skipped": False,
+        "name": name,
+        "validation_details": notes,
         "passed": passed,
         "figures": [outpath],
     }
@@ -363,10 +446,12 @@ def run_validations(
     depolarization_block_result = depolarization_block_test(cell, rheobase, out_dir)
 
     # Validation 3: Backpropagating AP Test
-    # logger.debug("Running backpropagating AP test")
+    logger.debug("Running backpropagating AP test")
+    bpap_result = bpap_test(cell, rheobase, out_dir)
 
     # Validation 4: Postsynaptic Potential Test
     # logger.debug("Running postsynaptic potential test")
+    # We have to wait for ProbAMPANMDA_EMS to be present in entitycore to implement this test
 
     # Validation 5: AIS Spiking Test
     logger.debug("Running AIS spiking test")
@@ -380,22 +465,23 @@ def run_validations(
     logger.debug("Running Rin test")
     rin_result = rin_test(rin)
 
-    # Validation 8: IV Test
+    # # Validation 8: IV Test
     logger.debug("Running IV test")
     iv_test_result = iv_test(cell, rheobase, out_dir, spike_threshold_voltage)
 
-    # Validation 9: FI Test
+    # # Validation 9: FI Test
     logger.debug("Running FI test")
     fi_test_result = fi_test(cell, rheobase, out_dir, spike_threshold_voltage)
 
     return {
         "memodel_properties": {
-            "holding_current": float(holding_current),
-            "rheobase": float(rheobase),
-            "rin": float(rin),
+            "holding_current": holding_current,
+            "rheobase": rheobase,
+            "rin": rin,
         },
         "spiking_test": spiking_test_result,
         "depolarization_block_test": depolarization_block_result,
+        "bpap_test": bpap_result,
         "ais_spiking_test": ais_spiking_test_result,
         "hyperpolarization_test": hyperpolarization_result,
         "rin_test": rin_result,
