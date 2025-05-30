@@ -420,7 +420,7 @@ class BPAP:
 
     def plot_one_axis_recordings(self, fig, ax, rec_list, dist, cmap):
         """Plot the soma and dendritic recordings on one axis.
-        
+
         Args:
             fig (matplotlib.figure.Figure): The figure to plot on.
             ax (matplotlib.axes.Axes): The axis to plot on.
@@ -486,4 +486,3 @@ class BPAP:
             plt.show()
 
         return outpath
-
