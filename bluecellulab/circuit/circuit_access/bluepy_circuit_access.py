@@ -233,7 +233,7 @@ class BluepyCircuitAccess:
         source_popid, target_popid = zip(*pop_ids)
 
         result = result.assign(
-            source_popid=source_popid, target_popid=target_popid
+            source_popid=list(source_popid), target_popid=list(target_popid)
         )
 
         if result.empty:
