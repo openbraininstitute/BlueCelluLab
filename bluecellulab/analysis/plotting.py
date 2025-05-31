@@ -2,6 +2,68 @@
 
 import matplotlib.pyplot as plt
 import pathlib
+import numpy as np
+from typing import Optional, Tuple
+from bluecellulab.tools import calculate_rheobase
+
+
+def generate_cell_thumbnail(
+    cell,
+    output_path: str = "cell_thumbnail.png"
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Generate a thumbnail image of a Cell object's step response.
+
+    Args:
+        cell: The Cell object to generate a thumbnail for.
+        output_path: Path where to save the thumbnail image.
+
+    Returns:
+        Tuple containing (time, voltage) arrays of the simulation.
+    """
+    # Calculate step amplitude (130% of threshold current)
+    threshold_current = getattr(cell, 'threshold', 0.0)
+    if not threshold_current:  # If threshold is 0, None, or False
+        threshold_current = calculate_rheobase(cell)
+    
+    step_amplitude = threshold_current * 1.3  # 130% of threshold
+    step_duration = 100.0  # ms
+
+    # Add step current injection
+    stim = cell.add_step(
+        start_time=50.0,  # Start after a short delay
+        stop_time=50.0 + step_duration,
+        level=step_amplitude
+    )
+
+    # Set up simulation
+    sim = cell.simulation if hasattr(cell, 'simulation') else None
+    if sim is None:
+        from bluecellulab import Simulation
+        sim = Simulation()
+        sim.add_cell(cell)
+
+    # Run simulation
+    total_duration = 50.0 + step_duration + 50.0  # Add some buffer time after step
+    sim.run(total_duration)
+    # Get recording data
+    time = cell.get_time()
+    voltage = cell.get_soma_voltage()
+
+    # Create figure with default size (matplotlib's default is [6.4, 4.8])
+    fig, ax = plt.subplots(figsize=(6.4, 4.8))
+    ax.plot(time, voltage, 'k-', linewidth=1.5)
+    ax.set_xlabel('Time (ms)', fontsize=10)
+    ax.set_ylabel('Membrane potential (mV)', fontsize=10)
+    plt.tight_layout()
+
+    # Create parent directories if they don't exist
+    output_path = pathlib.Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Save figure with 300 DPI
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    return time, voltage
 
 
 def plot_iv_curve(
