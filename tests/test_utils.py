@@ -14,7 +14,7 @@
 import json
 
 import numpy as np
-from bluecellulab.utils import CaptureOutput, NumpyEncoder, run_once
+from bluecellulab.utils import CaptureOutput, NoDaemonProcess, NumpyEncoder, run_once
 
 
 # Decorated function for testing
@@ -22,6 +22,11 @@ from bluecellulab.utils import CaptureOutput, NumpyEncoder, run_once
 def increment_counter(counter):
     counter[0] += 1
     return "Executed"
+
+
+def write_result(result_file_path):
+    with open(result_file_path, "w") as f:
+        f.write("done")
 
 
 def test_run_once_execution():
@@ -69,3 +74,28 @@ def test_numpy_encoder():
         json.dumps(np.array([True, False, True]), cls=NumpyEncoder)
         == "[true, false, true]"
     )
+    assert json.dumps(1, cls=NumpyEncoder) == "1"
+
+
+def test_no_daemon_process_is_not_daemon():
+    def dummy():
+        pass
+    p = NoDaemonProcess(target=dummy)
+    assert p.daemon is False
+
+
+def test_no_daemon_process_runs_target(tmp_path):
+    # Use a file to communicate between processes
+    result_file = tmp_path / "result.txt"
+    p = NoDaemonProcess(target=write_result, args=(str(result_file),))
+    p.start()
+    p.join()
+    assert result_file.read_text() == "done"
+
+
+def test_no_daemon_process_daemon_setter_noop():
+    def dummy():
+        pass
+    p = NoDaemonProcess(target=dummy)
+    p.daemon = True  # Should have no effect
+    assert p.daemon is False
