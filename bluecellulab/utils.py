@@ -4,6 +4,8 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import multiprocessing
+from multiprocessing import pool
 
 import numpy as np
 
@@ -56,3 +58,28 @@ class NumpyEncoder(json.JSONEncoder):
         elif isinstance(obj, np.ndarray):
             return obj.tolist()
         return json.JSONEncoder.default(self, obj)
+
+
+class NoDaemonProcess(multiprocessing.Process):
+    """Class that represents a non-daemon process"""
+
+    # pylint: disable=dangerous-default-value
+
+    def __init__(self, group=None, target=None, name=None, args=(), kwargs={}):
+        """Ensures group=None, for macosx."""
+        super().__init__(group=None, target=target, name=name, args=args, kwargs=kwargs)
+
+    def _get_daemon(self):
+        """Get daemon flag"""
+        return False
+
+    def _set_daemon(self, value):
+        """Set daemon flag"""
+
+    daemon = property(_get_daemon, _set_daemon)
+
+
+class NestedPool(pool.Pool):  # pylint: disable=abstract-method
+    """Class that represents a MultiProcessing nested pool"""
+
+    Process = NoDaemonProcess

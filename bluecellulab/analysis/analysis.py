@@ -4,13 +4,16 @@ try:
 except ImportError:
     efel = None
 from itertools import islice
+from itertools import repeat
 import logging
 from matplotlib.collections import LineCollection
 import matplotlib.pyplot as plt
+from multiprocessing import Pool
 import neuron
 import numpy as np
 import pathlib
 import seaborn as sns
+
 
 from bluecellulab import Cell
 from bluecellulab.analysis.inject_sequence import run_stimulus
@@ -87,30 +90,51 @@ def compute_plot_iv_curve(cell,
 
     list_amp = np.linspace(rheobase - 2, rheobase - 0.1, nb_bins)  # [nA]
 
-    steps = []
-    times = []
-    voltages = []
+    # times = []
+    # voltages = []
     # inject step current and record voltage response
     stim_factory = StimulusFactory(dt=0.1)
-    for amp in list_amp:
-        step_stimulus = stim_factory.step(pre_delay=stim_start, duration=duration, post_delay=post_delay, amplitude=amp)
-        recording = run_stimulus(cell.template_params,
-                                 step_stimulus,
-                                 section=injecting_section,
-                                 segment=injecting_segment,
-                                 recording_section=recording_section,
-                                 recording_segment=recording_segment)
-        steps.append(step_stimulus)
-        times.append(recording.time)
-        voltages.append(recording.voltage)
+    steps = [
+        stim_factory.step(pre_delay=stim_start, duration=duration, post_delay=post_delay, amplitude=amp)
+        for amp in list_amp
+    ]
+
+    recordings = []
+    # for amp in list_amp:
+    #     step_stimulus = stim_factory.step(pre_delay=stim_start, duration=duration, post_delay=post_delay, amplitude=amp)
+    #     recording = run_stimulus(cell.template_params,
+    #                              step_stimulus,
+    #                              section=injecting_section,
+    #                              segment=injecting_segment,
+    #                              recording_section=recording_section,
+    #                              recording_segment=recording_segment)
+    #     # steps.append(step_stimulus)
+    #     # times.append(recording.time)
+    #     # voltages.append(recording.voltage)
+    #     recordings.append(recording)
+
+    with Pool(len(steps)) as p:
+        recordings = p.starmap(
+            run_stimulus,
+            zip(
+                repeat(cell.template_params),
+                steps,
+                repeat(injecting_section),
+                repeat(injecting_segment),
+                repeat(True),  # cvode
+                repeat(True),  # add_hypamp
+                repeat(recording_section),
+                repeat(recording_segment),
+            )
+        )
 
     steady_states = []
     # compute steady state response
     efel.set_setting('Threshold', threshold_voltage)
-    for voltage, t in zip(voltages, times):
+    for recording in recordings:
         trace = {
-            'T': t,
-            'V': voltage,
+            'T': recording.time,
+            'V': recording.voltage,
             'stim_start': [stim_start],
             'stim_end': [stim_start + duration]
         }
@@ -194,24 +218,43 @@ def compute_plot_fi_curve(cell,
         rheobase = calculate_rheobase(cell=cell, section=injecting_section, segx=injecting_segment)
 
     list_amp = np.linspace(rheobase, max_current, nb_bins)  # [nA]
-    steps = []
+    stim_factory = StimulusFactory(dt=0.1)
+    steps = [
+        stim_factory.step(pre_delay=stim_start, duration=duration, post_delay=post_delay, amplitude=amp)
+        for amp in list_amp
+    ]
     spikes = []
     # inject step current and record spike response
-    stim_factory = StimulusFactory(dt=0.1)
-    for amp in list_amp:
-        step_stimulus = stim_factory.step(pre_delay=stim_start, duration=duration, post_delay=post_delay, amplitude=amp)
-        recording = run_stimulus(cell.template_params,
-                                 step_stimulus,
-                                 section=injecting_section,
-                                 segment=injecting_segment,
-                                 recording_section=recording_section,
-                                 recording_segment=recording_segment,
-                                 enable_spike_detection=True,
-                                 threshold_spike_detection=threshold_voltage)
-        steps.append(step_stimulus)
-        spikes.append(recording.spike)
+    # for amp in list_amp:
+    #     recording = run_stimulus(cell.template_params,
+    #                              step_stimulus,
+    #                              section=injecting_section,
+    #                              segment=injecting_segment,
+    #                              recording_section=recording_section,
+    #                              recording_segment=recording_segment,
+    #                              enable_spike_detection=True,
+    #                              threshold_spike_detection=threshold_voltage)
+    #     steps.append(step_stimulus)
+    #     spikes.append(recording.spike)
 
-    spike_count = [len(spike) for spike in spikes]
+    with Pool(len(steps)) as p:
+        recordings = p.starmap(
+            run_stimulus,
+            zip(
+                repeat(cell.template_params),
+                steps,
+                repeat(injecting_section),
+                repeat(injecting_segment),
+                repeat(True),  # cvode
+                repeat(True),  # add_hypamp
+                repeat(recording_section),
+                repeat(recording_segment),
+                repeat(True),  # enable_spike_detection
+                repeat(threshold_voltage),  # threshold_spike_detection
+            )
+        )
+
+    spike_count = [len(recording.spike) for recording in recordings]
 
     plot_fi_curve(list_amp,
                   spike_count,
