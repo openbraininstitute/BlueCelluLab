@@ -90,28 +90,12 @@ def compute_plot_iv_curve(cell,
 
     list_amp = np.linspace(rheobase - 2, rheobase - 0.1, nb_bins)  # [nA]
 
-    # times = []
-    # voltages = []
     # inject step current and record voltage response
     stim_factory = StimulusFactory(dt=0.1)
     steps = [
         stim_factory.step(pre_delay=stim_start, duration=duration, post_delay=post_delay, amplitude=amp)
         for amp in list_amp
     ]
-
-    recordings = []
-    # for amp in list_amp:
-    #     step_stimulus = stim_factory.step(pre_delay=stim_start, duration=duration, post_delay=post_delay, amplitude=amp)
-    #     recording = run_stimulus(cell.template_params,
-    #                              step_stimulus,
-    #                              section=injecting_section,
-    #                              segment=injecting_segment,
-    #                              recording_section=recording_section,
-    #                              recording_segment=recording_segment)
-    #     # steps.append(step_stimulus)
-    #     # times.append(recording.time)
-    #     # voltages.append(recording.voltage)
-    #     recordings.append(recording)
 
     with Pool(len(steps)) as p:
         recordings = p.starmap(
@@ -223,19 +207,6 @@ def compute_plot_fi_curve(cell,
         stim_factory.step(pre_delay=stim_start, duration=duration, post_delay=post_delay, amplitude=amp)
         for amp in list_amp
     ]
-    spikes = []
-    # inject step current and record spike response
-    # for amp in list_amp:
-    #     recording = run_stimulus(cell.template_params,
-    #                              step_stimulus,
-    #                              section=injecting_section,
-    #                              segment=injecting_segment,
-    #                              recording_section=recording_section,
-    #                              recording_segment=recording_segment,
-    #                              enable_spike_detection=True,
-    #                              threshold_spike_detection=threshold_voltage)
-    #     steps.append(step_stimulus)
-    #     spikes.append(recording.spike)
 
     with Pool(len(steps)) as p:
         recordings = p.starmap(

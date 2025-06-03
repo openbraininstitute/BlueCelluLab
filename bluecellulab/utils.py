@@ -61,7 +61,7 @@ class NumpyEncoder(json.JSONEncoder):
 
 
 class NoDaemonProcess(multiprocessing.Process):
-    """Class that represents a non-daemon process"""
+    """Class that represents a non-daemon process."""
 
     # pylint: disable=dangerous-default-value
 
@@ -69,17 +69,16 @@ class NoDaemonProcess(multiprocessing.Process):
         """Ensures group=None, for macosx."""
         super().__init__(group=None, target=target, name=name, args=args, kwargs=kwargs)
 
-    def _get_daemon(self):
-        """Get daemon flag"""
+    @property
+    def daemon(self):
         return False
 
-    def _set_daemon(self, value):
-        """Set daemon flag"""
-
-    daemon = property(_get_daemon, _set_daemon)
+    @daemon.setter
+    def daemon(self, val):
+        pass
 
 
 class NestedPool(pool.Pool):  # pylint: disable=abstract-method
-    """Class that represents a MultiProcessing nested pool"""
+    """Class that represents a MultiProcessing nested pool."""
 
     Process = NoDaemonProcess
