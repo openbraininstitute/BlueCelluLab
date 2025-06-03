@@ -18,9 +18,8 @@ class MockRecording:
         self.voltage = [-70, -55, -40]
 
 
-@pytest.fixture
-def mock_run_stimulus():
-    return MagicMock(return_value=MockRecording())
+def mock_run_stimulus(*args, **kwargs):
+    return MockRecording()
 
 
 @pytest.fixture
@@ -57,10 +56,17 @@ def mock_cell():
     return cell
 
 
-def test_plot_iv_curve(mock_cell, mock_run_stimulus, mock_search_threshold_current, mock_efel):
+def test_plot_iv_curve(
+    monkeypatch,
+    mock_cell,
+    mock_search_threshold_current,
+    mock_efel
+):
     """Test the plot_iv_curve function."""
+    # for run_stimulus called in multiprocessing, use monkeypatch instead of MagicMock
+    # because MagicMock is not pickleable and cannot be used in multiprocessing
+    monkeypatch.setattr("bluecellulab.analysis.analysis.run_stimulus", mock_run_stimulus)
     with patch('bluecellulab.cell.core', mock_cell), \
-         patch('bluecellulab.analysis.analysis.run_stimulus', mock_run_stimulus), \
          patch('bluecellulab.tools.search_threshold_current', mock_search_threshold_current), \
          patch('bluecellulab.analysis.analysis.efel', mock_efel), \
          patch('bluecellulab.analysis.analysis.calculate_rheobase') as mock_rheobase:
@@ -87,7 +93,8 @@ def test_plot_iv_curve(mock_cell, mock_run_stimulus, mock_search_threshold_curre
             duration=duration,
             post_delay=post_delay,
             threshold_voltage=threshold_voltage,
-            nb_bins=nb_bins
+            nb_bins=nb_bins,
+            show_figure=False,
         )
 
         assert isinstance(list_amp, np.ndarray)
@@ -126,7 +133,8 @@ def test_plot_fi_curve(mock_cell, mock_search_threshold_current):
             duration=duration,
             post_delay=post_delay,
             max_current=max_current,
-            nb_bins=nb_bins
+            nb_bins=nb_bins,
+            show_figure=False,
         )
 
         mock_rheobase.assert_called_once_with(
