@@ -24,6 +24,7 @@ from bluecellulab.analysis.analysis import compute_plot_fi_curve
 from bluecellulab.analysis.analysis import compute_plot_iv_curve
 from bluecellulab.analysis.inject_sequence import run_multirecordings_stimulus
 from bluecellulab.analysis.inject_sequence import run_stimulus
+from bluecellulab.cell.core import Cell
 from bluecellulab.stimulus.factory import IDRestTimings
 from bluecellulab.stimulus.factory import StimulusFactory
 from bluecellulab.tools import calculate_input_resistance
@@ -79,12 +80,12 @@ def plot_traces(recordings, out_dir, fname, title, labels=None, xlim=None):
     return outpath
 
 
-def spiking_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
+def spiking_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30.):
     """Spiking test: cell should spike."""
     stim_factory = StimulusFactory(dt=1.0)
     step_stimulus = stim_factory.idrest(threshold_current=rheobase, threshold_percentage=200)
     recording = run_stimulus(
-        cell.template_params,
+        template_params,
         step_stimulus,
         "soma[0]",
         0.5,
@@ -111,13 +112,13 @@ def spiking_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
     }
 
 
-def depolarization_block_test(cell, rheobase, out_dir):
+def depolarization_block_test(template_params, rheobase, out_dir):
     """Depolarization block test: no depolarization block should be detected."""
     # Run the stimulus
     stim_factory = StimulusFactory(dt=1.0)
     step_stimulus = stim_factory.idrest(threshold_current=rheobase, threshold_percentage=200)
     recording = run_stimulus(
-        cell.template_params,
+        template_params,
         step_stimulus,
         "soma[0]",
         0.5,
@@ -151,16 +152,16 @@ def depolarization_block_test(cell, rheobase, out_dir):
     }
 
 
-def bpap_test(cell, rheobase, out_dir="./"):
+def bpap_test(template_params, rheobase, out_dir="./"):
     """Back-propagating action potential test: exponential fit should decay.
 
     Args:
-        cell (Cell): The cell to test.
+        template_params (dict): The template parameters for creating the cell.
         rheobase (float): The rheobase current to use for the test.
         out_dir (str): Directory to save the figure.
     """
     amplitude = 10. * rheobase  # Use 1000% of the rheobase current
-    bpap = BPAP(cell)
+    bpap = BPAP(Cell.from_template_parameters(template_params))
     bpap.run(duration=1500, amplitude=amplitude)
     soma_amp, dend_amps, dend_dist, apic_amps, apic_dist = bpap.get_amplitudes_and_distances()
     validated, notes = bpap.validate(soma_amp, dend_amps, dend_dist, apic_amps, apic_dist)
@@ -190,11 +191,11 @@ def bpap_test(cell, rheobase, out_dir="./"):
     }
 
 
-def ais_spiking_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
+def ais_spiking_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30.):
     """AIS spiking test: axon should spike before soma."""
     name = "Simulatable Neuron AIS Spiking Validation"
     # Check that the cell has an axon
-    if len(cell.axonal) == 0:
+    if len(Cell.from_template_parameters(template_params).axonal) == 0:
         return {
             "name": name,
             "passed": True,
@@ -206,7 +207,7 @@ def ais_spiking_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
     stim_factory = StimulusFactory(dt=1.0)
     step_stimulus = stim_factory.idrest(threshold_current=rheobase, threshold_percentage=200)
     recordings = run_multirecordings_stimulus(
-        cell.template_params,
+        template_params,
         step_stimulus,
         "soma[0]",
         0.5,
@@ -259,14 +260,14 @@ def ais_spiking_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
     }
 
 
-def hyperpolarization_test(cell, rheobase, out_dir):
+def hyperpolarization_test(template_params, rheobase, out_dir):
     """Hyperpolarization test: hyperpolarized voltage should be lower than RMP."""
     name = "Simulatable Neuron Hyperpolarization Validation"
     # Run the stimulus
     stim_factory = StimulusFactory(dt=1.0)
     step_stimulus = stim_factory.iv(threshold_current=rheobase, threshold_percentage=-40)
     recording = run_stimulus(
-        cell.template_params,
+        template_params,
         step_stimulus,
         "soma[0]",
         0.5,
@@ -331,11 +332,11 @@ def rin_test(rin):
     }
 
 
-def iv_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
+def iv_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30.):
     """IV curve should have a positive slope."""
     name = "Simulatable Neuron IV Curve Validation"
     amps, steady_states = compute_plot_iv_curve(
-        cell,
+        Cell.from_template_parameters(template_params),
         rheobase=rheobase,
         threshold_voltage=spike_threshold_voltage,
         nb_bins=5,
@@ -369,11 +370,11 @@ def iv_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
     }
 
 
-def fi_test(cell, rheobase, out_dir, spike_threshold_voltage=-30.):
+def fi_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30.):
     """FI curve should have a positive slope."""
     name = "Simulatable Neuron FI Curve Validation"
     amps, spike_counts = compute_plot_fi_curve(
-        cell,
+        Cell.from_template_parameters(template_params),
         rheobase=rheobase,
         threshold_voltage=spike_threshold_voltage,
         nb_bins=5,
@@ -421,7 +422,6 @@ def run_validations(
     out_dir = pathlib.Path(output_dir) / cell_name
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # cell = Cell.from_template_parameters(template_params)
     # get me-model properties
     holding_current = cell.hypamp if cell.hypamp else 0.0
     if cell.threshold:
@@ -437,41 +437,69 @@ def run_validations(
         emodel_properties=cell.template_params.emodel_properties,
     )
 
-    # Validation 1: Spiking Test
-    logger.debug("Running spiking test")
-    spiking_test_result = spiking_test(cell, rheobase, out_dir, spike_threshold_voltage)
+    logger.debug("Running validations...")
+    from bluecellulab.utils import NestedPool
+    with NestedPool(processes=8) as pool:
+        # Validation 1: Spiking Test
+        spiking_test_result_future = pool.apply_async(
+            spiking_test,
+            (cell.template_params, rheobase, out_dir, spike_threshold_voltage)
+        )
 
-    # Validation 2: Depolarization Block Test
-    logger.debug("Running depolarization block test")
-    depolarization_block_result = depolarization_block_test(cell, rheobase, out_dir)
+        # Validation 2: Depolarization Block Test
+        depolarization_block_result_future = pool.apply_async(
+            depolarization_block_test,
+            (cell.template_params, rheobase, out_dir)
+        )
 
-    # Validation 3: Backpropagating AP Test
-    logger.debug("Running backpropagating AP test")
-    bpap_result = bpap_test(cell, rheobase, out_dir)
+        # Validation 3: Backpropagating AP Test
+        bpap_result_future = pool.apply_async(
+            bpap_test,
+            (cell.template_params, rheobase, out_dir)
+        )
 
-    # Validation 4: Postsynaptic Potential Test
-    # logger.debug("Running postsynaptic potential test")
-    # We have to wait for ProbAMPANMDA_EMS to be present in entitycore to implement this test
+        # Validation 4: Postsynaptic Potential Test
+        # We have to wait for ProbAMPANMDA_EMS to be present in entitycore to implement this test
 
-    # Validation 5: AIS Spiking Test
-    logger.debug("Running AIS spiking test")
-    ais_spiking_test_result = ais_spiking_test(cell, rheobase, out_dir, spike_threshold_voltage)
+        # Validation 5: AIS Spiking Test
+        ais_spiking_test_result_future = pool.apply_async(
+            ais_spiking_test,
+            (cell.template_params, rheobase, out_dir, spike_threshold_voltage)
+        )
 
-    # Validation 6: Hyperpolarization Test
-    logger.debug("Running hyperpolarization test")
-    hyperpolarization_result = hyperpolarization_test(cell, rheobase, out_dir)
+        # Validation 6: Hyperpolarization Test
+        hyperpolarization_result_future = pool.apply_async(
+            hyperpolarization_test,
+            (cell.template_params, rheobase, out_dir)
+        )
 
-    # Validation 7: Rin Test
-    logger.debug("Running Rin test")
-    rin_result = rin_test(rin)
+        # Validation 7: Rin Test
+        rin_result_future = pool.apply_async(
+            rin_test,
+            (rin,)
+        )
 
-    # # Validation 8: IV Test
-    logger.debug("Running IV test")
-    iv_test_result = iv_test(cell, rheobase, out_dir, spike_threshold_voltage)
+        # # Validation 8: IV Test
+        iv_test_result_future = pool.apply_async(
+            iv_test,
+            (cell.template_params, rheobase, out_dir, spike_threshold_voltage)
+        )
 
-    # # Validation 9: FI Test
-    logger.debug("Running FI test")
-    fi_test_result = fi_test(cell, rheobase, out_dir, spike_threshold_voltage)
+        # # Validation 9: FI Test
+        fi_test_result_future = pool.apply_async(
+            fi_test,
+            (cell.template_params, rheobase, out_dir, spike_threshold_voltage)
+        )
+
+        # Wait for all validations to complete
+        spiking_test_result = spiking_test_result_future.get()
+        depolarization_block_result = depolarization_block_result_future.get()
+        bpap_result = bpap_result_future.get()
+        ais_spiking_test_result = ais_spiking_test_result_future.get()
+        hyperpolarization_result = hyperpolarization_result_future.get()
+        rin_result = rin_result_future.get()
+        iv_test_result = iv_test_result_future.get()
+        fi_test_result = fi_test_result_future.get()
 
     return {
         "memodel_properties": {
