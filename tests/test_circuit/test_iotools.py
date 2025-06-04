@@ -19,7 +19,7 @@ import numpy as np
 import h5py
 from pathlib import Path
 
-from bluecellulab.circuit.iotools import (
+from bluecellulab.simulation.report import (
     write_sonata_report_file
 )
 from bluecellulab.cell import Cell
