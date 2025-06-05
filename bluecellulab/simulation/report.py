@@ -181,3 +181,37 @@ def write_sonata_report_file(
         mapping.create_dataset("element_ids", data=element_ids_arr)
         time_ds = mapping.create_dataset("time", data=time_array)
         time_ds.attrs["units"] = "ms"
+
+
+def write_sonata_spikes(f_name: str, spikes_dict: dict[int, np.ndarray], population: str):
+    """Write a SONATA spike group to a spike file from {node_id: [t1, t2,
+    ...]}."""
+    all_node_ids: List[int] = []
+    all_timestamps: List[float] = []
+
+    for node_id, times in spikes_dict.items():
+        all_node_ids.extend([node_id] * len(times))
+        all_timestamps.extend(times)
+
+    if not all_timestamps:
+        logger.warning(f"No spikes to write for population '{population}'.")
+        return
+
+    # Sort by time for consistency
+    sorted_indices = np.argsort(all_timestamps)
+    node_ids_sorted = np.array(all_node_ids, dtype=np.uint64)[sorted_indices]
+    timestamps_sorted = np.array(all_timestamps, dtype=np.float64)[sorted_indices]
+
+    with h5py.File(f_name, 'a') as f:  # 'a' to allow multiple writes
+        spikes_group = f.require_group("spikes")
+        if population in spikes_group:
+            logger.warning(f"Overwriting existing group for population '{population}' in {f_name}.")
+            del spikes_group[population]
+
+        group = spikes_group.create_group(population)
+        group.attrs["sorting"] = "by_time"  # could be parameterized later
+
+        timestamps_ds = group.create_dataset("timestamps", data=timestamps_sorted)
+        group.create_dataset("node_ids", data=node_ids_sorted)
+
+        timestamps_ds.attrs["units"] = "ms"  # SONATA-required

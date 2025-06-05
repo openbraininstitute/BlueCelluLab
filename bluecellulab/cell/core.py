@@ -525,6 +525,10 @@ class Cell(InjectableMixin, PlottableMixin):
         nc.record(spike_vec)
         self.recordings[f"spike_detector_{location}_{threshold}"] = spike_vec
 
+    def is_recording_spikes(self, location: str, threshold: float) -> bool:
+        key = f"spike_detector_{location}_{threshold}"
+        return key in self.recordings
+
     def get_recorded_spikes(self, location: str, threshold: float = -30) -> list[float]:
         """Get recorded spikes in the current cell.
 

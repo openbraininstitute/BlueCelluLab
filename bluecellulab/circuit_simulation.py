@@ -17,10 +17,12 @@ simulations."""
 
 from __future__ import annotations
 from collections.abc import Iterable
+import os
 from pathlib import Path
 from typing import Optional
 import logging
 
+from collections import defaultdict
 import neuron
 import numpy as np
 import pandas as pd
@@ -45,7 +47,7 @@ from bluecellulab.circuit.simulation_access import BluepySimulationAccess, Simul
 from bluecellulab.importer import load_mod_files
 from bluecellulab.rngsettings import RNGSettings
 from bluecellulab.simulation.neuron_globals import NeuronGlobals
-from bluecellulab.simulation.report import configure_all_reports, write_compartment_report
+from bluecellulab.simulation.report import configure_all_reports, write_compartment_report, write_sonata_spikes
 from bluecellulab.stimulus.circuit_stimulus_definitions import Noise, OrnsteinUhlenbeck, RelativeOrnsteinUhlenbeck, RelativeShotNoise, ShotNoise
 import bluecellulab.stimulus.circuit_stimulus_definitions as circuit_stimulus_definitions
 from bluecellulab.exceptions import BluecellulabError
@@ -306,6 +308,11 @@ class CircuitSimulation:
             cells=self.cells,
             simulation_config=self.circuit_access.config
         )
+
+        # add spike recordings
+        for cell in self.cells.values():
+            if not cell.is_recording_spikes("soma", threshold=self.spike_threshold):
+                cell.start_recording_spikes(None, location="soma", threshold=self.spike_threshold)
 
     def _add_stimuli(self, add_noise_stimuli=False,
                      add_hyperpolarizing_stimuli=False,
@@ -826,3 +833,31 @@ class CircuitSimulation:
                     source_sets=node_sets,
                     source_type="node_set"
                 )
+
+    def write_spike_report(self):
+        """Collect and write in-memory recorded spike times to a SONATA HDF5
+        file, grouped by population as required by the SONATA specification."""
+        output_path = self.circuit_access.config.spikes_file_path
+
+        if os.path.exists(output_path):
+            os.remove(output_path)
+
+        # Group spikes per population
+        spikes_by_population = defaultdict(dict)
+        for gid, cell in self.cells.items():
+            pop = getattr(gid, 'population_name', None)
+            if pop is None:
+                continue
+            try:
+                cell_spikes = cell.get_recorded_spikes(location="soma", threshold=self.spike_threshold)
+                if cell_spikes is not None:
+                    spikes_by_population[pop][gid.id] = list(cell_spikes)
+            except AttributeError:
+                continue
+
+        # Ensure we at least create empty groups for all known populations
+        all_populations = set(getattr(gid, 'population_name', None) for gid in self.cells.keys())
+
+        for pop in all_populations:
+            spikes = spikes_by_population.get(pop, {})  # May be empty
+            write_sonata_spikes(output_path, spikes, pop)
