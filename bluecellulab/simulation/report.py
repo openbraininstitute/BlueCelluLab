@@ -195,7 +195,6 @@ def write_sonata_spikes(f_name: str, spikes_dict: dict[int, np.ndarray], populat
 
     if not all_timestamps:
         logger.warning(f"No spikes to write for population '{population}'.")
-        return
 
     # Sort by time for consistency
     sorted_indices = np.argsort(all_timestamps)
