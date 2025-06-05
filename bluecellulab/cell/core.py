@@ -525,6 +525,10 @@ class Cell(InjectableMixin, PlottableMixin):
         nc.record(spike_vec)
         self.recordings[f"spike_detector_{location}_{threshold}"] = spike_vec
 
+    def is_recording_spikes(self, location: str, threshold: float) -> bool:
+        key = f"spike_detector_{location}_{threshold}"
+        return key in self.recordings
+
     def get_recorded_spikes(self, location: str, threshold: float = -30) -> list[float]:
         """Get recorded spikes in the current cell.
 
@@ -755,6 +759,18 @@ class Cell(InjectableMixin, PlottableMixin):
     def get_ais_voltage(self) -> np.ndarray:
         """Get a vector of AIS voltage."""
         return self.get_recording('self.axonal[1](0.5)._ref_v')
+
+    def add_variable_recording(self, variable: str, section, segx):
+        if variable == "v":
+            self.add_voltage_recording(section, segx)
+        else:
+            raise ValueError(f"Unsupported variable for recording: {variable}")
+
+    def get_variable_recording(self, variable: str, section, segx) -> np.ndarray:
+        if variable == "v":
+            return self.get_voltage_recording(section=section, segx=segx)
+        else:
+            raise ValueError(f"Unsupported variable '{variable}'")
 
     @property
     def n_segments(self) -> int:
