@@ -82,7 +82,6 @@ def test_compartment_report_uses_output_dir(mock_cell, tmp_path):
     # Run simulation
     sim.instantiate_gids(cell_ids, add_stimuli=True, add_synapses=False)
     sim.run(t_stop=10.0)
-    sim.write_reports()
 
     # Check expected file
     output_file = tmp_path / "soma.h5"

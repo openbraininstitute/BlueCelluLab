@@ -659,6 +659,8 @@ class CircuitSimulation:
             forward_skip_value=forward_skip_value,
             show_progress=show_progress)
 
+        self.write_reports()
+
     def get_mainsim_voltage_trace(
             self, cell_id: int | tuple[str, int], t_start=None, t_stop=None, t_step=None
     ) -> np.ndarray:
