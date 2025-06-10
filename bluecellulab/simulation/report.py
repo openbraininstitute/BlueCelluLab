@@ -18,6 +18,7 @@ from pathlib import Path
 import h5py
 from typing import List
 import numpy as np
+import os
 
 from bluecellulab.tools import resolve_segments, resolve_source_nodes
 from bluecellulab.cell.cell_dict import CellDict
@@ -58,14 +59,20 @@ def configure_all_reports(cells, simulation_config):
             source_type = "compartment_set"
             source_sets = simulation_config.get_compartment_sets()
             source_name = report_cfg.get("compartments")
+            if not source_name:
+                logger.warning(f"Report '{report_name}' does not specify a node set in 'compartments' for {source_type}.")
+                continue
         else:
             source_type = "node_set"
             source_sets = simulation_config.get_node_sets()
             source_name = report_cfg.get("cells")
+            if not source_name:
+                logger.warning(f"Report '{report_name}' does not specify a node set in 'cells' for {source_type}.")
+                continue
 
         source = source_sets.get(source_name)
         if not source:
-            logger.warning(f"{source_type.title()} '{source_name}' not found for report '{report_name}'")
+            logger.warning(f"{source_type.title()} '{source_name}' not found for report '{report_name}', skipping recording.")
             continue
 
         population = source["population"]
@@ -79,6 +86,7 @@ def configure_all_reports(cells, simulation_config):
 
 
 def write_compartment_report(
+    report_name: str,
     output_path: str,
     cells: CellDict,
     report_cfg: dict,
@@ -112,7 +120,8 @@ def write_compartment_report(
     source_name = report_cfg.get("cells") if source_type == "node_set" else report_cfg.get("compartments")
     source = source_sets.get(source_name)
     if not source:
-        raise ValueError(f"{source_type} '{source_name}' not found.")
+        logger.warning(f"{source_type.title()} '{source_name}' not found for report '{report_name}', skipping write.")
+        return
 
     population = source["population"]
 
@@ -201,6 +210,7 @@ def write_sonata_spikes(f_name: str, spikes_dict: dict[int, np.ndarray], populat
     node_ids_sorted = np.array(all_node_ids, dtype=np.uint64)[sorted_indices]
     timestamps_sorted = np.array(all_timestamps, dtype=np.float64)[sorted_indices]
 
+    os.makedirs(os.path.dirname(f_name), exist_ok=True)
     with h5py.File(f_name, 'a') as f:  # 'a' to allow multiple writes
         spikes_group = f.require_group("spikes")
         if population in spikes_group:

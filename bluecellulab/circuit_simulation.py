@@ -812,6 +812,7 @@ class CircuitSimulation:
                     )
                 compartment_sets = self.circuit_access.config.get_compartment_sets()
                 write_compartment_report(
+                    report_name=report_name,
                     output_path=output_path,
                     cells=self.cells,
                     report_cfg=report_cfg,
@@ -827,12 +828,15 @@ class CircuitSimulation:
                         "for node-based section recording (must be 'center' or 'all')."
                     )
                 write_compartment_report(
+                    report_name=report_name,
                     output_path=output_path,
                     cells=self.cells,
                     report_cfg=report_cfg,
                     source_sets=node_sets,
                     source_type="node_set"
                 )
+
+        self.write_spike_report()
 
     def write_spike_report(self):
         """Collect and write in-memory recorded spike times to a SONATA HDF5
