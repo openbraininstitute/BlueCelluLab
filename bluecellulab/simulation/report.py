@@ -218,7 +218,8 @@ def write_sonata_spikes(f_name: str, spikes_dict: dict[int, np.ndarray], populat
             del spikes_group[population]
 
         group = spikes_group.create_group(population)
-        group.attrs["sorting"] = "by_time"  # could be parameterized later
+        sorting_enum = h5py.enum_dtype({'none': 0, 'by_id': 1, 'by_time': 2}, basetype='u1')
+        group.attrs.create("sorting", 2, dtype=sorting_enum)  # 2 = by_time
 
         timestamps_ds = group.create_dataset("timestamps", data=timestamps_sorted)
         group.create_dataset("node_ids", data=node_ids_sorted)
