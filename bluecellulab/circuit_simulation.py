@@ -471,13 +471,26 @@ class CircuitSimulation:
     @staticmethod
     def merge_pre_spike_trains(*train_dicts) -> dict[CellId, np.ndarray]:
         """Merge presynaptic spike train dicts."""
-        filtered_dicts = [d for d in train_dicts if d not in [None, {}, [], ()]]
+        filtered_dicts = [d for d in train_dicts if isinstance(d, dict) and d]
+
+        if not filtered_dicts:
+            logger.warning("merge_pre_spike_trains: No presynaptic spike trains found.")
+            return {}
 
         all_keys = set().union(*[d.keys() for d in filtered_dicts])
-        return {
-            k: np.sort(np.concatenate([d[k] for d in filtered_dicts if k in d]))
-            for k in all_keys
-        }
+        result = {}
+
+        for k in all_keys:
+            valid_arrays = []
+            for d in filtered_dicts:
+                if k in d:
+                    val = d[k]
+                    if isinstance(val, (np.ndarray, list)) and len(val) > 0:
+                        valid_arrays.append(np.asarray(val))
+            if valid_arrays:
+                result[k] = np.sort(np.concatenate(valid_arrays))
+
+        return result
 
     def _add_connections(
             self,
