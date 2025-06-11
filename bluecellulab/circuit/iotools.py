@@ -17,7 +17,6 @@ from __future__ import annotations
 from pathlib import Path
 import logging
 
-import bluepy
 import numpy as np
 
 from bluecellulab.circuit.node_id import CellId
@@ -28,6 +27,7 @@ logger = logging.getLogger(__name__)
 def parse_outdat(path: str | Path) -> dict[CellId, np.ndarray]:
     """Parse the replay spiketrains in a out.dat formatted file pointed to by
     path."""
+    import bluepy
     spikes = bluepy.impl.spike_report.SpikeReport.load(path).get()
     # convert Series to DataFrame with 2 columns for `groupby` operation
     spike_df = spikes.to_frame().reset_index()
