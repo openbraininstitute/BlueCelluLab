@@ -248,7 +248,7 @@ class BPAP:
         self.cell = cell
         self.dt = 0.025
         self.stim_start = 1000
-        self.stim_duration = 3
+        self.stim_duration = 5
         self.basal_cmap = sns.color_palette("crest", as_cmap=True)
         self.apical_cmap = sns.color_palette("YlOrBr_r", as_cmap=True)
 
@@ -301,7 +301,11 @@ class BPAP:
             for rec in recs.values()
         ]
         features_results = efel.get_feature_values(traces, [efel_feature_name])
-        amps = [feat_res[efel_feature_name][0] for feat_res in features_results]
+        amps = [
+            feat_res[efel_feature_name][0]
+            for feat_res in features_results
+            if feat_res[efel_feature_name] is not None
+        ]
 
         return amps
 
@@ -320,7 +324,7 @@ class BPAP:
 
     def get_amplitudes_and_distances(self):
         soma_rec, dend_rec, apic_rec = self.get_recordings()
-        soma_amp = self.amplitudes({"soma": soma_rec})[0]
+        soma_amp = self.amplitudes({"soma": soma_rec})
         dend_amps = None
         dend_dist = None
         apic_amps = None
@@ -334,20 +338,21 @@ class BPAP:
 
         return soma_amp, dend_amps, dend_dist, apic_amps, apic_dist
 
-    def fit(self, soma_amp, dend_amps, dend_dist, apic_amps, apic_dist):
+    @staticmethod
+    def fit(soma_amp, dend_amps, dend_dist, apic_amps, apic_dist):
         """Fit the amplitudes vs distances to an exponential decay function."""
         from scipy.optimize import curve_fit
 
         popt_dend = None
         if dend_amps and dend_dist:
             dist = [0] + dend_dist  # add soma distance
-            amps = [soma_amp] + dend_amps  # add soma amplitude
+            amps = soma_amp + dend_amps  # add soma amplitude
             popt_dend, _ = curve_fit(exp_decay, dist, amps)
 
         popt_apic = None
         if apic_amps and apic_dist:
             dist = [0] + apic_dist  # add soma distance
-            amps = [soma_amp] + apic_amps  # add soma amplitude
+            amps = soma_amp + apic_amps  # add soma amplitude
             popt_apic, _ = curve_fit(exp_decay, dist, amps)
 
         return popt_dend, popt_apic
@@ -357,10 +362,18 @@ class BPAP:
         validated = True
         notes = ""
         popt_dend, popt_apic = self.fit(soma_amp, dend_amps, dend_dist, apic_amps, apic_dist)
+        logging.warning(popt_dend)
+        if dend_amps is not None:
+            plt.cla()
+            plt.plot([0], soma_amp, '.')
+            plt.plot(dend_dist, dend_amps, '.')
+            x = np.linspace(0, max(dend_dist), 100)
+            plt.plot(x, exp_decay(x, *popt_dend), color='darkgreen', linestyle='--', label='Basal Dendritic Fit')
+            plt.savefig("bad_dendritic_fit.png")
         if popt_dend is None:
             logger.debug("No dendritic recordings found.")
             notes += "No dendritic recordings found.\n"
-        elif popt_dend[1] <= 0:
+        elif popt_dend[1] <= 0 or popt_dend[0] <= 0:
             logger.debug("Dendritic fit is not decaying.")
             validated = False
             notes += "Dendritic fit is not decaying.\n"
@@ -369,7 +382,7 @@ class BPAP:
         if popt_apic is None:
             logger.debug("No apical recordings found.")
             notes += "No apical recordings found.\n"
-        elif popt_apic[1] <= 0:
+        elif popt_apic[1] <= 0 or popt_apic[0] <= 0:
             logger.debug("Apical fit is not decaying.")
             validated = False
             notes += "Apical fit is not decaying.\n"
@@ -395,7 +408,7 @@ class BPAP:
 
         outpath = pathlib.Path(output_dir) / output_fname
         fig, ax1 = plt.subplots(figsize=(10, 6))
-        ax1.scatter([0], [soma_amp], marker="^", color='black', label='Soma')
+        ax1.scatter([0], soma_amp, marker="^", color='black', label='Soma')
         if dend_amps and dend_dist:
             ax1.scatter(
                 dend_dist,
