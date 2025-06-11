@@ -69,6 +69,7 @@ def mock_cell():
     )
     return cell
 
+
 @pytest.fixture
 def run_bpap(mock_cell):
     """Fixture to create a BPAP instance with a mock cell."""
@@ -214,6 +215,7 @@ class DummyCell:
     """A dummy cell class to simulate the behavior of a Cell object for testing purposes."""
     def get_allsections_voltagerecordings(self):
         return dummy_recordings
+
     def get_time(self):
         return [0, 0.025, 0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2, 0.225, 0.25]
 
@@ -345,7 +347,8 @@ def test_validate(mock_bpap_amplitude_distance):
     # good data
     validated, notes = bpap.validate(*mock_bpap_amplitude_distance)
     assert validated is True
-    assert notes == ("Dendritic validation passed: dendritic amplitude is decaying with distance "
+    assert notes == (
+        "Dendritic validation passed: dendritic amplitude is decaying with distance "
         "relative to soma.\nApical validation passed: apical amplitude is decaying with distance "
         "relative to soma.\n"
     )
