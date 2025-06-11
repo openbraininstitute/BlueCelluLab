@@ -270,17 +270,17 @@ def test_amplitudes(run_bpap):
     soma_amp = run_bpap.amplitudes({"soma": soma_rec})
     assert isinstance(soma_amp, list)
     assert len(soma_amp) == 1
-    assert soma_amp[0] == 111.34521528672875
+    assert soma_amp[0] == pytest.approx(111.34521528672875)
     dend_amp = run_bpap.amplitudes(dend_rec)
     assert isinstance(dend_amp, list)
     assert len(dend_amp) == 24
-    assert dend_amp[0] == 98.23094942121509
-    assert dend_amp[23] == 8.915576947165093
+    assert dend_amp[0] == pytest.approx(98.23094942121509)
+    assert dend_amp[23] == pytest.approx(8.915576947165093)
     apic_amp = run_bpap.amplitudes(apic_rec)
     assert isinstance(apic_amp, list)
     assert len(apic_amp) == 77
-    assert apic_amp[0] == 110.80678737727112
-    assert apic_amp[76] == 19.887804173247375
+    assert apic_amp[0] == pytest.approx(110.80678737727112)
+    assert apic_amp[76] == pytest.approx(19.887804173247375)
 
 
 def test_distances_to_soma(mock_cell):
@@ -293,8 +293,8 @@ def test_distances_to_soma(mock_cell):
     dend_distances = bpap.distances_to_soma(dend_recs)
     assert isinstance(dend_distances, list)
     assert len(dend_distances) == 2
-    assert dend_distances[0] == 4.132154495613162
-    assert dend_distances[1] == 22.94928443789968
+    assert dend_distances[0] == pytest.approx(4.132154495613162)
+    assert dend_distances[1] == pytest.approx(22.94928443789968)
     apic_recs = {
         "apic[0]": dummy_recordings["apic[0]"],
         "apic[1]": dummy_recordings["apic[1]"],
@@ -302,8 +302,8 @@ def test_distances_to_soma(mock_cell):
     apic_distances = bpap.distances_to_soma(apic_recs)
     assert isinstance(apic_distances, list)
     assert len(apic_distances) == 2
-    assert apic_distances[0] == 4.765188446744128
-    assert apic_distances[1] == 14.31071445662771
+    assert apic_distances[0] == pytest.approx(4.765188446744128)
+    assert apic_distances[1] == pytest.approx(14.31071445662771)
 
 
 def test_get_amplitudes_and_distances(run_bpap):
@@ -311,19 +311,19 @@ def test_get_amplitudes_and_distances(run_bpap):
     soma_amp, dend_amps, dend_dist, apic_amps, apic_dist = run_bpap.get_amplitudes_and_distances()
     assert isinstance(soma_amp, list)
     assert len(soma_amp) == 1
-    assert soma_amp[0] == 111.34521528672875
+    assert soma_amp[0] == pytest.approx(111.34521528672875)
     assert isinstance(dend_amps, list)
     assert len(dend_amps) == 24
-    assert dend_amps[0] == 98.23094942121509
+    assert dend_amps[0] == pytest.approx(98.23094942121509)
     assert isinstance(dend_dist, list)
     assert len(dend_dist) == 24
-    assert dend_dist[0] == 4.132154495613162
+    assert dend_dist[0] == pytest.approx(4.132154495613162)
     assert isinstance(apic_amps, list)
     assert len(apic_amps) == 77
-    assert apic_amps[0] == 110.80678737727112
+    assert apic_amps[0] == pytest.approx(110.80678737727112)
     assert isinstance(apic_dist, list)
     assert len(apic_dist) == 77
-    assert apic_dist[0] == 4.765188446744128
+    assert apic_dist[0] == pytest.approx(4.765188446744128)
 
 
 def test_fit(mock_bpap_amplitude_distance):
