@@ -47,7 +47,7 @@ def test_sim_quick_scx_sonata(input_type):
 
     # Get the voltage trace
     time = sim.get_time_trace(1)
-    voltage = sim.get_voltage_trace(cell_id, 0, t_stop, 1)
+    voltage = sim.get_voltage_trace(cell_id, 0, t_stop, 0.025)
     voltage = voltage[:len(voltage) - 1]  # remove last point, mainsim produces 1 less
     time = time[:len(time) - 1]  # remove last point, mainsim produces 1 less
     mainsim_voltage = sim.get_mainsim_voltage_trace(cell_id)
@@ -77,7 +77,7 @@ def test_sim_quick_scx_sonata_multicircuit(input_type):
     t_stop = 20.0
     sim.run(t_stop)
     for cell_id in cell_ids:
-        voltage = sim.get_voltage_trace(cell_id, 0, t_stop, 1)
+        voltage = sim.get_voltage_trace(cell_id, 0, t_stop, 0.025)
         voltage = voltage[:len(voltage) - 1]  # remove last point, mainsim produces 1 less
         mainsim_voltage = sim.get_mainsim_voltage_trace(cell_id)
         voltage_diff = voltage - mainsim_voltage
