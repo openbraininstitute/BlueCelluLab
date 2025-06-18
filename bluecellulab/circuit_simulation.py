@@ -311,8 +311,8 @@ class CircuitSimulation:
 
         # add spike recordings
         for cell in self.cells.values():
-            if not cell.is_recording_spikes("soma", threshold=self.spike_threshold):
-                cell.start_recording_spikes(None, location="soma", threshold=self.spike_threshold)
+            if not cell.is_recording_spikes(self.spike_location, threshold=self.spike_threshold):
+                cell.start_recording_spikes(None, location=self.spike_location, threshold=self.spike_threshold)
 
     def _add_stimuli(self, add_noise_stimuli=False,
                      add_hyperpolarizing_stimuli=False,
@@ -474,7 +474,6 @@ class CircuitSimulation:
         filtered_dicts = [d for d in train_dicts if isinstance(d, dict) and d]
 
         if not filtered_dicts:
-            logger.warning("merge_pre_spike_trains: No presynaptic spike trains found.")
             return {}
 
         all_keys = set().union(*[d.keys() for d in filtered_dicts])
@@ -832,7 +831,8 @@ class CircuitSimulation:
                     cells=self.cells,
                     report_cfg=report_cfg,
                     source_sets=compartment_sets,
-                    source_type="compartment_set"
+                    source_type="compartment_set",
+                    sim_dt=self.dt,
                 )
 
             else:
@@ -848,7 +848,8 @@ class CircuitSimulation:
                     cells=self.cells,
                     report_cfg=report_cfg,
                     source_sets=node_sets,
-                    source_type="node_set"
+                    source_type="node_set",
+                    sim_dt=self.dt,
                 )
 
         self.write_spike_report()
@@ -868,7 +869,7 @@ class CircuitSimulation:
             if pop is None:
                 continue
             try:
-                cell_spikes = cell.get_recorded_spikes(location="soma", threshold=self.spike_threshold)
+                cell_spikes = cell.get_recorded_spikes(location=self.spike_location, threshold=self.spike_threshold)
                 if cell_spikes is not None:
                     spikes_by_population[pop][gid.id] = list(cell_spikes)
             except AttributeError:

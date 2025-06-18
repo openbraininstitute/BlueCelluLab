@@ -64,7 +64,8 @@ def test_write_sonata_report_file(tmp_path):
         node_ids,
         index_pointers,
         element_ids,
-        report_cfg
+        report_cfg,
+        sim_dt=0.025,
     )
 
     with h5py.File(output_file, 'r') as f:
@@ -73,7 +74,7 @@ def test_write_sonata_report_file(tmp_path):
 
         # Check data dimensions and type
         data = report["data"]
-        assert data.shape == (100, 3)
+        assert data.shape == (25, 3)
         assert data.dtype == np.float32
         assert data.attrs["units"] == "mV"
 

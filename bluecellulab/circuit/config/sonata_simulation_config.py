@@ -177,7 +177,7 @@ class SonataSimulationConfig:
     @property
     def spikes_file_path(self) -> Path:
         output_dir = Path(self.output_root_path)
-        spikes_file = self.impl.config.get("output", {}).get("spikes_file", "spikes.h5")
+        spikes_file = self.impl.config.get("output", {}).get("spikes_file", "out.h5")
         return output_dir / spikes_file
 
     @property
