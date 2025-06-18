@@ -11,6 +11,7 @@ from bluecellulab.simulation.parallel import IsolatedProcess
 from bluecellulab.simulation.simulation import Simulation
 from bluecellulab.stimulus.circuit_stimulus_definitions import Hyperpolarizing
 from bluecellulab.stimulus.factory import Stimulus, StimulusFactory
+from bluecellulab.tools import template_accepts_cvode
 from bluecellulab.tools import validate_section_and_segment
 
 
@@ -111,6 +112,9 @@ def run_multirecordings_stimulus(
     )
     current_vector = neuron.h.Vector()
     current_vector.record(iclamp._ref_i)
+
+    if cvode:
+        cvode = template_accepts_cvode(template_params.template_filepath)
 
     simulation = Simulation(cell)
     simulation.run(stimulus.stimulus_time, cvode=cvode)
