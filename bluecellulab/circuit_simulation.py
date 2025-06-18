@@ -832,7 +832,8 @@ class CircuitSimulation:
                     cells=self.cells,
                     report_cfg=report_cfg,
                     source_sets=compartment_sets,
-                    source_type="compartment_set"
+                    source_type="compartment_set",
+                    sim_dt=self.dt,
                 )
 
             else:
@@ -848,7 +849,8 @@ class CircuitSimulation:
                     cells=self.cells,
                     report_cfg=report_cfg,
                     source_sets=node_sets,
-                    source_type="node_set"
+                    source_type="node_set",
+                    sim_dt=self.dt,
                 )
 
         self.write_spike_report()

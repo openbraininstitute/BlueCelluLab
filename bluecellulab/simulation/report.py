@@ -92,6 +92,7 @@ def write_compartment_report(
     report_cfg: dict,
     source_sets: dict,
     source_type: str,
+    sim_dt: float
 ):
     """Write a SONATA-compatible compartment report to an HDF5 file.
 
@@ -109,6 +110,7 @@ def write_compartment_report(
             - "cells" or "compartments": Name of the node or compartment set.
         source_sets (dict): Dictionary of either node sets or compartment sets.
         source_type (str): Either "node_set" or "compartment_set".
+        sim_dt (float): Simulation time step used for the recorded data.
 
     Raises:
         ValueError: If the specified source set is not found.
@@ -157,25 +159,60 @@ def write_compartment_report(
         return
 
     write_sonata_report_file(
-        output_path, population, data_matrix, recorded_node_ids, index_pointers, element_ids, report_cfg
+        output_path, population, data_matrix, recorded_node_ids, index_pointers, element_ids, report_cfg, sim_dt
     )
 
 
 def write_sonata_report_file(
-    output_path, population, data_matrix, recorded_node_ids, index_pointers, element_ids, report_cfg
+    output_path,
+    population,
+    data_matrix,
+    recorded_node_ids,
+    index_pointers,
+    element_ids,
+    report_cfg,
+    sim_dt
 ):
-    data_array = np.stack(data_matrix, axis=1)
+    start_time = float(report_cfg.get("start_time", 0.0))
+    end_time = float(report_cfg.get("end_time", 0.0))
+    dt_report = float(report_cfg.get("dt", sim_dt))
+
+    # Clamp dt_report if finer than simuldation dt
+    if dt_report < sim_dt:
+        logger.warning(
+            f"Requested report dt={dt_report} ms is finer than simulation dt={sim_dt} ms. "
+            f"Clamping report dt to {sim_dt} ms."
+        )
+        dt_report = sim_dt
+
+    step = int(round(dt_report / sim_dt))
+    if not np.isclose(step * sim_dt, dt_report, atol=1e-9):
+        raise ValueError(
+            f"dt_report={dt_report} is not an integer multiple of dt_data={sim_dt}"
+        )
+
+    # Downsample the data if needed
+    # Compute start and end indices in the original data
+    start_index = int(round(start_time / sim_dt))
+    end_index = int(round(end_time / sim_dt)) + 1  # inclusive
+
+    # Now slice and downsample
+    data_matrix_downsampled = [
+        trace[start_index:end_index:step] for trace in data_matrix
+    ]
+    data_array = np.stack(data_matrix_downsampled, axis=1).astype(np.float32)
+
+    # Prepare metadata arrays
     node_ids_arr = np.array(recorded_node_ids, dtype=np.uint64)
     index_ptr_arr = np.array(index_pointers, dtype=np.uint64)
     element_ids_arr = np.array(element_ids, dtype=np.uint32)
-    time_array = np.array([
-        report_cfg.get("start_time", 0.0),
-        report_cfg.get("end_time", 0.0),
-        report_cfg.get("dt", 0.1)
-    ], dtype=np.float64)
+    time_array = np.array([start_time, end_time, dt_report], dtype=np.float64)
 
+    # Ensure output directory exists
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Write to HDF5
     with h5py.File(output_path, "w") as f:
         grp = f.require_group(f"/report/{population}")
         data_ds = grp.create_dataset("data", data=data_array.astype(np.float32))
