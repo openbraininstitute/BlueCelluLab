@@ -474,7 +474,6 @@ class CircuitSimulation:
         filtered_dicts = [d for d in train_dicts if isinstance(d, dict) and d]
 
         if not filtered_dicts:
-            logger.warning("merge_pre_spike_trains: No presynaptic spike trains found.")
             return {}
 
         all_keys = set().union(*[d.keys() for d in filtered_dicts])
