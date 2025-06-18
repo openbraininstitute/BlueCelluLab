@@ -4,11 +4,9 @@ try:
 except ImportError:
     efel = None
 from itertools import islice
-from itertools import repeat
 import logging
 from matplotlib.collections import LineCollection
 import matplotlib.pyplot as plt
-from multiprocessing import Pool
 import neuron
 import numpy as np
 import pathlib
@@ -97,20 +95,15 @@ def compute_plot_iv_curve(cell,
         for amp in list_amp
     ]
 
-    with Pool(len(steps)) as p:
-        recordings = p.starmap(
-            run_stimulus,
-            zip(
-                repeat(cell.template_params),
-                steps,
-                repeat(injecting_section),
-                repeat(injecting_segment),
-                repeat(True),  # cvode
-                repeat(True),  # add_hypamp
-                repeat(recording_section),
-                repeat(recording_segment),
-            )
-        )
+    recordings = []
+    for step in steps:
+        recording = run_stimulus(cell.template_params,
+                                 step,
+                                 section=injecting_section,
+                                 segment=injecting_segment,
+                                 recording_section=recording_section,
+                                 recording_segment=recording_segment)
+        recordings.append(recording)
 
     steady_states = []
     # compute steady state response
@@ -208,24 +201,19 @@ def compute_plot_fi_curve(cell,
         for amp in list_amp
     ]
 
-    with Pool(len(steps)) as p:
-        recordings = p.starmap(
-            run_stimulus,
-            zip(
-                repeat(cell.template_params),
-                steps,
-                repeat(injecting_section),
-                repeat(injecting_segment),
-                repeat(True),  # cvode
-                repeat(True),  # add_hypamp
-                repeat(recording_section),
-                repeat(recording_segment),
-                repeat(True),  # enable_spike_detection
-                repeat(threshold_voltage),  # threshold_spike_detection
-            )
-        )
+    spikes = []
+    for step in steps:
+        recording = run_stimulus(cell.template_params,
+                                 step,
+                                 section=injecting_section,
+                                 segment=injecting_segment,
+                                 recording_section=recording_section,
+                                 recording_segment=recording_segment,
+                                 enable_spike_detection=True,
+                                 threshold_spike_detection=threshold_voltage)
+        spikes.append(recording.spike)
 
-    spike_count = [len(recording.spike) for recording in recordings]
+    spike_count = [len(spike) for spike in spikes]
 
     plot_fi_curve(list_amp,
                   spike_count,

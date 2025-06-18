@@ -438,68 +438,38 @@ def run_validations(
     )
 
     logger.debug("Running validations...")
-    from bluecellulab.utils import NestedPool
-    with NestedPool(processes=8) as pool:
-        # Validation 1: Spiking Test
-        spiking_test_result_future = pool.apply_async(
-            spiking_test,
-            (cell.template_params, rheobase, out_dir, spike_threshold_voltage)
-        )
+    # Validation 1: Spiking Test
+    spiking_test_result = spiking_test(
+        cell.template_params, rheobase, out_dir, spike_threshold_voltage
+    )
 
-        # Validation 2: Depolarization Block Test
-        depolarization_block_result_future = pool.apply_async(
-            depolarization_block_test,
-            (cell.template_params, rheobase, out_dir)
-        )
+    # Validation 2: Depolarization Block Test
+    depolarization_block_result = depolarization_block_test(
+        cell.template_params, rheobase, out_dir
+    )
 
-        # Validation 3: Backpropagating AP Test
-        bpap_result_future = pool.apply_async(
-            bpap_test,
-            (cell.template_params, rheobase, out_dir)
-        )
+    # Validation 3: Backpropagating AP Test
+    bpap_result = bpap_test(cell.template_params, rheobase, out_dir)
 
-        # Validation 4: Postsynaptic Potential Test
-        # We have to wait for ProbAMPANMDA_EMS to be present in entitycore to implement this test
+    # Validation 4: Postsynaptic Potential Test
+    # We have to wait for ProbAMPANMDA_EMS to be present in entitycore to implement this test
 
-        # Validation 5: AIS Spiking Test
-        ais_spiking_test_result_future = pool.apply_async(
-            ais_spiking_test,
-            (cell.template_params, rheobase, out_dir, spike_threshold_voltage)
-        )
+    # Validation 5: AIS Spiking Test
+    ais_spiking_test_result = ais_spiking_test(
+        cell.template_params, rheobase, out_dir, spike_threshold_voltage
+    )
 
-        # Validation 6: Hyperpolarization Test
-        hyperpolarization_result_future = pool.apply_async(
-            hyperpolarization_test,
-            (cell.template_params, rheobase, out_dir)
-        )
+    # Validation 6: Hyperpolarization Test
+    hyperpolarization_result = hyperpolarization_test(cell.template_params, rheobase, out_dir)
 
-        # Validation 7: Rin Test
-        rin_result_future = pool.apply_async(
-            rin_test,
-            (rin,)
-        )
+    # Validation 7: Rin Test
+    rin_result = rin_test(rin)
 
-        # # Validation 8: IV Test
-        iv_test_result_future = pool.apply_async(
-            iv_test,
-            (cell.template_params, rheobase, out_dir, spike_threshold_voltage)
-        )
+    # Validation 8: IV Test
+    iv_test_result = iv_test(cell.template_params, rheobase, out_dir, spike_threshold_voltage)
 
-        # # Validation 9: FI Test
-        fi_test_result_future = pool.apply_async(
-            fi_test,
-            (cell.template_params, rheobase, out_dir, spike_threshold_voltage)
-        )
-
-        # Wait for all validations to complete
-        spiking_test_result = spiking_test_result_future.get()
-        depolarization_block_result = depolarization_block_result_future.get()
-        bpap_result = bpap_result_future.get()
-        ais_spiking_test_result = ais_spiking_test_result_future.get()
-        hyperpolarization_result = hyperpolarization_result_future.get()
-        rin_result = rin_result_future.get()
-        iv_test_result = iv_test_result_future.get()
-        fi_test_result = fi_test_result_future.get()
+    # Validation 9: FI Test
+    fi_test_result = fi_test(cell.template_params, rheobase, out_dir, spike_threshold_voltage)
 
     return {
         "memodel_properties": {
