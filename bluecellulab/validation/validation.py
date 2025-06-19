@@ -291,15 +291,17 @@ def hyperpolarization_test(template_params, rheobase, out_dir):
         "stim_end": [IDRestTimings.PRE_DELAY.value + IDRestTimings.DURATION.value],
     }
     features_results = efel.get_feature_values([trace], ["voltage_base", "steady_state_voltage_stimend"])
-    rmp = features_results[0]["voltage_base"][0]
-    ss_voltage = features_results[0]["steady_state_voltage_stimend"][0]
-    if rmp is None or ss_voltage is None:
+    rmp = features_results[0]["voltage_base"]
+    ss_voltage = features_results[0]["steady_state_voltage_stimend"]
+    if rmp is None or len(rmp) == 0 or ss_voltage is None or len(ss_voltage) == 0:
         return {
             "name": name,
             "passed": False,
             "validation_details": "Validation failed: Could not determine RMP or steady state voltage.",
             "figures": [outpath],
         }
+    rmp = rmp[0]
+    ss_voltage = ss_voltage[0]
     hyperpol_bool = bool(ss_voltage < rmp)
 
     notes = (
