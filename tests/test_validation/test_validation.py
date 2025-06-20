@@ -261,7 +261,7 @@ def test_hyperpolarization_test(
     assert len(result["figures"]) == 1
     assert result["figures"][0] == dummy_out_dir / "hyper.pdf"
 
-    # hyperpolarized voltage < RMP case
+    # hyperpolarized voltage > RMP case
     mock_efel.return_value = [
         {"voltage_base": [-80], "steady_state_voltage_stimend": [-70]}
     ]
