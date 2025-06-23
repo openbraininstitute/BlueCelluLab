@@ -33,15 +33,17 @@ from bluecellulab.tools import calculate_rheobase
 logger = logging.getLogger(__name__)
 
 
-def plot_trace(recording, out_dir, fname, title):
+def plot_trace(recording, out_dir, fname, title, plot_current=True):
     """Plot a trace with inout current given a recording."""
     outpath = out_dir / fname
     fig, ax1 = plt.subplots(figsize=(10, 6))
     plt.plot(recording.time, recording.voltage, color="black")
-    current_axis = ax1.twinx()
-    current_axis.plot(recording.time, recording.current, color="gray", alpha=0.6)
-    current_axis.set_ylabel("Stimulus Current [nA]")
-    fig.suptitle(title)
+    if plot_current:
+        current_axis = ax1.twinx()
+        current_axis.plot(recording.time, recording.current, color="gray", alpha=0.6)
+        current_axis.set_ylabel("Stimulus Current [nA]")
+    if title:
+        fig.suptitle(title)
     ax1.set_xlabel("Time [ms]")
     ax1.set_ylabel("Voltage [mV]")
     fig.tight_layout()
@@ -410,6 +412,35 @@ def fi_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30.):
     }
 
 
+def thumbnail_test(template_params, rheobase, out_dir):
+    """Thumbnail test: creating a thumbnail."""
+    stim_factory = StimulusFactory(dt=1.0)
+    step_stimulus = stim_factory.idrest(threshold_current=rheobase, threshold_percentage=130)
+    recording = run_stimulus(
+        template_params,
+        step_stimulus,
+        "soma[0]",
+        0.5,
+        add_hypamp=True,
+    )
+
+    # plotting
+    outpath = plot_trace(
+        recording,
+        out_dir,
+        fname="thumbnail.pdf",
+        title="",
+        plot_current=False
+    )
+
+    return {
+        "name": "Simulatable Neuron Thumbnail Creation",
+        "passed": True,
+        "validation_details": "",
+        "figures": [outpath],
+    }
+
+
 def run_validations(
     cell, cell_name, spike_threshold_voltage=-30, output_dir="./memodel_validation_figures"
 ):
@@ -473,6 +504,9 @@ def run_validations(
     # Validation 9: FI Test
     fi_test_result = fi_test(cell.template_params, rheobase, out_dir, spike_threshold_voltage)
 
+    # Validation 10: Thumbnail Test
+    thumbnail_result = thumbnail_test(cell.template_params, rheobase, out_dir)
+
     return {
         "memodel_properties": {
             "holding_current": holding_current,
@@ -487,4 +521,5 @@ def run_validations(
         "rin_test": rin_result,
         "iv_test": iv_test_result,
         "fi_test": fi_test_result,
+        "thumbnail_test": thumbnail_result,
     }
