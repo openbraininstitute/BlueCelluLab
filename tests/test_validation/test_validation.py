@@ -416,7 +416,9 @@ def test_fi_test(mock_Cell, mock_compute, dummy_template_params, dummy_out_dir):
 @patch("bluecellulab.validation.validation.rin_test")
 @patch("bluecellulab.validation.validation.iv_test")
 @patch("bluecellulab.validation.validation.fi_test")
+@patch("bluecellulab.validation.validation.thumbnail_test")
 def test_run_validations(
+    mock_thumbnail,
     mock_fi,
     mock_iv,
     mock_rin,
@@ -447,6 +449,7 @@ def test_run_validations(
     mock_rin.return_value = {"passed": True}
     mock_iv.return_value = {"passed": True}
     mock_fi.return_value = {"passed": True}
+    mock_thumbnail.return_value = {"passed": True}
     result = validation.run_validations(cell, "cellname")
     assert result["spiking_test"]["passed"] is True
     assert result["depolarization_block_test"]["passed"] is True
