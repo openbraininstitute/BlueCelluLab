@@ -28,3 +28,5 @@ nrnivmodl.log
 *.whl
 .ipynb_checkpoints
 cADpyr_L2TPC_dendrogram.png
+temp/
+venv/

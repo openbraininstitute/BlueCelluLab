@@ -1,76 +1,140 @@
 """Tests for analysis plotting functions."""
 import tempfile
 from pathlib import Path
-from typing import Optional
-import matplotlib
+from typing import Optional, Tuple
 import pytest
-from bluecellulab.cell import create_ball_stick
+import numpy as np
 from bluecellulab.analysis.plotting import generate_cell_thumbnail
+from bluecellulab.circuit.circuit_access.definition import EmodelProperties
 
-matplotlib.use('Agg')
+# Test data paths
+TEST_DATA_DIR = (Path(__file__).parent / "examples" 
+                 / "circuit_sonata_quick_scx" / "components")
+HOC_FILE = TEST_DATA_DIR / "hoc" / "cADpyr_L2TPC.hoc"
+MORPH_FILE = TEST_DATA_DIR / "morphologies" / "asc" / "rr110330_C3_idA.asc"
 
+# Fixtures
+@pytest.fixture(scope="module")
+def emodel_properties() -> EmodelProperties:
+    """Fixture providing default emodel properties for testing."""
+    return EmodelProperties(threshold_current=1.1433533430099487,
+                            holding_current=1.4146618843078613,
+                            AIS_scaler=1.4561502933502197,
+                            soma_scaler=1.0)
 
-def test_generate_cell_thumbnail() -> None:
-    """Test the generate_cell_thumbnail function with a simple ball-stick model."""
+@pytest.fixture
+def output_dir():
+    """Fixture providing a temporary directory for test outputs."""
     with tempfile.TemporaryDirectory() as temp_dir:
-        output_path = Path(temp_dir) / "cell_thumbnail.png"
-        cell = create_ball_stick()
+        yield Path(temp_dir)
 
-        time, voltage = generate_cell_thumbnail(cell, output_path=output_path)
+class TestGenerateCellThumbnail:
+    """Test cases for generate_cell_thumbnail function."""
 
-        # Verify file was created and has content
+    def test_with_explicit_output_path(self, output_dir: Path, emodel_properties: EmodelProperties):
+        """Test thumbnail generation with explicit output path."""
+        # Skip test if required files don't exist
+        if not HOC_FILE.exists() or not MORPH_FILE.exists():
+            pytest.skip("Required test files not found")
+            
+        # Arrange
+        output_path = output_dir / "cell_thumbnail.png"
+        
+        # Act
+        time, voltage = generate_cell_thumbnail(
+            template_path=str(HOC_FILE),
+            morphology_path=str(MORPH_FILE),
+            template_format="v6",
+            emodel_properties=emodel_properties,
+            output_path=output_path
+        )
+
+        # Assert
         assert output_path.exists(), "Thumbnail file was not created"
         assert output_path.stat().st_size > 0, "Thumbnail file is empty"
+        assert len(time) == len(voltage) > 0, "Time and voltage arrays should have matching lengths"
+        assert isinstance(time, np.ndarray), "Time should be a numpy array"
+        assert isinstance(voltage, np.ndarray), "Voltage should be a numpy array"
 
-        # Verify return values
-        assert len(time) > 0, "Time array is empty"
-        assert len(voltage) > 0, "Voltage array is empty"
-        assert len(time) == len(voltage), "Time and voltage arrays have different lengths"
+    def test_with_default_output_path(self, tmp_path, emodel_properties: EmodelProperties):
+        """Test thumbnail generation with default output path."""
+        # Skip test if required files don't exist
+        if not HOC_FILE.exists() or not MORPH_FILE.exists():
+            pytest.skip("Required test files not found")
+            
+        # Arrange
+        default_path = Path("cell_thumbnail.png")
+        
+        try:
+            # Act
+            time, voltage = generate_cell_thumbnail(
+                template_path=str(HOC_FILE),
+                morphology_path=str(MORPH_FILE),
+                template_format="v6",
+                emodel_properties=emodel_properties
+            )
 
-def test_generate_cell_thumbnail_default_output() -> None:
-    """Test that the function works with default output path."""
-    default_path = Path("cell_thumbnail.png")
-    try:
-        cell = create_ball_stick()
-        time, voltage = generate_cell_thumbnail(cell)
+            # Assert
+            assert default_path.exists(), "Default thumbnail file was not created"
+            assert default_path.stat().st_size > 0, "Default thumbnail file is empty"
+            assert len(time) > 0 and len(voltage) > 0, "Output arrays should not be empty"
+        finally:
+            # Cleanup
+            if default_path.exists():
+                default_path.unlink()
 
-        # Verify file was created and has content
-        assert default_path.exists(), "Default thumbnail file was not created"
-        assert default_path.stat().st_size > 0, "Default thumbnail file is empty"
+    @pytest.mark.parametrize("threshold_value", [0, None])
+    def test_without_threshold(self, output_dir: Path, emodel_properties: EmodelProperties, threshold_value: Optional[float]):
+        """Test thumbnail generation when threshold needs to be calculated."""
+        # Skip test if required files don't exist
+        if not HOC_FILE.exists() or not MORPH_FILE.exists():
+            pytest.skip("Required test files not found")
+            
+        # Arrange
+        output_path = output_dir / "cell_no_threshold.png"
+        
+        # Create a copy of emodel_properties with no threshold
+        test_props = EmodelProperties(
+            threshold_current=0.0 if threshold_value == 0 else 0.1,  # Will trigger calculate_rheobase
+            holding_current=emodel_properties.holding_current,
+            AIS_scaler=emodel_properties.AIS_scaler,
+            soma_scaler=emodel_properties.soma_scaler
+        )
 
-        # Verify return values
-        assert len(time) > 0, "Time array is empty"
-        assert len(voltage) > 0, "Voltage array is empty"
-    finally:
-        # Clean up
-        if default_path.exists():
-            default_path.unlink()
+        # Act
+        time, voltage = generate_cell_thumbnail(
+            template_path=str(HOC_FILE),
+            morphology_path=str(MORPH_FILE),
+            template_format="v6",
+            emodel_properties=test_props,
+            output_path=output_path
+        )
 
-@pytest.mark.parametrize("threshold_value", [0, None])
-def test_generate_cell_thumbnail_without_threshold(threshold_value: Optional[float]) -> None:
-    """Test the function when cell threshold needs to be calculated."""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        output_path = Path(temp_dir) / "cell_no_threshold.png"
-        cell = create_ball_stick()
-
-        # Handle threshold setup for different cell types
-        has_emodel = (hasattr(cell, 'template_params') and
-                     hasattr(cell.template_params, 'emodel_properties') and
-                     cell.template_params.emodel_properties is not None)
-
-        if not has_emodel:
-            cell.threshold = 0.1 # nA
-        else:
-            if hasattr(cell, 'threshold'):
-                delattr(cell, 'threshold')
-            if threshold_value is not None:
-                cell.threshold = threshold_value
-
-        # Test the thumbnail generation
-        time, voltage = generate_cell_thumbnail(cell, output_path=output_path)
-
-        # Verify results
+        # Assert
         assert output_path.exists(), "Thumbnail file was not created"
         assert output_path.stat().st_size > 0, "Thumbnail file is empty"
-        assert len(time) > 0, "Time array is empty"
-        assert len(voltage) > 0, "Voltage array is empty"
+        assert len(time) > 0 and len(voltage) > 0, "Output arrays should not be empty"
+
+    @pytest.mark.parametrize("show_figure", [True, False])
+    def test_show_figure_parameter(self, output_dir: Path, emodel_properties: EmodelProperties, show_figure: bool):
+        """Test that show_figure parameter works as expected."""
+        # Skip test if required files don't exist
+        if not HOC_FILE.exists() or not MORPH_FILE.exists():
+            pytest.skip("Required test files not found")
+            
+        # Arrange
+        output_path = output_dir / f"show_figure_{show_figure}.png"
+        
+        # Act
+        time, voltage = generate_cell_thumbnail(
+            template_path=str(HOC_FILE),
+            morphology_path=str(MORPH_FILE),
+            template_format="v6",
+            emodel_properties=emodel_properties,
+            output_path=output_path,
+            show_figure=show_figure
+        )
+
+        # Assert
+        assert output_path.exists(), "Thumbnail file was not created"
+        assert output_path.stat().st_size > 0, "Thumbnail file is empty"

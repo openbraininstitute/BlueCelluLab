@@ -5,49 +5,113 @@ import pathlib
 import numpy as np
 from typing import Optional, Tuple
 from bluecellulab.tools import calculate_rheobase
+from bluecellulab.circuit.circuit_access import EmodelProperties
+from bluecellulab.cell import Cell
+from bluecellulab.simulation.neuron_globals import NeuronGlobals
+from bluecellulab import Simulation
 
 
 def generate_cell_thumbnail(
-    cell,
-    output_path: str = "cell_thumbnail.png"
-) -> Tuple[np.ndarray, np.ndarray]:
+    template_path: str,
+    morphology_path: Optional[str] = None,
+    threshold_current: Optional[float] = None,
+    holding_current: Optional[float] = None,
+    template_format: str = "v6",
+    save_figure: bool = True,
+    output_path: str = "cell_thumbnail.png",
+    show_figure: bool = False,
+    v_init: Optional[float] = -80.0,
+    celsius: Optional[float] = 34.0,
+) -> Tuple[np.ndarray, np.ndarray]: 
     """Generate a thumbnail image of a Cell object's step response.
 
     Args:
-        cell: The Cell object to generate a thumbnail for.
+        template_path: Path to the hoc file.
+        morphology_path: Path to the morphology file. Default is None.
+        threshold_current: Threshold current for the cell. Default is None.
+        holding_current: Holding current for the cell. Default is None.
+        template_format: Template format. Default is "v6".
+        save_figure: Whether to save the figure. Default is True.
         output_path: Path where to save the thumbnail image.
+        show_figure: Whether to display the figure. Default is False.
+        v_init: Initial membrane potential. Default is -80.0 mV.
+        celsius: Temperature in Celsius. Default is 34.0.
 
     Returns:
         Tuple containing (time, voltage) arrays of the simulation.
     """
-    # Calculate step amplitude (130% of threshold current)
-    threshold_current = getattr(cell, 'threshold', 0.0)
-    if not threshold_current:  # If threshold is 0, None, or False
-        threshold_current = calculate_rheobase(cell)
-    
-    step_amplitude = threshold_current * 1.3  # 130% of threshold
-    step_duration = 100.0  # ms
+    # If the threshold and holding_current is not known,
+    # we use calculate_rheobase() to find the threshold_current.
+    # For this case, we set the holding_current to 0.0 nA.
+    # if threshold_current is None: 
+    threshold_current = 1.0
+    if holding_current is None:
+        holding_current = 0.0
 
-    # Add step current injection
-    stim = cell.add_step(
-        start_time=50.0,  # Start after a short delay
-        stop_time=50.0 + step_duration,
+    emodel_properties = EmodelProperties(
+        threshold_current=threshold_current,
+        holding_current=holding_current
+    )
+
+    # Initialise cell
+    thumbnail_cell = Cell(
+        template_path=template_path,
+        morphology_path=morphology_path,
+        template_format=template_format,
+        emodel_properties=emodel_properties,
+    )
+    holding_current = 0.0
+    # Calculate rheobase
+    newthreshold_current = calculate_rheobase(
+        thumbnail_cell,
+        section="soma[0]",
+        segx=0.5
+    )
+    print(f"Threshold current: {newthreshold_current}")
+    print(f"Holding current: {holding_current}")
+    #delete thumbnail_cell
+    thumbnail_cell.delete()
+
+    # Update emodel properties
+    emodel_properties = EmodelProperties(
+        threshold_current=newthreshold_current,
+        holding_current=holding_current
+    )
+
+    # Create cell
+    thumbnail_cell = Cell(
+        template_path=template_path,
+        morphology_path=morphology_path,
+        template_format=template_format,
+        emodel_properties=emodel_properties,
+    )
+    
+    # Add 130% threshold current injection
+    step_amplitude = newthreshold_current * 1.1
+    step_duration = 2000
+    start_time = 700
+    thumbnail_cell.add_step(
+        start_time=start_time,
+        stop_time=start_time+step_duration,
         level=step_amplitude
     )
 
     # Set up simulation
-    sim = cell.simulation if hasattr(cell, 'simulation') else None
+    sim = thumbnail_cell.simulation if hasattr(thumbnail_cell, 'simulation') else None
     if sim is None:
-        from bluecellulab import Simulation
         sim = Simulation()
-        sim.add_cell(cell)
+        sim.add_cell(thumbnail_cell)
+
+    neuron_globals = NeuronGlobals.get_instance()
+    # neuron_globals.temperature = celsius
+    # neuron_globals.v_init = v_init
 
     # Run simulation
-    total_duration = 50.0 + step_duration + 50.0  # Add some buffer time after step
-    sim.run(total_duration)
+    tstop = step_duration+300
+    sim.run(tstop)
     # Get recording data
-    time = cell.get_time()
-    voltage = cell.get_soma_voltage()
+    time = thumbnail_cell.get_time()
+    voltage = thumbnail_cell.get_soma_voltage()
 
     # Create figure with default size (matplotlib's default is [6.4, 4.8])
     fig, ax = plt.subplots(figsize=(6.4, 4.8))
@@ -56,13 +120,21 @@ def generate_cell_thumbnail(
     ax.set_ylabel('Membrane potential (mV)', fontsize=10)
     plt.tight_layout()
 
-    # Create parent directories if they don't exist
-    output_path = pathlib.Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if save_figure:
+        # Create parent directories if they don't exist
+        output_path = pathlib.Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Save figure with 300 DPI
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
     
-    # Save figure with 300 DPI
-    plt.savefig(output_path, dpi=300, bbox_inches='tight')
-    plt.close()
+    if show_figure:
+        plt.show()
+    else:
+        plt.close()
+    
+    thumbnail_cell.delete()
+    
     return time, voltage
 
 
