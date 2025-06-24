@@ -406,6 +406,24 @@ def test_fi_test(mock_Cell, mock_compute, dummy_template_params, dummy_out_dir):
     )
 
 
+@patch("bluecellulab.validation.validation.plot_trace")
+@patch("bluecellulab.validation.validation.run_stimulus")
+def test_thumnail_test(
+    mock_run_stimulus, mock_plot_trace, dummy_template_params, dummy_out_dir
+):
+    # passed case
+    rec = MagicMock()
+    rec.spike = [1]
+    mock_run_stimulus.return_value = rec
+    mock_plot_trace.return_value = dummy_out_dir / "thumbnail.pdf"
+    result = validation.thumbnail_test(dummy_template_params, 1.0, dummy_out_dir)
+    assert result["passed"] is True
+    assert len(result["figures"]) == 1
+    assert result["figures"][0] == dummy_out_dir / "thumbnail.pdf"
+    assert result["validation_details"] == ""
+    assert result["name"] == "Thumbnail"
+
+
 @patch("bluecellulab.validation.validation.calculate_rheobase")
 @patch("bluecellulab.validation.validation.calculate_input_resistance")
 @patch("bluecellulab.validation.validation.spiking_test")
