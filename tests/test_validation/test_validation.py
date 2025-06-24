@@ -421,7 +421,7 @@ def test_thumnail_test(
     assert len(result["figures"]) == 1
     assert result["figures"][0] == dummy_out_dir / "thumbnail.pdf"
     assert result["validation_details"] == ""
-    assert result["name"] == "Thumbnail"
+    assert result["name"] == "thumbnail"
 
 
 @patch("bluecellulab.validation.validation.calculate_rheobase")
