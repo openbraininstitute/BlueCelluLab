@@ -25,6 +25,7 @@ from bluecellulab.analysis.analysis import compute_plot_iv_curve
 from bluecellulab.analysis.inject_sequence import run_multirecordings_stimulus
 from bluecellulab.analysis.inject_sequence import run_stimulus
 from bluecellulab.cell.core import Cell
+from bluecellulab.simulation.neuron_globals import NeuronGlobals
 from bluecellulab.stimulus.factory import IDRestTimings
 from bluecellulab.stimulus.factory import StimulusFactory
 from bluecellulab.tools import calculate_input_resistance
@@ -434,7 +435,7 @@ def thumbnail_test(template_params, rheobase, out_dir):
     )
 
     return {
-        "name": "Simulatable Neuron Thumbnail Creation",
+        "name": "Thumbnail",
         "passed": True,
         "validation_details": "",
         "figures": [outpath],
@@ -442,7 +443,12 @@ def thumbnail_test(template_params, rheobase, out_dir):
 
 
 def run_validations(
-    cell, cell_name, spike_threshold_voltage=-30, output_dir="./memodel_validation_figures"
+    cell,
+    cell_name,
+    spike_threshold_voltage=-30,
+    v_init=-80.0,
+    celsius=34.0,
+    output_dir="./memodel_validation_figures"
 ):
     """Run all the validations on the cell.
 
@@ -450,10 +456,17 @@ def run_validations(
         cell (Cell): The cell to validate.
         cell_name (str): The name of the cell, used in the output directory.
         spike_threshold_voltage (float): The voltage threshold for spike detection.
+        v_init: Initial membrane potential. Default is -80.0 mV.
+        celsius: Temperature in Celsius. Default is 34.0.
         output_dir (str): The directory to save the validation figures.
     """
     out_dir = pathlib.Path(output_dir) / cell_name
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # set initial voltage and temperature
+    neuron_globals = NeuronGlobals.get_instance()
+    neuron_globals.temperature = celsius
+    neuron_globals.v_init = v_init
 
     # get me-model properties
     holding_current = cell.hypamp if cell.hypamp else 0.0
