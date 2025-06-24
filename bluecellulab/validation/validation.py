@@ -435,7 +435,7 @@ def thumbnail_test(template_params, rheobase, out_dir):
     )
 
     return {
-        "name": "Thumbnail",
+        "name": "thumbnail",
         "passed": True,
         "validation_details": "",
         "figures": [outpath],
