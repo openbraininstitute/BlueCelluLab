@@ -172,14 +172,32 @@ class SonataSimulationAccess:
 
 
 def get_synapse_replay_spikes(f_name: str) -> dict:
-    """Read the .h5 file containing the spike replays."""
-    with h5py.File(f_name, 'r') as f:
-        # Access the timestamps and node_ids datasets
-        timestamps = f['/spikes/All/timestamps'][:]
-        node_ids = f['/spikes/All/node_ids'][:]
+    """Read the .h5 file containing the spike replays.
 
-        spikes = pd.DataFrame(data={'t': timestamps, 'node_id': node_ids})
-        spikes = spikes.astype({"node_id": int})
+    Args:
+        f_name: Path to SONATA .h5 spike file.
+
+    Returns:
+        Dictionary mapping node_id to np.array of spike times.
+    """
+    all_spikes = []
+    with h5py.File(f_name, 'r') as f:
+        if "spikes" not in f:
+            raise ValueError("spike file is missing required 'spikes' group.")
+
+        for population in f["spikes"]:
+            pop_group = f["spikes"][population]
+            timestamps = pop_group["timestamps"][:]
+            node_ids = pop_group["node_ids"][:]
+
+            pop_spikes = pd.DataFrame({"t": timestamps, "node_id": node_ids})
+            pop_spikes = pop_spikes.astype({"node_id": int})
+            all_spikes.append(pop_spikes)
+
+    if not all_spikes:
+        return {}
+
+    spikes = pd.concat(all_spikes, ignore_index=True)
 
     if (spikes["t"] < 0).any():
         logger.warning("Found negative spike times... Clipping them to 0")
