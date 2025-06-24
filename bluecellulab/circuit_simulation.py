@@ -638,15 +638,32 @@ class CircuitSimulation:
                        will not be exactly reproduced.
         """
         if t_stop is None:
-            duration = self.circuit_access.config.duration
-            if duration is None:  # type narrowing
+            t_stop = self.circuit_access.config.tstop
+            if t_stop is None:  # type narrowing
                 t_stop = 0.0
-            else:
-                t_stop = duration
         if dt is None:
             dt = self.circuit_access.config.dt
-        if forward_skip_value is None:
-            forward_skip_value = self.circuit_access.config.forward_skip
+
+        config_forward_skip_value = self.circuit_access.config.forward_skip  # legacy
+        config_tstart = self.circuit_access.config.tstart or 0.0             # SONATA
+        # Determine effective skip value and flag
+        if forward_skip_value is not None:
+            # User explicitly provided value → use it
+            effective_skip_value = forward_skip_value
+            effective_skip = forward_skip
+        elif config_forward_skip_value is not None:
+            # Use legacy config if available
+            effective_skip_value = config_forward_skip_value
+            effective_skip = forward_skip
+        elif config_tstart > 0.0:
+            # Use SONATA tstart *only* if no other skip value was provided
+            effective_skip_value = config_tstart
+            effective_skip = True
+        else:
+            # No skip
+            effective_skip_value = None
+            effective_skip = False
+
         if celsius is None:
             celsius = self.circuit_access.config.celsius
         NeuronGlobals.get_instance().temperature = celsius
@@ -664,11 +681,11 @@ class CircuitSimulation:
                            "simulations")
 
         sim.run(
-            t_stop,
+            tstop=t_stop,
             cvode=cvode,
             dt=dt,
-            forward_skip=forward_skip,
-            forward_skip_value=forward_skip_value,
+            forward_skip=effective_skip,
+            forward_skip_value=effective_skip_value,
             show_progress=show_progress)
 
         self.write_reports()

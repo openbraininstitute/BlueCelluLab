@@ -148,8 +148,16 @@ class SonataSimulationConfig:
         return self.impl.conditions.spike_location.name
 
     @property
-    def duration(self) -> Optional[float]:
+    def tstart(self) -> Optional[float]:
+        return self.impl.config.get("run", {}).get("tstart", 0.0)
+
+    @property
+    def tstop(self) -> Optional[float]:
         return self.impl.run.tstop
+
+    @property
+    def duration(self) -> float:
+        return self.tstop  # for backward compatibility
 
     @property
     def dt(self) -> float:
