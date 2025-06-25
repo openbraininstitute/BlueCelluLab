@@ -599,7 +599,7 @@ def compute_memodel_properties(
     v_init=-80.0,
     celsius=34.0,
 ):
-    """Compute the threshold current and the oinput resistance of the cell.
+    """Compute the threshold current and the input resistance of the cell.
 
     Args:
         cell (Cell): The cell model to compute properties for.
