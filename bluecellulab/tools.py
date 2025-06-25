@@ -26,6 +26,7 @@ import bluecellulab
 from bluecellulab.cell import Cell
 from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.exceptions import UnsteadyCellError
+from bluecellulab.simulation.neuron_globals import NeuronGlobals
 from bluecellulab.simulation.parallel import IsolatedProcess
 from bluecellulab.utils import CaptureOutput
 from bluecellulab.type_aliases import NeuronSection
@@ -590,3 +591,37 @@ def resolve_source_nodes(source, source_type, cells, population):
             node_ids = [node_id for (pop, node_id) in cells.keys() if pop == population]
         compartment_nodes = None
     return node_ids, compartment_nodes
+
+
+def compute_memodel_properties(
+    cell,
+    spike_threshold_voltage=-30,
+    v_init=-80.0,
+    celsius=34.0,
+):
+    """Compute the threshold current and the oinput resistance of the cell.
+
+    Args:
+        cell (Cell): The cell model to compute properties for.
+        spike_threshold_voltage (float, optional): Voltage threshold for spike detection. Default is -30 mV.
+        v_init (float, optional): Initial membrane potential. Default is -80 mV.
+        celsius (float, optional): Temperature in Celsius. Default is 34.0 C.
+    """
+    # set initial voltage and temperature
+    neuron_globals = NeuronGlobals.get_instance()
+    neuron_globals.temperature = celsius
+    neuron_globals.v_init = v_init
+
+    # get me-model properties
+    holding_current = cell.hypamp if cell.hypamp else 0.0
+    rheobase = calculate_rheobase(
+        cell=cell, section="soma[0]", segx=0.5, threshold_voltage=spike_threshold_voltage
+    )
+    rin = calculate_input_resistance(
+        template_path=cell.template_params.template_filepath,
+        morphology_path=cell.template_params.morph_filepath,
+        template_format=cell.template_params.template_format,
+        emodel_properties=cell.template_params.emodel_properties,
+    )
+
+    return {"holding_current": holding_current, "rheobase": rheobase, "rin": rin}
