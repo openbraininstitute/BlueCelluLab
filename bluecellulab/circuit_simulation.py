@@ -729,23 +729,31 @@ class CircuitSimulation:
         first_key = next(iter(self.cells))
         return self.cells[first_key].get_time()
 
-    def get_time_trace(self, t_step=None) -> np.ndarray:
+    def get_time_trace(self, t_start=None, t_stop=None, t_step=None) -> np.ndarray:
         """Get the time vector for the recordings, negative times removed.
 
         Parameters
         -----------
-        t_step: time step (should be a multiple of report time step T;
-        equals T by default)
+        t_start, t_stop: time range of interest.
+        t_step: time step (multiple of report dt; equals dt by default)
 
         Returns:
-            One dimentional np.ndarray to represent the times.
+            1D np.ndarray representing time points.
         """
         time = self.get_time()
-        time = time[np.where(time >= 0.0)]
+        time = time[time >= 0.0]
+
+        if t_start is None or t_start < 0:
+            t_start = 0
+        if t_stop is None:
+            t_stop = np.inf
+
+        time = time[(time >= t_start) & (time <= t_stop)]
 
         if t_step is not None:
             ratio = t_step / self.dt
             time = _sample_array(time, ratio)
+
         return time
 
     def get_voltage_trace(
