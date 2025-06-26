@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Optional
 import logging
 
-from collections import defaultdict
+from bluecellulab.reports.utils import configure_all_reports
 import neuron
 import numpy as np
 import pandas as pd
@@ -48,7 +48,6 @@ from bluecellulab.circuit.simulation_access import BluepySimulationAccess, Simul
 from bluecellulab.importer import load_mod_files
 from bluecellulab.rngsettings import RNGSettings
 from bluecellulab.simulation.neuron_globals import NeuronGlobals
-from bluecellulab.simulation.report import configure_all_reports, write_compartment_report, write_sonata_spikes
 from bluecellulab.stimulus.circuit_stimulus_definitions import Noise, OrnsteinUhlenbeck, RelativeOrnsteinUhlenbeck, RelativeShotNoise, ShotNoise
 import bluecellulab.stimulus.circuit_stimulus_definitions as circuit_stimulus_definitions
 from bluecellulab.exceptions import BluecellulabError
@@ -831,101 +830,3 @@ class CircuitSimulation:
                                  template_format=cell_kwargs['template_format'],
                                  emodel_properties=cell_kwargs['emodel_properties'])
 
-    def write_reports(
-        self,
-        voltage_traces_by_cell: Optional[Dict[str, Any]] = None,
-        spikes_by_population: Optional[Dict[str, Dict[int, list]]] = None,
-    ):
-        """
-        Write all reports defined in the simulation config.
-
-        Parameters
-        ----------
-        voltage_traces_by_cell
-            Mapping "POP_GID" → {"time": [...], "voltage": [...], ...}.
-            If None, fall back to local self.cells (single-rank mode).
-
-        spikes_by_population
-            Mapping population → {gid_int: [spike_times_ms]}.
-            If None, spike data are extracted from self.cells (single-rank mode).
-        """
-        cells_or_traces = voltage_traces_by_cell if voltage_traces_by_cell is not None else self.cells
-
-        report_entries = self.circuit_access.config.get_report_entries()
-        for report_name, report_cfg in report_entries.items():
-            if report_cfg.get("type", "compartment") != "compartment":
-                raise NotImplementedError("Only 'compartment' reports supported")
-
-            output_path = self.circuit_access.config.report_file_path(report_cfg, report_name)
-            section = report_cfg.get("sections")
-
-            if section == "compartment_set":
-                if report_cfg.get("cells") is not None:
-                    raise ValueError(
-                        "Report config error: 'cells' must not be set when using 'compartment_set' sections."
-                    )
-
-                comp_sets = self.circuit_access.config.get_compartment_sets()
-                write_compartment_report(
-                    report_name=report_name,
-                    output_path=output_path,
-                    cells=cells_or_traces,
-                    report_cfg=report_cfg,
-                    source_sets=comp_sets,
-                    source_type="compartment_set",
-                    sim_dt=self.dt,
-                )
-            else:  # assume node_set-style sectioning
-                if report_cfg.get("compartments") not in ("center", "all"):
-                    raise ValueError(
-                        f"Unsupported 'compartments' value '{report_cfg.get('compartments')}'. "
-                        "Must be 'center' or 'all' for node_set-based recording."
-                    )
-
-                node_sets = self.circuit_access.config.get_node_sets()
-                write_compartment_report(
-                    report_name=report_name,
-                    output_path=output_path,
-                    cells=cells_or_traces,
-                    report_cfg=report_cfg,
-                    source_sets=node_sets,
-                    source_type="node_set",
-                    sim_dt=self.dt,
-                )
-
-        self.write_spike_report(spikes_by_population=spikes_by_population)
-
-    def write_spike_report(
-        self,
-        spikes_by_population: Optional[Dict[str, Dict[int, list]]] = None,
-    ):
-        """
-        Write SONATA spike report.  If `spikes_by_population` is provided, use it;
-        otherwise fall back to spikes recorded in self.cells (single-rank mode).
-        """
-        output_path = self.circuit_access.config.spikes_file_path
-        if os.path.exists(output_path):
-            os.remove(output_path)
-
-        if spikes_by_population is None:
-            spikes_by_population = defaultdict(dict)
-            for gid, cell in self.cells.items():
-                pop = getattr(gid, "population_name", None)
-                if pop is None:
-                    continue
-                try:
-                    spk = cell.get_recorded_spikes(
-                        location=self.spike_location, threshold=self.spike_threshold
-                    )
-                    if spk is not None:
-                        spikes_by_population[pop][gid.id] = list(spk)
-                except AttributeError:
-                    continue
-
-        if self.cells:
-            known_pops = {getattr(gid, "population_name", None) for gid in self.cells}
-        else:  # parallel mode, rely on keys of provided dict
-            known_pops = set(spikes_by_population.keys())
-
-        for pop in known_pops:
-            write_sonata_spikes(output_path, spikes_by_population.get(pop, {}), pop)
