@@ -202,4 +202,8 @@ def get_synapse_replay_spikes(f_name: str) -> dict:
     if (spikes["t"] < 0).any():
         logger.warning("Found negative spike times... Clipping them to 0")
         spikes["t"].clip(lower=0., inplace=True)
-    return spikes.groupby("node_id")["t"].apply(np.array).to_dict()
+
+    # Group spikes by node_id and ensure spike times are sorted in ascending order.
+    # This is critical because NEURON's VecStim requires monotonically increasing times per train.
+    grouped = spikes.groupby("node_id")["t"]
+    return {k: np.sort(v.values) for k, v in grouped}
