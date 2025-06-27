@@ -16,7 +16,7 @@ class ReportManager:
         spikes_by_pop:   Dict[str, Dict[int, list]] | None = None,
     ):
         self._write_voltage_reports(cells_or_traces)
-        self._write_spike_report(spikes_by_pop or extract_spikes_from_cells(cells_or_traces))
+        self._write_spike_report(spikes_by_pop or extract_spikes_from_cells(cells_or_traces, location=self.cfg.spike_location, threshold=self.cfg.spike_threshold))
 
     def _write_voltage_reports(self, cells_or_traces):
         for name, rcfg in self.cfg.get_report_entries().items():
