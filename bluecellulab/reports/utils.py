@@ -150,39 +150,6 @@ def write_sonata_report_file(
         time_ds = mapping.create_dataset("time", data=time_array)
         time_ds.attrs["units"] = "ms"
 
-def write_sonata_spikes(f_name: str, spikes_dict: dict[int, np.ndarray], population: str):
-    """Write a SONATA spike group to a spike file from {node_id: [t1, t2,
-    ...]}."""
-    all_node_ids: List[int] = []
-    all_timestamps: List[float] = []
-
-    for node_id, times in spikes_dict.items():
-        all_node_ids.extend([node_id] * len(times))
-        all_timestamps.extend(times)
-
-    if not all_timestamps:
-        logger.warning(f"No spikes to write for population '{population}'.")
-
-    # Sort by time for consistency
-    sorted_indices = np.argsort(all_timestamps)
-    node_ids_sorted = np.array(all_node_ids, dtype=np.uint64)[sorted_indices]
-    timestamps_sorted = np.array(all_timestamps, dtype=np.float64)[sorted_indices]
-
-    os.makedirs(os.path.dirname(f_name), exist_ok=True)
-    with h5py.File(f_name, 'a') as f:  # 'a' to allow multiple writes
-        spikes_group = f.require_group("spikes")
-        if population in spikes_group:
-            logger.warning(f"Overwriting existing group for population '{population}' in {f_name}.")
-            del spikes_group[population]
-
-        group = spikes_group.create_group(population)
-        sorting_enum = h5py.enum_dtype({'none': 0, 'by_id': 1, 'by_time': 2}, basetype='u1')
-        group.attrs.create("sorting", 2, dtype=sorting_enum)  # 2 = by_time
-
-        timestamps_ds = group.create_dataset("timestamps", data=timestamps_sorted)
-        group.create_dataset("node_ids", data=node_ids_sorted)
-
-        timestamps_ds.attrs["units"] = "ms"  # SONATA-required
 
 def extract_spikes_from_cells(
     cells: Dict[Any, Any],
@@ -213,20 +180,9 @@ def extract_spikes_from_cells(
     for key, cell in cells.items():
         if isinstance(key, tuple):
             pop, gid = key
-        else:
-            # fallback if using str keys like "pop_123"
-            try:
-                pop, gid = key.rsplit("_", 1)
-                gid = int(gid)
-            except Exception:
-                continue
 
-        try:
-            if hasattr(cell, "get_recorded_spikes"):
-                times = cell.get_recorded_spikes(location=location, threshold=threshold)
-                if times is not None:
-                    spikes_by_pop[pop][gid] = list(times)
-        except Exception:
-            continue
+        times = cell.get_recorded_spikes(location=location, threshold=threshold)
+        if times is not None:
+            spikes_by_pop[pop][gid] = list(times)
 
     return dict(spikes_by_pop)
