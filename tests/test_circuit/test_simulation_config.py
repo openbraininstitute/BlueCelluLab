@@ -254,7 +254,7 @@ def test_get_node_sets(tmp_path):
         }
     }))
     sim = SonataSimulationConfig.__new__(SonataSimulationConfig)
-    sim.impl = type("impl", (), {"circuit": type("circuit", (), {"config": {"node_sets_file": str(file)}})})
+    sim.impl = type("impl", (), {"config": {"node_sets_file": str(file)}})
     result = sim.get_node_sets()
     assert "target_cells" in result
     assert result["target_cells"]["node_id"] == [0, 1, 2]
