@@ -77,6 +77,10 @@ class SimulationConfig(Protocol):
         raise NotImplementedError
 
     @property
+    def duration(self) -> Optional[float]:
+        raise NotImplementedError
+
+    @property
     def dt(self) -> float:
         raise NotImplementedError
 
