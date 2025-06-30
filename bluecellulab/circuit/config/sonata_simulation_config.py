@@ -86,13 +86,24 @@ class SonataSimulationConfig:
         with open(filepath, 'r') as f:
             return json.load(f)
 
-    @lru_cache(maxsize=1)
     def get_node_sets(self) -> dict[str, dict]:
-        filepath = self.impl.config.get("node_sets_file")
-        if not filepath:
-            raise ValueError("No 'node_sets_file' entry found in SONATA config.")
-        with open(filepath, 'r') as f:
-            return json.load(f)
+        circuit_filepath = self.impl.circuit.config.get("node_sets_file")
+        base_node_sets = {}
+        if circuit_filepath:
+            with open(circuit_filepath, "r") as f:
+                base_node_sets = json.load(f)
+
+        sim_filepath = self.impl.config.get("node_sets_file")
+        if sim_filepath:
+            with open(sim_filepath, "r") as f:
+                sim_node_sets = json.load(f)
+        # Overwrite/add entries
+        base_node_sets.update(sim_node_sets)
+ 
+        if not base_node_sets:
+            raise ValueError("No 'node_sets_file' found in simulation or circuit config.")
+ 
+        return base_node_sets
 
     @lru_cache(maxsize=1)
     def get_report_entries(self) -> dict[str, dict]:

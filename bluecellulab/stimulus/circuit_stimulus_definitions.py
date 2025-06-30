@@ -251,7 +251,7 @@ class Stimulus:
                 delay=stimulus_entry["delay"],
                 duration=stimulus_entry["duration"],
                 percent_start=stimulus_entry["percent_start"],
-                percent_end=stimulus_entry["percent_end"],
+                percent_end=stimulus_entry.get("percent_end", stimulus_entry["percent_start"]),
             )
         elif pattern == Pattern.SYNAPSE_REPLAY:
             return SynapseReplay(

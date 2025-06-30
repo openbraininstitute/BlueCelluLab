@@ -15,6 +15,7 @@
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 from bluepysnap import Simulation as SnapSimulation
 import pytest
@@ -246,18 +247,35 @@ def test_get_compartment_sets(tmp_path):
 
 
 def test_get_node_sets(tmp_path):
-    file = tmp_path / "node_sets.json"
-    file.write_text(json.dumps({
-        "target_cells": {
-            "population": "Mosaic",
-            "node_id": [0, 1, 2]
-        }
+    # Create circuit node sets file
+    circuit_file = tmp_path / "circuit_node_sets.json"
+    circuit_file.write_text(json.dumps({
+        "target_cells": {"population": "Mosaic", "node_id": [0, 1, 2]}
     }))
+    
+    # Create simulation node sets file
+    sim_file = tmp_path / "sim_node_sets.json"
+    sim_file.write_text(json.dumps({
+        "target_cells": {"population": "Mosaic", "node_id": [10, 11, 12]}
+    }))
+    
+    # Test with simulation config only
     sim = SonataSimulationConfig.__new__(SonataSimulationConfig)
-    sim.impl = type("impl", (), {"config": {"node_sets_file": str(file)}})
+    sim.impl = type("impl", (), {"config": {"node_sets_file": str(sim_file)}})
     result = sim.get_node_sets()
-    assert "target_cells" in result
+    assert result["target_cells"]["node_id"] == [10, 11, 12]
+    
+    # Test with circuit config only
+    sim.impl = type("impl", (), {
+        "config": {},
+        "circuit": type("circuit", (), {"config": {"node_sets_file": str(circuit_file)}})
+    })
+    result = sim.get_node_sets()
     assert result["target_cells"]["node_id"] == [0, 1, 2]
+    
+    # Test with no configs
+    sim.impl = type("impl", (), {"config": {}})
+    assert sim.get_node_sets() == {}
 
 
 def test_get_report_entries():
