@@ -17,6 +17,7 @@ import json
 import logging
 from pathlib import Path
 from typing import Optional
+import warnings
 
 from bluecellulab.circuit.config.sections import Conditions, ConnectionOverrides
 from bluecellulab.stimulus.circuit_stimulus_definitions import Stimulus
@@ -164,12 +165,16 @@ class SonataSimulationConfig:
         return self.impl.config.get("run", {}).get("tstart", 0.0)
 
     @property
-    def tstop(self) -> Optional[float]:
+    def tstop(self) -> float:
         return self.impl.run.tstop
 
     @property
-    def duration(self) -> float:
-        return self.tstop  # for backward compatibility
+    def duration(self) -> Optional[float]:
+        warnings.warn(
+            "`duration` is deprecated. Use `tstop` instead.",
+            DeprecationWarning
+        )
+        return self.tstop
 
     @property
     def dt(self) -> float:
