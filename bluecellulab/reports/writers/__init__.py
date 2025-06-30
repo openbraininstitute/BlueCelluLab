@@ -3,8 +3,9 @@ from .spikes import SpikeReportWriter
 
 REGISTRY = {
     "compartment": CompartmentReportWriter,
-    "spikes":      SpikeReportWriter,
+    "spikes": SpikeReportWriter,
 }
+
 
 def get_writer(report_type):
     return REGISTRY[report_type]

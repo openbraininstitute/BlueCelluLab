@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Dict, Any
 
+
 class BaseReportWriter(ABC):
     """Abstract interface for every report writer."""
 

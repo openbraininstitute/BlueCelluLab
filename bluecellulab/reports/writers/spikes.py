@@ -1,11 +1,12 @@
-from pathlib import Path
 from typing import Dict, List
 from bluecellulab.reports.writers.base_writer import BaseReportWriter
-import logging, os
+import logging
+import os
 import numpy as np
 import h5py
 
 logger = logging.getLogger(__name__)
+
 
 class SpikeReportWriter(BaseReportWriter):
     """Writes SONATA spike report from pop→gid→times mapping."""

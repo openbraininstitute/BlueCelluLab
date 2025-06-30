@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Dict, Any, Tuple, List
+from typing import Dict, List
 from .base_writer import BaseReportWriter
 from bluecellulab.reports.utils import (
     resolve_source_nodes,
@@ -10,29 +10,30 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class CompartmentReportWriter(BaseReportWriter):
     """Writes SONATA compartment (voltage) reports."""
 
     def write(self, cells: Dict):
         report_name = self.cfg.get("name", "unnamed")
         # section     = self.cfg.get("sections")
-        variable    = self.cfg.get("variable_name", "v")
+        variable = self.cfg.get("variable_name", "v")
 
         source_sets = self.cfg["_source_sets"]
         source_type = self.cfg["_source_type"]
-        src_name    = self.cfg.get("cells") if source_type == "node_set" else self.cfg.get("compartments")
-        src         = source_sets.get(src_name)
+        src_name = self.cfg.get("cells") if source_type == "node_set" else self.cfg.get("compartments")
+        src = source_sets.get(src_name)
         if not src:
             logger.warning(f"{source_type.title()} '{src_name}' not found – skipping '{report_name}'.")
             return
 
-        population  = src["population"]
+        population = src["population"]
         node_ids, comp_nodes = resolve_source_nodes(src, source_type, cells, population)
 
         data_matrix: List[np.ndarray] = []
-        node_id_list: List[int]       = []
-        idx_ptr: List[int]            = [0]
-        elem_ids: List[int]           = []
+        node_id_list: List[int] = []
+        idx_ptr: List[int] = [0]
+        elem_ids: List[int] = []
 
         for nid in node_ids:
             cell = cells.get((population, nid)) or cells.get(f"{population}_{nid}")

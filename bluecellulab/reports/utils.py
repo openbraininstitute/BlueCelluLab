@@ -16,14 +16,11 @@
 import logging
 from pathlib import Path
 import h5py
-from typing import List
 import numpy as np
-import os
 from collections import defaultdict
 from typing import Dict, Any
 
 from bluecellulab.tools import resolve_segments, resolve_source_nodes
-from bluecellulab.cell.cell_dict import CellDict
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +42,7 @@ def _configure_recording(cell, report_cfg, source, source_type, report_name):
             logger.warning(
                 f"Failed to record '{variable}' at {sec_name}({seg}) on GID {node_id} for report '{report_name}': {e}"
             )
+
 
 def configure_all_reports(cells, simulation_config):
     report_entries = simulation_config.get_report_entries()
@@ -84,6 +82,7 @@ def configure_all_reports(cells, simulation_config):
             if not cell:
                 continue
             _configure_recording(cell, report_cfg, source, source_type, report_name)
+
 
 def write_sonata_report_file(
     output_path,

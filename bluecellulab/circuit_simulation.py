@@ -16,11 +16,9 @@ simulations."""
 
 
 from __future__ import annotations
-from ast import Dict
 from collections.abc import Iterable
-import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 import logging
 
 from bluecellulab.reports.utils import configure_all_reports
@@ -829,4 +827,3 @@ class CircuitSimulation:
                                  record_dt=cell_kwargs['record_dt'],
                                  template_format=cell_kwargs['template_format'],
                                  emodel_properties=cell_kwargs['emodel_properties'])
-
