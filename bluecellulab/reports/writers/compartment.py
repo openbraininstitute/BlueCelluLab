@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class CompartmentReportWriter(BaseReportWriter):
     """Writes SONATA compartment (voltage) reports."""
 
-    def write(self, cells: Dict):
+    def write(self, cells: Dict, tstart=0):
         report_name = self.cfg.get("name", "unnamed")
         # section     = self.cfg.get("sections")
         variable = self.cfg.get("variable_name", "v")
@@ -76,4 +76,5 @@ class CompartmentReportWriter(BaseReportWriter):
             elem_ids,
             self.cfg,
             self.sim_dt,
+            tstart
         )

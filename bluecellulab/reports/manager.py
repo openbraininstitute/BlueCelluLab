@@ -15,6 +15,24 @@ class ReportManager:
         cells_or_traces: Dict,
         spikes_by_pop: Dict[str, Dict[int, list]] | None = None,
     ):
+        """
+        Write all configured reports (compartment and spike) in SONATA format.
+
+        Parameters
+        ----------
+        cells_or_traces : dict
+            A dictionary mapping (population, gid) to either:
+            - Cell objects with recorded data (used in single-process simulations), or
+            - Precomputed trace dictionaries, e.g., {"voltage": ndarray}, typically gathered across ranks in parallel runs.
+
+        spikes_by_pop : dict, optional
+            A precomputed dictionary of spike times by population.
+            If not provided, spike times are extracted from `cells_or_traces`.
+
+        Notes
+        -----
+        In parallel simulations, you must gather all traces and spikes to rank 0 and pass them here.
+        """
         self._write_voltage_reports(cells_or_traces)
         self._write_spike_report(spikes_by_pop or extract_spikes_from_cells(cells_or_traces, location=self.cfg.spike_location, threshold=self.cfg.spike_threshold))
 
@@ -38,7 +56,7 @@ class ReportManager:
 
             out_path = self.cfg.report_file_path(rcfg, name)
             writer = get_writer("compartment")(rcfg, out_path, self.dt)
-            writer.write(cells_or_traces)
+            writer.write(cells_or_traces, self.cfg.tstart)
 
     def _write_spike_report(self, spikes_by_pop):
         out_path = self.cfg.spikes_file_path

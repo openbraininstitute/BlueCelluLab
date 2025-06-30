@@ -13,11 +13,12 @@
 # limitations under the License.
 """Report class of bluecellulab."""
 
+from collections import defaultdict
 import logging
 from pathlib import Path
 import h5py
 import numpy as np
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from bluecellulab.tools import resolve_segments, resolve_source_nodes
 
@@ -91,7 +92,8 @@ def write_sonata_report_file(
     index_pointers,
     element_ids,
     report_cfg,
-    sim_dt
+    sim_dt,
+    tstart
 ):
     start_time = float(report_cfg.get("start_time", 0.0))
     end_time = float(report_cfg.get("end_time", 0.0))
@@ -113,8 +115,8 @@ def write_sonata_report_file(
 
     # Downsample the data if needed
     # Compute start and end indices in the original data
-    start_index = int(round(start_time / sim_dt))
-    end_index = int(round(end_time / sim_dt)) + 1  # inclusive
+    start_index = int(round((start_time - tstart) / sim_dt))
+    end_index = int(round((end_time - tstart) / sim_dt)) + 1  # inclusive
 
     # Now slice and downsample
     data_matrix_downsampled = [
@@ -173,14 +175,16 @@ def extract_spikes_from_cells(
     spikes_by_population : dict
         {population → {gid_int → [spike_times_ms]}}
     """
-    spikes_by_pop: Dict[str, Dict[int, list[float]]] = {}
+    spikes_by_pop: defaultdict[str, Dict[int, List[float]]] = defaultdict(dict)
 
     for key, cell in cells.items():
         if isinstance(key, tuple):
             pop, gid = key
+        else:
+            raise ValueError(f"Cell key {key} is not a (population, gid) tuple.")
 
         times = cell.get_recorded_spikes(location=location, threshold=threshold)
-        if times is not None:
+        if times is not None and len(times) > 0:
             spikes_by_pop[pop][gid] = list(times)
 
     return dict(spikes_by_pop)
