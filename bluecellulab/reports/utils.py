@@ -17,7 +17,6 @@ import logging
 from pathlib import Path
 import h5py
 import numpy as np
-from collections import defaultdict
 from typing import Dict, Any
 
 from bluecellulab.tools import resolve_segments, resolve_source_nodes
@@ -174,7 +173,7 @@ def extract_spikes_from_cells(
     spikes_by_population : dict
         {population → {gid_int → [spike_times_ms]}}
     """
-    spikes_by_pop = defaultdict(dict)
+    spikes_by_pop: Dict[str, Dict[int, list[float]]] = {}
 
     for key, cell in cells.items():
         if isinstance(key, tuple):

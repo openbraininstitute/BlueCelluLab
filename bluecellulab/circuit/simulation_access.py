@@ -206,4 +206,4 @@ def get_synapse_replay_spikes(f_name: str) -> dict:
     # Group spikes by node_id and ensure spike times are sorted in ascending order.
     # This is critical because NEURON's VecStim requires monotonically increasing times per train.
     grouped = spikes.groupby("node_id")["t"]
-    return {k: np.sort(v.values) for k, v in grouped}
+    return {k: np.sort(np.asarray(v.values)) for k, v in grouped}
