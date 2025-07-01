@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Optional, Dict
 from bluecellulab.reports.writers import get_writer
 from bluecellulab.reports.utils import extract_spikes_from_cells  # helper you already have / write
 
@@ -13,7 +13,7 @@ class ReportManager:
     def write_all(
         self,
         cells_or_traces: Dict,
-        spikes_by_pop: Dict[str, Dict[int, list]] | None = None,
+        spikes_by_pop: Optional[Dict[str, Dict[int, list]]] = None,
     ):
         """Write all configured reports (compartment and spike) in SONATA
         format.
