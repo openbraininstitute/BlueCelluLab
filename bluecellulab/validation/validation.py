@@ -429,7 +429,7 @@ def thumbnail_test(template_params, rheobase, out_dir):
     outpath = plot_trace(
         recording,
         out_dir,
-        fname="thumbnail.pdf",
+        fname="thumbnail.png",
         title="",
         plot_current=False
     )

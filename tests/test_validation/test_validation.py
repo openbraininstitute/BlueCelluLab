@@ -415,11 +415,11 @@ def test_thumnail_test(
     rec = MagicMock()
     rec.spike = [1]
     mock_run_stimulus.return_value = rec
-    mock_plot_trace.return_value = dummy_out_dir / "thumbnail.pdf"
+    mock_plot_trace.return_value = dummy_out_dir / "thumbnail.png"
     result = validation.thumbnail_test(dummy_template_params, 1.0, dummy_out_dir)
     assert result["passed"] is True
     assert len(result["figures"]) == 1
-    assert result["figures"][0] == dummy_out_dir / "thumbnail.pdf"
+    assert result["figures"][0] == dummy_out_dir / "thumbnail.png"
     assert result["validation_details"] == ""
     assert result["name"] == "thumbnail"
 
