@@ -246,18 +246,91 @@ def test_get_compartment_sets(tmp_path):
 
 
 def test_get_node_sets(tmp_path):
-    file = tmp_path / "node_sets.json"
-    file.write_text(json.dumps({
-        "target_cells": {
-            "population": "Mosaic",
-            "node_id": [0, 1, 2]
+    # Circuit file content
+    circuit_file = tmp_path / "circuit_node_sets.json"
+    circuit_file.write_text(json.dumps({
+        "set_from_circuit": {
+            "population": "PopA",
+            "node_id": [1, 2]
+        },
+        "overwritten_set": {
+            "population": "PopB",
+            "node_id": [3]
+        }
+    }))
+
+    # Simulation file content
+    sim_file = tmp_path / "sim_node_sets.json"
+    sim_file.write_text(json.dumps({
+        "overwritten_set": {
+            "population": "PopB",
+            "node_id": [99]
+        },
+        "set_from_sim": {
+            "population": "PopC",
+            "node_id": [4]
+        }
+    }))
+
+    # Simulates the SonataSimulationConfig instance
+    sim = SonataSimulationConfig.__new__(SonataSimulationConfig)
+    sim.impl = type("impl", (), {
+        "circuit": type("circuit", (), {"config": {"node_sets_file": str(circuit_file)}})(),
+        "config": {"node_sets_file": str(sim_file)}
+    })
+
+    # Call method
+    result = sim.get_node_sets()
+
+    # Validate merged result
+    assert set(result) == {"set_from_circuit", "overwritten_set", "set_from_sim"}
+    assert result["set_from_circuit"]["node_id"] == [1, 2]
+    assert result["overwritten_set"]["node_id"] == [99]  # Overwritten by simulation file
+    assert result["set_from_sim"]["node_id"] == [4]
+
+
+def test_get_node_sets_only_circuit(tmp_path):
+    circuit_file = tmp_path / "node_sets.json"
+    circuit_file.write_text(json.dumps({
+        "only_circuit": {
+            "population": "PopX",
+            "node_id": [5]
         }
     }))
     sim = SonataSimulationConfig.__new__(SonataSimulationConfig)
-    sim.impl = type("impl", (), {"circuit": type("circuit", (), {"config": {"node_sets_file": str(file)}})})
+    sim.impl = type("impl", (), {
+        "circuit": type("circuit", (), {"config": {"node_sets_file": str(circuit_file)}})(),
+        "config": {}
+    })
     result = sim.get_node_sets()
-    assert "target_cells" in result
-    assert result["target_cells"]["node_id"] == [0, 1, 2]
+    assert "only_circuit" in result
+
+
+def test_get_node_sets_only_sim(tmp_path):
+    sim_file = tmp_path / "node_sets.json"
+    sim_file.write_text(json.dumps({
+        "only_sim": {
+            "population": "PopY",
+            "node_id": [6]
+        }
+    }))
+    sim = SonataSimulationConfig.__new__(SonataSimulationConfig)
+    sim.impl = type("impl", (), {
+        "circuit": type("circuit", (), {"config": {}})(),
+        "config": {"node_sets_file": str(sim_file)}
+    })
+    result = sim.get_node_sets()
+    assert "only_sim" in result
+
+
+def test_get_node_sets_no_files():
+    sim = SonataSimulationConfig.__new__(SonataSimulationConfig)
+    sim.impl = type("impl", (), {
+        "circuit": type("circuit", (), {"config": {}})(),
+        "config": {}
+    })
+    with pytest.raises(ValueError, match="No 'node_sets_file' found"):
+        sim.get_node_sets()
 
 
 def test_get_report_entries():
