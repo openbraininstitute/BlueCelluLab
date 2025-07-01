@@ -15,6 +15,7 @@
 
 from pathlib import Path
 
+from bluecellulab.reports.manager import ReportManager
 import numpy as np
 import pytest
 
@@ -44,6 +45,10 @@ def test_sim_quick_scx_sonata(input_type):
     sim.instantiate_gids(cell_id, add_stimuli=True)
     t_stop = 10.0
     sim.run(t_stop)
+
+    # write reports
+    report_mgr = ReportManager(sim.circuit_access.config, sim.dt)
+    report_mgr.write_all(sim.cells)
 
     # Get the voltage trace
     time = sim.get_time_trace(1)
@@ -76,6 +81,11 @@ def test_sim_quick_scx_sonata_multicircuit(input_type):
     sim.instantiate_gids(cell_ids, add_stimuli=True)
     t_stop = 20.0
     sim.run(t_stop)
+
+    # write reports
+    report_mgr = ReportManager(sim.circuit_access.config, sim.dt)
+    report_mgr.write_all(sim.cells)
+
     for cell_id in cell_ids:
         voltage = sim.get_voltage_trace(cell_id, 0, t_stop, 0.025)
         voltage = voltage[:len(voltage) - 1]  # remove last point, mainsim produces 1 less
