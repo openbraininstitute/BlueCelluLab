@@ -99,10 +99,10 @@ class SonataSimulationConfig:
                 sim_node_sets = json.load(f)
         # Overwrite/add entries
         base_node_sets.update(sim_node_sets)
- 
+
         if not base_node_sets:
             raise ValueError("No 'node_sets_file' found in simulation or circuit config.")
- 
+
         return base_node_sets
 
     @lru_cache(maxsize=1)
