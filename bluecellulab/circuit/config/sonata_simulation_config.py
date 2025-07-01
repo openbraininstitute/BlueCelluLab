@@ -97,8 +97,8 @@ class SonataSimulationConfig:
         if sim_filepath:
             with open(sim_filepath, "r") as f:
                 sim_node_sets = json.load(f)
-        # Overwrite/add entries
-        base_node_sets.update(sim_node_sets)
+            # Overwrite/add entries
+            base_node_sets.update(sim_node_sets)
 
         if not base_node_sets:
             raise ValueError("No 'node_sets_file' found in simulation or circuit config.")
