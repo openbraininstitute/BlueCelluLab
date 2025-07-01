@@ -243,7 +243,7 @@ class Stimulus:
                 delay=stimulus_entry["delay"],
                 duration=stimulus_entry["duration"],
                 amp_start=stimulus_entry["amp_start"],
-                amp_end=stimulus_entry.get("amp_end", stimulus_entry["amp_end"]),
+                amp_end=stimulus_entry.get("amp_end", stimulus_entry["amp_start"]),
             )
         elif pattern == Pattern.RELATIVE_LINEAR:
             return RelativeLinear(
@@ -251,7 +251,7 @@ class Stimulus:
                 delay=stimulus_entry["delay"],
                 duration=stimulus_entry["duration"],
                 percent_start=stimulus_entry["percent_start"],
-                percent_end=stimulus_entry.get("percent_end", stimulus_entry["percent_end"]),
+                percent_end=stimulus_entry.get("percent_end", stimulus_entry["percent_start"]),
             )
         elif pattern == Pattern.SYNAPSE_REPLAY:
             return SynapseReplay(
