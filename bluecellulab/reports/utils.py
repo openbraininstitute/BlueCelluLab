@@ -156,8 +156,7 @@ def extract_spikes_from_cells(
     location: str = "soma",
     threshold: float = -20.0,
 ) -> Dict[str, Dict[int, list]]:
-    """
-    Extract spike times from recorded cells, grouped by population.
+    """Extract spike times from recorded cells, grouped by population.
 
     Parameters
     ----------

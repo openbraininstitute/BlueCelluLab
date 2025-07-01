@@ -15,8 +15,8 @@ class ReportManager:
         cells_or_traces: Dict,
         spikes_by_pop: Dict[str, Dict[int, list]] | None = None,
     ):
-        """
-        Write all configured reports (compartment and spike) in SONATA format.
+        """Write all configured reports (compartment and spike) in SONATA
+        format.
 
         Parameters
         ----------
