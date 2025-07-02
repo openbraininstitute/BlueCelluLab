@@ -350,7 +350,6 @@ class BPAP:
         validated = True
         notes = ""
         popt_dend, popt_apic = self.fit(soma_amp, dend_amps, dend_dist, apic_amps, apic_dist)
-        logging.warning(popt_dend)
         if dend_amps is not None:
             plt.cla()
             plt.plot([0], soma_amp, '.')

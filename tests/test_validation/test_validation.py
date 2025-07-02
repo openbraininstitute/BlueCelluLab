@@ -406,6 +406,24 @@ def test_fi_test(mock_Cell, mock_compute, dummy_template_params, dummy_out_dir):
     )
 
 
+@patch("bluecellulab.validation.validation.plot_trace")
+@patch("bluecellulab.validation.validation.run_stimulus")
+def test_thumnail_test(
+    mock_run_stimulus, mock_plot_trace, dummy_template_params, dummy_out_dir
+):
+    # passed case
+    rec = MagicMock()
+    rec.spike = [1]
+    mock_run_stimulus.return_value = rec
+    mock_plot_trace.return_value = dummy_out_dir / "thumbnail.png"
+    result = validation.thumbnail_test(dummy_template_params, 1.0, dummy_out_dir)
+    assert result["passed"] is True
+    assert len(result["figures"]) == 1
+    assert result["figures"][0] == dummy_out_dir / "thumbnail.png"
+    assert result["validation_details"] == ""
+    assert result["name"] == "thumbnail"
+
+
 @patch("bluecellulab.validation.validation.calculate_rheobase")
 @patch("bluecellulab.validation.validation.calculate_input_resistance")
 @patch("bluecellulab.validation.validation.spiking_test")
@@ -416,7 +434,9 @@ def test_fi_test(mock_Cell, mock_compute, dummy_template_params, dummy_out_dir):
 @patch("bluecellulab.validation.validation.rin_test")
 @patch("bluecellulab.validation.validation.iv_test")
 @patch("bluecellulab.validation.validation.fi_test")
+@patch("bluecellulab.validation.validation.thumbnail_test")
 def test_run_validations(
+    mock_thumbnail,
     mock_fi,
     mock_iv,
     mock_rin,
@@ -447,6 +467,7 @@ def test_run_validations(
     mock_rin.return_value = {"passed": True}
     mock_iv.return_value = {"passed": True}
     mock_fi.return_value = {"passed": True}
+    mock_thumbnail.return_value = {"passed": True}
     result = validation.run_validations(cell, "cellname")
     assert result["spiking_test"]["passed"] is True
     assert result["depolarization_block_test"]["passed"] is True
