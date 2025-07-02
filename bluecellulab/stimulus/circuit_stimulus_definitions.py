@@ -243,7 +243,7 @@ class Stimulus:
                 delay=stimulus_entry["delay"],
                 duration=stimulus_entry["duration"],
                 amp_start=stimulus_entry["amp_start"],
-                amp_end=stimulus_entry["amp_end"],
+                amp_end=stimulus_entry.get("amp_end", stimulus_entry["amp_start"]),
             )
         elif pattern == Pattern.RELATIVE_LINEAR:
             return RelativeLinear(
@@ -251,7 +251,7 @@ class Stimulus:
                 delay=stimulus_entry["delay"],
                 duration=stimulus_entry["duration"],
                 percent_start=stimulus_entry["percent_start"],
-                percent_end=stimulus_entry["percent_end"],
+                percent_end=stimulus_entry.get("percent_end", stimulus_entry["percent_start"]),
             )
         elif pattern == Pattern.SYNAPSE_REPLAY:
             return SynapseReplay(
@@ -285,7 +285,7 @@ class Stimulus:
                 decay_time=stimulus_entry["decay_time"],
                 mean_percent=stimulus_entry["mean_percent"],
                 sd_percent=stimulus_entry["sd_percent"],
-                relative_skew=stimulus_entry.get("RelativeSkew", 0.5),
+                relative_skew=stimulus_entry.get("relative_skew", 0.5),
                 seed=stimulus_entry.get("random_seed", None),
                 mode=ClampMode(stimulus_entry.get("input_type", "current_clamp").lower()),
                 reversal=stimulus_entry.get("reversal", 0.0)
