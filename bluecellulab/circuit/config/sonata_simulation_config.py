@@ -86,6 +86,7 @@ class SonataSimulationConfig:
         with open(filepath, 'r') as f:
             return json.load(f)
 
+    @lru_cache(maxsize=1)
     def get_node_sets(self) -> dict[str, dict]:
         circuit_filepath = self.impl.circuit.config.get("node_sets_file")
         base_node_sets = {}
