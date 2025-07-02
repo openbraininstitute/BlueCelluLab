@@ -83,7 +83,6 @@ class CompartmentReportWriter(BaseReportWriter):
             return
 
         self._write_sonata_report_file(
-            self,
             self.output_path,
             population,
             data_matrix,
@@ -97,6 +96,7 @@ class CompartmentReportWriter(BaseReportWriter):
 
 
     def _write_sonata_report_file(
+        self,
         output_path,
         population,
         data_matrix,
