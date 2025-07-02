@@ -15,7 +15,6 @@
 from typing import Dict, List
 from bluecellulab.reports.writers.base_writer import BaseReportWriter
 import logging
-import os
 import numpy as np
 import h5py
 
@@ -26,8 +25,10 @@ class SpikeReportWriter(BaseReportWriter):
     """Writes SONATA spike report from pop→gid→times mapping."""
 
     def write(self, spikes_by_pop: Dict[str, Dict[int, list]]):
-        if os.path.exists(self.output_path):
-            os.remove(self.output_path)
+        if self.output_path.exists():
+            self.output_path.unlink()
+
+        self.output_path.parent.mkdir(parents=True, exist_ok=True)
 
         for pop, gid_map in spikes_by_pop.items():
             all_node_ids: List[int] = []
@@ -44,7 +45,6 @@ class SpikeReportWriter(BaseReportWriter):
             node_ids_sorted = np.array(all_node_ids, dtype=np.uint64)[sorted_indices]
             timestamps_sorted = np.array(all_timestamps, dtype=np.float64)[sorted_indices]
 
-            os.makedirs(os.path.dirname(self.output_path), exist_ok=True)
             with h5py.File(self.output_path, 'a') as f:
                 spikes_group = f.require_group("spikes")
                 if pop in spikes_group:
