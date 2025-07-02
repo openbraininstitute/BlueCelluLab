@@ -33,7 +33,7 @@
       "cells": "Mosaic_A",
       "variable_name": "v",
       "type": "compartment",
-      "dt": 1.0,
+      "dt": 0.1,
       "start_time": 1000.0,
       "end_time": 1275.0,
       "sections": "soma",

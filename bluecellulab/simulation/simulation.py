@@ -88,7 +88,7 @@ class Simulation:
 
     def run(
             self,
-            maxtime: float,
+            tstop: float,
             cvode=True,
             cvode_minstep=None,
             cvode_maxstep=None,
@@ -107,10 +107,10 @@ class Simulation:
             show_progress = bluecellulab.VERBOSE_LEVEL > 1
 
         if show_progress:
-            self.progress_dt = maxtime / 100
+            self.progress_dt = tstop / 100
             self.init_progress_callback()
 
-        neuron.h.tstop = maxtime
+        neuron.h.tstop = tstop
 
         cvode_old_status = neuron.h.cvode_active()
         if cvode:
@@ -138,10 +138,9 @@ class Simulation:
         # initialized heavily influence the random number generator
         # e.g. finitialize() + step() != run()
 
-        logger.debug(f'Running a simulation until {maxtime} ms ...')
-
         self.init_callbacks()
 
+        logger.debug(f'Running a simulation until {tstop} ms ...')
         neuron.h.stdinit()
 
         if forward_skip:
@@ -152,7 +151,7 @@ class Simulation:
                 for _ in range(0, 10):
                     neuron.h.fadvance()
                 neuron.h.dt = save_dt
-                neuron.h.t = 0.0
+                neuron.h.t = forward_skip_value
 
         if self.pc is not None:
             for cell in self.cells:

@@ -17,12 +17,11 @@ simulations."""
 
 from __future__ import annotations
 from collections.abc import Iterable
-import os
 from pathlib import Path
 from typing import Optional
 import logging
 
-from collections import defaultdict
+from bluecellulab.reports.utils import configure_all_reports
 import neuron
 import numpy as np
 import pandas as pd
@@ -47,7 +46,6 @@ from bluecellulab.circuit.simulation_access import BluepySimulationAccess, Simul
 from bluecellulab.importer import load_mod_files
 from bluecellulab.rngsettings import RNGSettings
 from bluecellulab.simulation.neuron_globals import NeuronGlobals
-from bluecellulab.simulation.report import configure_all_reports, write_compartment_report, write_sonata_spikes
 from bluecellulab.stimulus.circuit_stimulus_definitions import Noise, OrnsteinUhlenbeck, RelativeOrnsteinUhlenbeck, RelativeShotNoise, ShotNoise
 import bluecellulab.stimulus.circuit_stimulus_definitions as circuit_stimulus_definitions
 from bluecellulab.exceptions import BluecellulabError
@@ -638,15 +636,32 @@ class CircuitSimulation:
                        will not be exactly reproduced.
         """
         if t_stop is None:
-            duration = self.circuit_access.config.duration
-            if duration is None:  # type narrowing
+            t_stop = self.circuit_access.config.tstop
+            if t_stop is None:  # type narrowing
                 t_stop = 0.0
-            else:
-                t_stop = duration
         if dt is None:
             dt = self.circuit_access.config.dt
-        if forward_skip_value is None:
-            forward_skip_value = self.circuit_access.config.forward_skip
+
+        config_forward_skip_value = self.circuit_access.config.forward_skip  # legacy
+        config_tstart = self.circuit_access.config.tstart or 0.0             # SONATA
+        # Determine effective skip value and flag
+        if forward_skip_value is not None:
+            # User explicitly provided value → use it
+            effective_skip_value = forward_skip_value
+            effective_skip = forward_skip
+        elif config_forward_skip_value is not None:
+            # Use legacy config if available
+            effective_skip_value = config_forward_skip_value
+            effective_skip = forward_skip
+        elif config_tstart > 0.0:
+            # Use SONATA tstart *only* if no other skip value was provided
+            effective_skip_value = config_tstart
+            effective_skip = True
+        else:
+            # No skip
+            effective_skip_value = None
+            effective_skip = False
+
         if celsius is None:
             celsius = self.circuit_access.config.celsius
         NeuronGlobals.get_instance().temperature = celsius
@@ -664,14 +679,12 @@ class CircuitSimulation:
                            "simulations")
 
         sim.run(
-            t_stop,
+            tstop=t_stop,
             cvode=cvode,
             dt=dt,
-            forward_skip=forward_skip,
-            forward_skip_value=forward_skip_value,
+            forward_skip=effective_skip,
+            forward_skip_value=effective_skip_value,
             show_progress=show_progress)
-
-        self.write_reports()
 
     def get_mainsim_voltage_trace(
             self, cell_id: int | tuple[str, int], t_start=None, t_stop=None, t_step=None
@@ -713,23 +726,31 @@ class CircuitSimulation:
         first_key = next(iter(self.cells))
         return self.cells[first_key].get_time()
 
-    def get_time_trace(self, t_step=None) -> np.ndarray:
+    def get_time_trace(self, t_start=None, t_stop=None, t_step=None) -> np.ndarray:
         """Get the time vector for the recordings, negative times removed.
 
         Parameters
         -----------
-        t_step: time step (should be a multiple of report time step T;
-        equals T by default)
+        t_start, t_stop: time range of interest.
+        t_step: time step (multiple of report dt; equals dt by default)
 
         Returns:
-            One dimentional np.ndarray to represent the times.
+            1D np.ndarray representing time points.
         """
         time = self.get_time()
-        time = time[np.where(time >= 0.0)]
+        time = time[time >= 0.0]
+
+        if t_start is None or t_start < 0:
+            t_start = 0
+        if t_stop is None:
+            t_stop = np.inf
+
+        time = time[(time >= t_start) & (time <= t_stop)]
 
         if t_step is not None:
             ratio = t_step / self.dt
             time = _sample_array(time, ratio)
+
         return time
 
     def get_voltage_trace(
@@ -806,78 +827,3 @@ class CircuitSimulation:
                                  record_dt=cell_kwargs['record_dt'],
                                  template_format=cell_kwargs['template_format'],
                                  emodel_properties=cell_kwargs['emodel_properties'])
-
-    def write_reports(self):
-        """Write all reports defined in the simulation config."""
-        report_entries = self.circuit_access.config.get_report_entries()
-
-        for report_name, report_cfg in report_entries.items():
-            report_type = report_cfg.get("type", "compartment")
-            section = report_cfg.get("sections")
-
-            if report_type != "compartment":
-                raise NotImplementedError(f"Report type '{report_type}' is not supported.")
-
-            output_path = self.circuit_access.config.report_file_path(report_cfg, report_name)
-            if section == "compartment_set":
-                if report_cfg.get("cells") is not None:
-                    raise ValueError(
-                        "Report config error: 'cells' must not be set when using 'compartment_set' sections."
-                    )
-                compartment_sets = self.circuit_access.config.get_compartment_sets()
-                write_compartment_report(
-                    report_name=report_name,
-                    output_path=output_path,
-                    cells=self.cells,
-                    report_cfg=report_cfg,
-                    source_sets=compartment_sets,
-                    source_type="compartment_set",
-                    sim_dt=self.dt,
-                )
-
-            else:
-                node_sets = self.circuit_access.config.get_node_sets()
-                if report_cfg.get("compartments") not in ("center", "all"):
-                    raise ValueError(
-                        f"Unsupported 'compartments' value '{report_cfg.get('compartments')}' "
-                        "for node-based section recording (must be 'center' or 'all')."
-                    )
-                write_compartment_report(
-                    report_name=report_name,
-                    output_path=output_path,
-                    cells=self.cells,
-                    report_cfg=report_cfg,
-                    source_sets=node_sets,
-                    source_type="node_set",
-                    sim_dt=self.dt,
-                )
-
-        self.write_spike_report()
-
-    def write_spike_report(self):
-        """Collect and write in-memory recorded spike times to a SONATA HDF5
-        file, grouped by population as required by the SONATA specification."""
-        output_path = self.circuit_access.config.spikes_file_path
-
-        if os.path.exists(output_path):
-            os.remove(output_path)
-
-        # Group spikes per population
-        spikes_by_population = defaultdict(dict)
-        for gid, cell in self.cells.items():
-            pop = getattr(gid, 'population_name', None)
-            if pop is None:
-                continue
-            try:
-                cell_spikes = cell.get_recorded_spikes(location=self.spike_location, threshold=self.spike_threshold)
-                if cell_spikes is not None:
-                    spikes_by_population[pop][gid.id] = list(cell_spikes)
-            except AttributeError:
-                continue
-
-        # Ensure we at least create empty groups for all known populations
-        all_populations = set(getattr(gid, 'population_name', None) for gid in self.cells.keys())
-
-        for pop in all_populations:
-            spikes = spikes_by_population.get(pop, {})  # May be empty
-            write_sonata_spikes(output_path, spikes, pop)
