@@ -94,7 +94,6 @@ class CompartmentReportWriter(BaseReportWriter):
             tstart
         )
 
-
     def _write_sonata_report_file(
         self,
         output_path,

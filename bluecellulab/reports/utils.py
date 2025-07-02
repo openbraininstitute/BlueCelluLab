@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Report class of bluecellulab."""
 
 from collections import defaultdict
@@ -65,7 +64,8 @@ def _configure_recording(cell, report_cfg, source, source_type, report_name):
 
 
 def configure_all_reports(cells, simulation_config):
-    """Configure recordings for all reports defined in the simulation configuration.
+    """Configure recordings for all reports defined in the simulation
+    configuration.
 
     This iterates through all report entries, resolves source nodes or compartments,
     and configures the corresponding recordings on each cell.
