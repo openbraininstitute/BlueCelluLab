@@ -16,9 +16,6 @@
 
 from collections import defaultdict
 import logging
-from pathlib import Path
-import h5py
-import numpy as np
 from typing import Dict, Any, List
 
 from bluecellulab.tools import resolve_segments, resolve_source_nodes
@@ -27,6 +24,28 @@ logger = logging.getLogger(__name__)
 
 
 def _configure_recording(cell, report_cfg, source, source_type, report_name):
+    """Configure recording of a variable on a single cell.
+
+    This function sets up the recording of the specified variable (e.g., membrane voltage)
+    in the target cell, for each resolved segment.
+
+    Parameters
+    ----------
+    cell : Any
+        The cell object on which to configure recordings.
+
+    report_cfg : dict
+        The configuration dictionary for this report.
+
+    source : dict
+        The source definition specifying nodes or compartments.
+
+    source_type : str
+        Either "node_set" or "compartment_set".
+
+    report_name : str
+        The name of the report (used in logging).
+    """
     variable = report_cfg.get("variable_name", "v")
 
     node_id = cell.cell_id
@@ -46,6 +65,20 @@ def _configure_recording(cell, report_cfg, source, source_type, report_name):
 
 
 def configure_all_reports(cells, simulation_config):
+    """Configure recordings for all reports defined in the simulation configuration.
+
+    This iterates through all report entries, resolves source nodes or compartments,
+    and configures the corresponding recordings on each cell.
+
+    Parameters
+    ----------
+    cells : dict
+        Mapping from (population, gid) → Cell object.
+
+    simulation_config : Any
+        Simulation configuration object providing report entries,
+        node sets, and compartment sets.
+    """
     report_entries = simulation_config.get_report_entries()
 
     for report_name, report_cfg in report_entries.items():
@@ -83,73 +116,6 @@ def configure_all_reports(cells, simulation_config):
             if not cell:
                 continue
             _configure_recording(cell, report_cfg, source, source_type, report_name)
-
-
-def write_sonata_report_file(
-    output_path,
-    population,
-    data_matrix,
-    recorded_node_ids,
-    index_pointers,
-    element_ids,
-    report_cfg,
-    sim_dt,
-    tstart
-):
-    start_time = float(report_cfg.get("start_time", 0.0))
-    end_time = float(report_cfg.get("end_time", 0.0))
-    dt_report = float(report_cfg.get("dt", sim_dt))
-
-    # Clamp dt_report if finer than simuldation dt
-    if dt_report < sim_dt:
-        logger.warning(
-            f"Requested report dt={dt_report} ms is finer than simulation dt={sim_dt} ms. "
-            f"Clamping report dt to {sim_dt} ms."
-        )
-        dt_report = sim_dt
-
-    step = int(round(dt_report / sim_dt))
-    if not np.isclose(step * sim_dt, dt_report, atol=1e-9):
-        raise ValueError(
-            f"dt_report={dt_report} is not an integer multiple of dt_data={sim_dt}"
-        )
-
-    # Downsample the data if needed
-    # Compute start and end indices in the original data
-    start_index = int(round((start_time - tstart) / sim_dt))
-    end_index = int(round((end_time - tstart) / sim_dt)) + 1  # inclusive
-
-    # Now slice and downsample
-    data_matrix_downsampled = [
-        trace[start_index:end_index:step] for trace in data_matrix
-    ]
-    data_array = np.stack(data_matrix_downsampled, axis=1).astype(np.float32)
-
-    # Prepare metadata arrays
-    node_ids_arr = np.array(recorded_node_ids, dtype=np.uint64)
-    index_ptr_arr = np.array(index_pointers, dtype=np.uint64)
-    element_ids_arr = np.array(element_ids, dtype=np.uint32)
-    time_array = np.array([start_time, end_time, dt_report], dtype=np.float64)
-
-    # Ensure output directory exists
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Write to HDF5
-    with h5py.File(output_path, "w") as f:
-        grp = f.require_group(f"/report/{population}")
-        data_ds = grp.create_dataset("data", data=data_array.astype(np.float32))
-
-        variable = report_cfg.get("variable_name", "v")
-        if variable == "v":
-            data_ds.attrs["units"] = "mV"
-
-        mapping = grp.require_group("mapping")
-        mapping.create_dataset("node_ids", data=node_ids_arr)
-        mapping.create_dataset("index_pointers", data=index_ptr_arr)
-        mapping.create_dataset("element_ids", data=element_ids_arr)
-        time_ds = mapping.create_dataset("time", data=time_array)
-        time_ds.attrs["units"] = "ms"
 
 
 def extract_spikes_from_cells(
