@@ -61,8 +61,11 @@ class ReportManager:
                     raise ValueError("'cells' may not be set with 'compartment_set'")
                 src_sets, src_type = self.cfg.get_compartment_sets(), "compartment_set"
             else:
-                if rcfg.get("compartments") not in ("center", "all"):
+                compartments = rcfg.get("compartments", "center")
+                if compartments not in ("center", "all"):
                     raise ValueError("invalid 'compartments' value")
+                if rcfg.get("cells") is None:
+                    raise ValueError("'cells' must be specified when using node_set source")
                 src_sets, src_type = self.cfg.get_node_sets(), "node_set"
 
             rcfg["_source_sets"] = src_sets
