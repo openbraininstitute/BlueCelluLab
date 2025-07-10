@@ -337,7 +337,7 @@ def rin_test(rin):
     }
 
 
-def iv_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30.):
+def iv_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30., n_processes=None):
     """IV curve should have a positive slope."""
     name = "Simulatable Neuron IV Curve Validation"
     amps, steady_states = compute_plot_iv_curve(
@@ -348,7 +348,9 @@ def iv_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30.):
         show_figure=False,
         save_figure=True,
         output_dir=out_dir,
-        output_fname="iv_curve.pdf")
+        output_fname="iv_curve.pdf",
+        n_processes=n_processes,
+    )
 
     outpath = pathlib.Path(out_dir) / "iv_curve.pdf"
 
@@ -375,7 +377,7 @@ def iv_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30.):
     }
 
 
-def fi_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30.):
+def fi_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30., n_processes=None):
     """FI curve should have a positive slope."""
     name = "Simulatable Neuron FI Curve Validation"
     amps, spike_counts = compute_plot_fi_curve(
@@ -386,7 +388,9 @@ def fi_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30.):
         show_figure=False,
         save_figure=True,
         output_dir=out_dir,
-        output_fname="fi_curve.pdf")
+        output_fname="fi_curve.pdf",
+        n_processes=n_processes,
+    )
 
     outpath = pathlib.Path(out_dir) / "fi_curve.pdf"
 
@@ -448,7 +452,8 @@ def run_validations(
     spike_threshold_voltage=-30,
     v_init=-80.0,
     celsius=34.0,
-    output_dir="./memodel_validation_figures"
+    output_dir="./memodel_validation_figures",
+    n_processes=None,
 ):
     """Run all the validations on the cell.
 
@@ -459,6 +464,10 @@ def run_validations(
         v_init: Initial membrane potential. Default is -80.0 mV.
         celsius: Temperature in Celsius. Default is 34.0.
         output_dir (str): The directory to save the validation figures.
+        n_processes (int, optional): The number of processes to use
+            for parallel execution in IV and FI curves computation.
+            If None or if it is higher than the number of steps,
+            it will use the number of steps as the number of processes.
     """
     out_dir = pathlib.Path(output_dir) / cell_name
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -512,10 +521,10 @@ def run_validations(
     rin_result = rin_test(rin)
 
     # Validation 8: IV Test
-    iv_test_result = iv_test(cell.template_params, rheobase, out_dir, spike_threshold_voltage)
+    iv_test_result = iv_test(cell.template_params, rheobase, out_dir, spike_threshold_voltage, n_processes)
 
     # Validation 9: FI Test
-    fi_test_result = fi_test(cell.template_params, rheobase, out_dir, spike_threshold_voltage)
+    fi_test_result = fi_test(cell.template_params, rheobase, out_dir, spike_threshold_voltage, n_processes)
 
     # Validation 10: Thumbnail Test
     thumbnail_result = thumbnail_test(cell.template_params, rheobase, out_dir)
