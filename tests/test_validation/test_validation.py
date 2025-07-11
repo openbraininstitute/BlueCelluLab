@@ -424,6 +424,24 @@ def test_thumnail_test(
     assert result["name"] == "thumbnail"
 
 
+class DummyPool:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+    def apply_async(self, func, args=(), kwds=None):
+        # Directly call the function synchronously for testing
+        class DummyResult:
+            def get(self):
+                return func(*args, **(kwds or {}))
+        return DummyResult()
+
+
 @patch("bluecellulab.validation.validation.calculate_rheobase")
 @patch("bluecellulab.validation.validation.calculate_input_resistance")
 @patch("bluecellulab.validation.validation.spiking_test")
@@ -435,6 +453,7 @@ def test_thumnail_test(
 @patch("bluecellulab.validation.validation.iv_test")
 @patch("bluecellulab.validation.validation.fi_test")
 @patch("bluecellulab.validation.validation.thumbnail_test")
+@patch("bluecellulab.utils.NestedPool", new=DummyPool)
 def test_run_validations(
     mock_thumbnail,
     mock_fi,

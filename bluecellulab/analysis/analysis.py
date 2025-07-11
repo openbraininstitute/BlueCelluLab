@@ -4,9 +4,11 @@ try:
 except ImportError:
     efel = None
 from itertools import islice
+from itertools import repeat
 import logging
 from matplotlib.collections import LineCollection
 import matplotlib.pyplot as plt
+from multiprocessing import Pool
 import neuron
 import numpy as np
 import pathlib
@@ -40,7 +42,8 @@ def compute_plot_iv_curve(cell,
                           show_figure=True,
                           save_figure=False,
                           output_dir="./",
-                          output_fname="iv_curve.pdf"):
+                          output_fname="iv_curve.pdf",
+                          n_processes=None):
     """Compute and plot the Current-Voltage (I-V) curve for a given cell by
     injecting a range of currents.
 
@@ -72,6 +75,9 @@ def compute_plot_iv_curve(cell,
         save_figure (bool): Whether to save the figure. Default is False.
         output_dir (str): The directory to save the figure if save_figure is True. Default is "./".
         output_fname (str): The filename to save the figure as if save_figure is True. Default is "iv_curve.png".
+        n_processes (int, optional): The number of processes to use for parallel execution.
+            If None or if it is higher than the number of steps,
+            it will use the number of steps as the number of processes.
 
     Returns:
         tuple: A tuple containing:
@@ -95,15 +101,22 @@ def compute_plot_iv_curve(cell,
         for amp in list_amp
     ]
 
-    recordings = []
-    for step in steps:
-        recording = run_stimulus(cell.template_params,
-                                 step,
-                                 section=injecting_section,
-                                 segment=injecting_segment,
-                                 recording_section=recording_section,
-                                 recording_segment=recording_segment)
-        recordings.append(recording)
+    if n_processes is None or n_processes > len(steps):
+        n_processes = len(steps)
+    with Pool(n_processes) as p:
+        recordings = p.starmap(
+            run_stimulus,
+            zip(
+                repeat(cell.template_params),
+                steps,
+                repeat(injecting_section),
+                repeat(injecting_segment),
+                repeat(True),  # cvode
+                repeat(True),  # add_hypamp
+                repeat(recording_section),
+                repeat(recording_segment),
+            )
+        )
 
     steady_states = []
     # compute steady state response
@@ -148,7 +161,8 @@ def compute_plot_fi_curve(cell,
                           show_figure=True,
                           save_figure=False,
                           output_dir="./",
-                          output_fname="fi_curve.pdf"):
+                          output_fname="fi_curve.pdf",
+                          n_processes=None):
     """Compute and plot the Frequency-Current (F-I) curve for a given cell by
     injecting a range of currents.
 
@@ -182,6 +196,9 @@ def compute_plot_fi_curve(cell,
         save_figure (bool): Whether to save the figure. Default is False.
         output_dir (str): The directory to save the figure if save_figure is True. Default is "./".
         output_fname (str): The filename to save the figure as if save_figure is True. Default is "iv_curve.png".
+        n_processes (int, optional): The number of processes to use for parallel execution.
+            If None or if it is higher than the number of steps,
+            it will use the number of steps as the number of processes.
 
     Returns:
         tuple: A tuple containing:
@@ -201,19 +218,26 @@ def compute_plot_fi_curve(cell,
         for amp in list_amp
     ]
 
-    spikes = []
-    for step in steps:
-        recording = run_stimulus(cell.template_params,
-                                 step,
-                                 section=injecting_section,
-                                 segment=injecting_segment,
-                                 recording_section=recording_section,
-                                 recording_segment=recording_segment,
-                                 enable_spike_detection=True,
-                                 threshold_spike_detection=threshold_voltage)
-        spikes.append(recording.spike)
+    if n_processes is None or n_processes > len(steps):
+        n_processes = len(steps)
+    with Pool(n_processes) as p:
+        recordings = p.starmap(
+            run_stimulus,
+            zip(
+                repeat(cell.template_params),
+                steps,
+                repeat(injecting_section),
+                repeat(injecting_segment),
+                repeat(True),  # cvode
+                repeat(True),  # add_hypamp
+                repeat(recording_section),
+                repeat(recording_segment),
+                repeat(True),  # enable_spike_detection
+                repeat(threshold_voltage),  # threshold_spike_detection
+            )
+        )
 
-    spike_count = [len(spike) for spike in spikes]
+    spike_count = [len(recording.spike) for recording in recordings]
 
     plot_fi_curve(list_amp,
                   spike_count,
