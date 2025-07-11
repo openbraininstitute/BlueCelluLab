@@ -435,6 +435,7 @@ def test_thumnail_test(
 @patch("bluecellulab.validation.validation.iv_test")
 @patch("bluecellulab.validation.validation.fi_test")
 @patch("bluecellulab.validation.validation.thumbnail_test")
+@patch("bluecellulab.utils.NestedPool", new=lambda *a, **kw: None)
 def test_run_validations(
     mock_thumbnail,
     mock_fi,
