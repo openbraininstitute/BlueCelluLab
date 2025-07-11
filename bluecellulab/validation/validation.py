@@ -493,7 +493,8 @@ def run_validations(
 
     logger.debug("Running validations...")
     from bluecellulab.utils import NestedPool
-    with NestedPool(processes=n_processes) as pool:
+    val_n_processes = n_processes if n_processes is not None else 7
+    with NestedPool(processes=val_n_processes) as pool:
         # Validation 1: Spiking Test
         spiking_test_result_future = pool.apply_async(
             spiking_test,
