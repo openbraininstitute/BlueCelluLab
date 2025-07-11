@@ -425,10 +425,12 @@ def test_thumnail_test(
 
 
 class DummyPool:
-    def __enter__(self):
+    def __enter__(self, n_processes=None):
         return self
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         pass
+
     def apply_async(self, func, args=(), kwds=None):
         # Directly call the function synchronously for testing
         class DummyResult:
