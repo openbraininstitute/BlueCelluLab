@@ -337,7 +337,7 @@ def rin_test(rin):
     }
 
 
-def iv_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30.):
+def iv_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30., n_processes=None):
     """IV curve should have a positive slope."""
     name = "Simulatable Neuron IV Curve Validation"
     amps, steady_states = compute_plot_iv_curve(
@@ -348,7 +348,9 @@ def iv_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30.):
         show_figure=False,
         save_figure=True,
         output_dir=out_dir,
-        output_fname="iv_curve.pdf")
+        output_fname="iv_curve.pdf",
+        n_processes=n_processes,
+    )
 
     outpath = pathlib.Path(out_dir) / "iv_curve.pdf"
 
@@ -375,7 +377,7 @@ def iv_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30.):
     }
 
 
-def fi_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30.):
+def fi_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30., n_processes=None):
     """FI curve should have a positive slope."""
     name = "Simulatable Neuron FI Curve Validation"
     amps, spike_counts = compute_plot_fi_curve(
@@ -386,7 +388,9 @@ def fi_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30.):
         show_figure=False,
         save_figure=True,
         output_dir=out_dir,
-        output_fname="fi_curve.pdf")
+        output_fname="fi_curve.pdf",
+        n_processes=n_processes,
+    )
 
     outpath = pathlib.Path(out_dir) / "fi_curve.pdf"
 
@@ -448,7 +452,8 @@ def run_validations(
     spike_threshold_voltage=-30,
     v_init=-80.0,
     celsius=34.0,
-    output_dir="./memodel_validation_figures"
+    output_dir="./memodel_validation_figures",
+    n_processes=None,
 ):
     """Run all the validations on the cell.
 
@@ -459,6 +464,9 @@ def run_validations(
         v_init: Initial membrane potential. Default is -80.0 mV.
         celsius: Temperature in Celsius. Default is 34.0.
         output_dir (str): The directory to save the validation figures.
+        n_processes (int, optional): The number of processes to use for parallel execution
+            in IV and FI curves computation. If None or higher than the number of steps,
+            then it will use the number of steps as the number of processes instead.
     """
     out_dir = pathlib.Path(output_dir) / cell_name
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -484,41 +492,68 @@ def run_validations(
     )
 
     logger.debug("Running validations...")
-    # Validation 1: Spiking Test
-    spiking_test_result = spiking_test(
-        cell.template_params, rheobase, out_dir, spike_threshold_voltage
-    )
+    from bluecellulab.utils import NestedPool
+    val_n_processes = n_processes if n_processes is not None else 7
+    with NestedPool(processes=val_n_processes) as pool:
+        # Validation 1: Spiking Test
+        spiking_test_result_future = pool.apply_async(
+            spiking_test,
+            (cell.template_params, rheobase, out_dir, spike_threshold_voltage)
+        )
 
-    # Validation 2: Depolarization Block Test
-    depolarization_block_result = depolarization_block_test(
-        cell.template_params, rheobase, out_dir
-    )
+        # Validation 2: Depolarization Block Test
+        depolarization_block_result_future = pool.apply_async(
+            depolarization_block_test,
+            (cell.template_params, rheobase, out_dir)
+        )
 
-    # Validation 3: Backpropagating AP Test
-    bpap_result = bpap_test(cell.template_params, rheobase, out_dir)
+        # Validation 3: Backpropagating AP Test
+        bpap_result_future = pool.apply_async(
+            bpap_test,
+            (cell.template_params, rheobase, out_dir)
+        )
 
-    # Validation 4: Postsynaptic Potential Test
-    # We have to wait for ProbAMPANMDA_EMS to be present in entitycore to implement this test
+        # Validation 4: Postsynaptic Potential Test
+        # We have to wait for ProbAMPANMDA_EMS to be present in entitycore to implement this test
 
-    # Validation 5: AIS Spiking Test
-    ais_spiking_test_result = ais_spiking_test(
-        cell.template_params, rheobase, out_dir, spike_threshold_voltage
-    )
+        # Validation 5: AIS Spiking Test
+        ais_spiking_test_result_future = pool.apply_async(
+            ais_spiking_test,
+            (cell.template_params, rheobase, out_dir, spike_threshold_voltage)
+        )
 
-    # Validation 6: Hyperpolarization Test
-    hyperpolarization_result = hyperpolarization_test(cell.template_params, rheobase, out_dir)
+        # Validation 6: Hyperpolarization Test
+        hyperpolarization_result_future = pool.apply_async(
+            hyperpolarization_test,
+            (cell.template_params, rheobase, out_dir)
+        )
 
-    # Validation 7: Rin Test
-    rin_result = rin_test(rin)
+        # Validation 7: Rin Test
+        rin_result_future = pool.apply_async(
+            rin_test,
+            (rin,)
+        )
 
+        # Validation 10: Thumbnail Test
+        thumbnail_result_future = pool.apply_async(
+            thumbnail_test,
+            (cell.template_params, rheobase, out_dir)
+        )
+
+        spiking_test_result = spiking_test_result_future.get()
+        depolarization_block_result = depolarization_block_result_future.get()
+        bpap_result = bpap_result_future.get()
+        ais_spiking_test_result = ais_spiking_test_result_future.get()
+        hyperpolarization_result = hyperpolarization_result_future.get()
+        rin_result = rin_result_future.get()
+        thumbnail_result = thumbnail_result_future.get()
+
+    # IV and FI tests are outside of nestedpool, because they use multiprocessing internaly
     # Validation 8: IV Test
-    iv_test_result = iv_test(cell.template_params, rheobase, out_dir, spike_threshold_voltage)
+    iv_test_result = iv_test(cell.template_params, rheobase, out_dir, spike_threshold_voltage, n_processes)
 
     # Validation 9: FI Test
-    fi_test_result = fi_test(cell.template_params, rheobase, out_dir, spike_threshold_voltage)
-
-    # Validation 10: Thumbnail Test
-    thumbnail_result = thumbnail_test(cell.template_params, rheobase, out_dir)
+    fi_test_result = fi_test(cell.template_params, rheobase, out_dir, spike_threshold_voltage, n_processes)
 
     return {
         "memodel_properties": {
