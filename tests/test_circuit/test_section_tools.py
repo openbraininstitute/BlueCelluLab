@@ -18,7 +18,7 @@ import pytest
 from pathlib import Path
 from bluecellulab.cell import Cell
 from bluecellulab.circuit.circuit_access import EmodelProperties
-from bluecellulab.tools import get_section, get_sections, resolve_segments
+from bluecellulab.tools import get_section, get_sections, resolve_segments_from_compartment_set, resolve_segments_from_config
 
 
 @pytest.fixture
@@ -57,35 +57,42 @@ def test_get_section_invalid_name(mock_cell):
 
 
 def test_resolve_segments_node_set(mock_cell):
-    """Test resolve_segments for node_set recording."""
+    """Test resolving segments for node_set with center compartment."""
     report_cfg = {
-        "section": "soma",
+        "sections": "soma",
         "compartments": "center"
     }
-    targets = resolve_segments(mock_cell, report_cfg, 1, None, "node_set")
+    targets = resolve_segments_from_config(mock_cell, report_cfg)
+    assert len(targets) == 1
+
     _, sec_name, seg = targets[0]
     assert sec_name == "soma[0]"
     assert seg == 0.5
 
 
 def test_resolve_segments_node_set_all(mock_cell):
-    """Test resolve_segments for node_set recording with all compartments."""
+    """Test resolving segments for node_set with all compartments."""
     report_cfg = {
-        "section": "dend[0]",
+        "sections": "dend[0]",
         "compartments": "all"
     }
-    targets = resolve_segments(mock_cell, report_cfg, 1, None, "node_set")
+    targets = resolve_segments_from_config(mock_cell, report_cfg)
     assert len(targets) == 1
+    sec, sec_name, seg = targets[0]
+    assert sec_name == "dend[0]"
+    assert 0.0 <= seg <= 1.0
 
 
 def test_resolve_segments_compartment_set(mock_cell):
-    """Test resolve_segments for compartment_set recording."""
+    """Test resolving segments for a compartment_set."""
     compartment_nodes = [[1, "soma[0]", 0.5], [1, "dend[0]", 0.25]]
-    targets = resolve_segments(mock_cell, {}, 1, compartment_nodes, "compartment_set")
+    targets = resolve_segments_from_compartment_set(mock_cell, 1, compartment_nodes)
     assert len(targets) == 2
-    _, sec_name, seg = targets[0]
-    assert sec_name == "soma[0]"
-    assert seg == 0.5
-    _, sec_name, seg = targets[1]
-    assert sec_name == "dend[0]"
-    assert seg == 0.25
+
+    _, sec_name_0, seg_0 = targets[0]
+    _, sec_name_1, seg_1 = targets[1]
+
+    assert sec_name_0 == "soma[0]"
+    assert seg_0 == 0.5
+    assert sec_name_1 == "dend[0]"
+    assert seg_1 == 0.25
