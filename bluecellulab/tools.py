@@ -552,20 +552,27 @@ def get_sections(cell, section_name: str):
     raise ValueError(f"Section '{section_name}' not found. Available: [{available}]")
 
 
-def resolve_segments(cell, report_cfg, node_id, compartment_nodes, source_type):
-    """Determine which segments to record from one or more NEURON sections."""
-    section_name = report_cfg.get("sections", "soma")
+def resolve_segments_from_compartment_set(cell, node_id, compartment_nodes):
+    """Resolve segments for a cell using a predefined compartment node list."""
+    return [
+        (get_section(cell, sec), sec, seg)
+        for n_id, sec, seg in compartment_nodes
+        if n_id == node_id
+    ]
+
+
+def resolve_segments_from_config(cell, report_cfg):
+    """Resolve segments from NEURON sections based on config."""
     compartment = report_cfg.get("compartments", "center")
+    if compartment not in {"center", "all"}:
+        raise ValueError(
+            f"Unsupported 'compartments' value '{compartment}' — must be 'center' or 'all'."
+        )
 
-    if source_type == "compartment_set":
-        return [
-            (get_section(cell, sec), sec, seg)
-            for _, sec, seg in compartment_nodes if _ == node_id
-        ]
-
+    section_name = report_cfg.get("sections", "soma")
     sections = get_sections(cell, section_name)
-    targets = []
 
+    targets = []
     for sec in sections:
         sec_name = sec.name().split(".")[-1]
         if compartment == "center":
@@ -573,23 +580,22 @@ def resolve_segments(cell, report_cfg, node_id, compartment_nodes, source_type):
         elif compartment == "all":
             for seg in sec:
                 targets.append((sec, sec_name, seg.x))
-        else:
-            raise ValueError(
-                f"Unsupported 'compartments' value '{compartment}' — must be 'center' or 'all'."
-            )
-
     return targets
 
 
-def resolve_source_nodes(source, source_type, cells, population):
-    if source_type == "compartment_set":
+def resolve_source_nodes(source, report_type, cells, population):
+    if report_type == "compartment_set":
         compartment_nodes = source.get("compartment_set", [])
         node_ids = [entry[0] for entry in compartment_nodes]
-    else:  # node_set
+    elif report_type == "compartment":
         node_ids = source.get("node_id")
         if node_ids is None:
             node_ids = [node_id for (pop, node_id) in cells.keys() if pop == population]
         compartment_nodes = None
+    else:
+        raise NotImplementedError(
+            f"Unsupported source type '{report_type}' in configuration for report."
+        )
     return node_ids, compartment_nodes
 
 
