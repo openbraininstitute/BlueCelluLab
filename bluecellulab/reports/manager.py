@@ -20,6 +20,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class ReportManager:
     """Orchestrates writing all requested SONATA reports."""
 

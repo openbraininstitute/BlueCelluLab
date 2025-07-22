@@ -17,7 +17,6 @@ import numpy as np
 import h5py
 from typing import Dict, List
 
-from bluecellulab.tools import resolve_segments_from_compartment_set, resolve_segments_from_config
 from .base_writer import BaseReportWriter
 from bluecellulab.reports.utils import (
     build_recording_sites,

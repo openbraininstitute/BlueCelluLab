@@ -17,7 +17,11 @@ from collections import defaultdict
 import logging
 from typing import Dict, Any, List
 
-from bluecellulab.tools import resolve_segments_from_compartment_set, resolve_segments_from_config, resolve_source_nodes
+from bluecellulab.tools import (
+    resolve_segments_from_compartment_set,
+    resolve_segments_from_config,
+    resolve_source_nodes,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +60,9 @@ def _configure_recording(cell, recording_sites, variable_name, report_name):
                 f"Recording '{variable_name}' at {sec_name}({seg}) on GID {node_id} for report '{report_name}'"
             )
         except AttributeError:
-            logger.warning(f"Recording for variable '{variable_name}' is not implemented in Cell.")
+            logger.warning(
+                f"Recording for variable '{variable_name}' is not implemented in Cell."
+            )
             return
         except Exception as e:
             logger.warning(
@@ -88,13 +94,17 @@ def configure_all_reports(cells, simulation_config):
             source_sets = simulation_config.get_compartment_sets()
             source_name = report_cfg.get("compartment_set")
             if not source_name:
-                logger.warning(f"Report '{report_name}' does not specify a node set in 'compartment_set' for {source_type}.")
+                logger.warning(
+                    f"Report '{report_name}' does not specify a node set in 'compartment_set' for {source_type}."
+                )
                 continue
         elif report_type == "compartment":
             source_sets = simulation_config.get_node_sets()
             source_name = report_cfg.get("cells")
             if not source_name:
-                logger.warning(f"Report '{report_name}' does not specify a node set in 'cells' for {source_type}.")
+                logger.warning(
+                    f"Report '{report_name}' does not specify a node set in 'cells' for {source_type}."
+                )
                 continue
         else:
             raise NotImplementedError(
@@ -104,12 +114,18 @@ def configure_all_reports(cells, simulation_config):
 
         source = source_sets.get(source_name)
         if not source:
-            logger.warning(f"{report_type} '{source_name}' not found for report '{report_name}', skipping recording.")
+            logger.warning(
+                f"{report_type} '{source_name}' not found for report '{report_name}', skipping recording."
+            )
             continue
 
         population = source["population"]
-        node_ids, compartment_nodes = resolve_source_nodes(source, report_type, cells, population)
-        recording_sites_per_cell = build_recording_sites(cells, node_ids, population, report_type, report_cfg, compartment_nodes)
+        node_ids, compartment_nodes = resolve_source_nodes(
+            source, report_type, cells, population
+        )
+        recording_sites_per_cell = build_recording_sites(
+            cells, node_ids, population, report_type, report_cfg, compartment_nodes
+        )
         variable_name = report_cfg.get("variable_name", "v")
 
         for node_id, recording_sites in recording_sites_per_cell.items():
@@ -120,8 +136,11 @@ def configure_all_reports(cells, simulation_config):
             _configure_recording(cell, recording_sites, variable_name, report_name)
 
 
-def build_recording_sites(cells, node_ids, population, report_type, report_cfg, compartment_nodes):
-    """Build per-cell recording sites based on source type and report configuration.
+def build_recording_sites(
+    cells, node_ids, population, report_type, report_cfg, compartment_nodes
+):
+    """Build per-cell recording sites based on source type and report
+    configuration.
 
     This function resolves the segments (section, name, seg.x) where variables
     should be recorded for each cell, based on either a node set (standard
@@ -162,7 +181,9 @@ def build_recording_sites(cells, node_ids, population, report_type, report_cfg, 
             continue
 
         if report_type == "compartment_set":
-            targets = resolve_segments_from_compartment_set(cell, node_id, compartment_nodes)
+            targets = resolve_segments_from_compartment_set(
+                cell, node_id, compartment_nodes
+            )
         elif report_type == "compartment":
             targets = resolve_segments_from_config(cell, report_cfg)
         else:
@@ -210,7 +231,9 @@ def extract_spikes_from_cells(
                 pop, gid_str = key.rsplit("_", 1)
                 gid = int(gid_str)
             except Exception:
-                raise ValueError(f"Cell key '{key}' could not be parsed as 'population_gid'")
+                raise ValueError(
+                    f"Cell key '{key}' could not be parsed as 'population_gid'"
+                )
         else:
             raise ValueError(f"Cell key '{key}' is not a recognized format.")
 
