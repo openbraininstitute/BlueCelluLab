@@ -69,7 +69,7 @@ class ReportManager:
                     raise ValueError("'compartments' may not be set with 'compartment_set'")
                 src_sets = self.cfg.get_compartment_sets()
             elif report_type == "compartment":
-                compartments = rcfg.get("compartments", "center")
+                compartments = rcfg.get("compartments") or "center"
                 if compartments not in ("center", "all"):
                     raise ValueError("invalid 'compartments' value")
                 if rcfg.get("cells") is None:
