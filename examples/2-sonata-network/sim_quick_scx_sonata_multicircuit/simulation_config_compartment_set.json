@@ -17,7 +17,7 @@
   "target_simulator": "NEURON",
   "network": "circuit_sonata.json",
   "node_set": "Mosaic_A",
-  "compartment_sets_file": "./compartment_sets.json",
+  "compartment_sets_file": "./compartment_sets_named_section.json",
   "output": {
     "output_dir": "$OUTPUT_DIR",
     "spikes_file": "spikes.h5",
