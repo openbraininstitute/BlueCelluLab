@@ -887,7 +887,8 @@ class Cell(InjectableMixin, PlottableMixin):
         raise ValueError(f"Section '{section_name}' not found. Available: [{available}]")
 
     def get_section_by_id(self, section_id: int) -> NeuronSection:
-        """Return NEURON section by global section index (LibSONATA ordering)."""
+        """Return NEURON section by global section index (LibSONATA
+        ordering)."""
         if not self.psections:
             self._init_psections()
 
@@ -897,10 +898,11 @@ class Cell(InjectableMixin, PlottableMixin):
             raise IndexError(f"Section ID {section_id} is out of range for cell {self.cell_id.id}")
 
     def resolve_segments_from_compartment_set(self, node_id, compartment_nodes):
-        """Resolve segments for a cell using a predefined compartment node list.
+        """Resolve segments for a cell using a predefined compartment node
+        list.
 
-        Supports both LibSONATA format ([node_id, section_id, seg])
-        and name-based format ([node_id, section_name, seg]).
+        Supports both LibSONATA format ([node_id, section_id, seg]) and
+        name-based format ([node_id, section_name, seg]).
         """
         result = []
         for n_id, sec_ref, seg in compartment_nodes:
