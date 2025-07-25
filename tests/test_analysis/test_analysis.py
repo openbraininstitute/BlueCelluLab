@@ -328,8 +328,9 @@ def test_get_amplitudes_and_distances(run_bpap):
 
 def test_fit(mock_bpap_amplitude_distance):
     """Test the fit method of the BPAP class."""
-    popt_dend, popt_apic = BPAP.fit(*mock_bpap_amplitude_distance)
+    popt_dend, popt_apic, fit_error = BPAP.fit(*mock_bpap_amplitude_distance)
     soma_amp_value = mock_bpap_amplitude_distance[0][0]
+    assert fit_error is False
     assert popt_dend[0] > soma_amp_value / 2.
     assert popt_dend[0] < soma_amp_value * 2.
     assert popt_dend[1] > 0
