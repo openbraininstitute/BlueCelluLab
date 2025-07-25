@@ -18,56 +18,12 @@ import logging
 from typing import Dict, Any, List
 
 from bluecellulab.tools import (
-    resolve_segments_from_compartment_set,
-    resolve_segments_from_config,
     resolve_source_nodes,
 )
 
 logger = logging.getLogger(__name__)
 
 SUPPORTED_REPORT_TYPES = {"compartment", "compartment_set"}
-
-
-def _configure_recording(cell, recording_sites, variable_name, report_name):
-    """Configure recording of a variable on a single cell.
-
-    This function sets up the recording of the specified variable (e.g., membrane voltage)
-    in the target cell, for each resolved segment.
-
-    Parameters
-    ----------
-    cell : Any
-        The cell object on which to configure recordings.
-
-    recording_sites : list of tuples
-        List of tuples (section, section_name, segment) where:
-        - section is the section object in the cell.
-        - section_name is the name of the section.
-        - segment is the Neuron segment index (0-1).
-
-    variable_name : str
-        The name of the variable to record (e.g., "v" for membrane voltage).
-
-    report_name : str
-        The name of the report (used in logging).
-    """
-    node_id = cell.cell_id.id
-
-    for sec, sec_name, seg in recording_sites:
-        try:
-            cell.add_variable_recording(variable=variable_name, section=sec, segx=seg)
-            logger.info(
-                f"Recording '{variable_name}' at {sec_name}({seg}) on GID {node_id} for report '{report_name}'"
-            )
-        except AttributeError:
-            logger.warning(
-                f"Recording for variable '{variable_name}' is not implemented in Cell."
-            )
-            return
-        except Exception as e:
-            logger.warning(
-                f"Failed to record '{variable_name}' at {sec_name}({seg}) on GID {node_id} for report '{report_name}': {e}"
-            )
 
 
 def configure_all_reports(cells, simulation_config):
@@ -95,7 +51,7 @@ def configure_all_reports(cells, simulation_config):
             source_name = report_cfg.get("compartment_set")
             if not source_name:
                 logger.warning(
-                    f"Report '{report_name}' does not specify a node set in 'compartment_set' for {source_type}."
+                    f"Report '{report_name}' does not specify a node set in 'compartment_set' for {report_type}."
                 )
                 continue
         elif report_type == "compartment":
@@ -103,7 +59,7 @@ def configure_all_reports(cells, simulation_config):
             source_name = report_cfg.get("cells")
             if not source_name:
                 logger.warning(
-                    f"Report '{report_name}' does not specify a node set in 'cells' for {source_type}."
+                    f"Report '{report_name}' does not specify a node set in 'cells' for {report_type}."
                 )
                 continue
         else:
@@ -133,7 +89,7 @@ def configure_all_reports(cells, simulation_config):
             if not cell or recording_sites is None:
                 continue
 
-            _configure_recording(cell, recording_sites, variable_name, report_name)
+            cell.configure_recording(recording_sites, variable_name, report_name)
 
 
 def build_recording_sites(
@@ -181,11 +137,11 @@ def build_recording_sites(
             continue
 
         if report_type == "compartment_set":
-            targets = resolve_segments_from_compartment_set(
-                cell, node_id, compartment_nodes
+            targets = cell.resolve_segments_from_compartment_set(
+                node_id, compartment_nodes
             )
         elif report_type == "compartment":
-            targets = resolve_segments_from_config(cell, report_cfg)
+            targets = cell.resolve_segments_from_config(report_cfg)
         else:
             raise NotImplementedError(
                 f"Report type '{report_type}' is not supported. "

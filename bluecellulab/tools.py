@@ -29,7 +29,6 @@ from bluecellulab.exceptions import UnsteadyCellError
 from bluecellulab.simulation.neuron_globals import NeuronGlobals
 from bluecellulab.simulation.parallel import IsolatedProcess
 from bluecellulab.utils import CaptureOutput
-from bluecellulab.type_aliases import NeuronSection
 
 
 logger = logging.getLogger(__name__)
@@ -119,7 +118,7 @@ def calculate_SS_voltage_subprocess(
         emodel_properties=emodel_properties,
     )
 
-    sec = get_section(cell, section)
+    sec = cell.get_section(section)
     neuron_section = sec
     cell.add_voltage_recording(cell.sections[section], segx)
     cell.add_ramp(500, 5000, step_level, step_level, section=neuron_section, segx=segx)
@@ -313,7 +312,7 @@ def detect_spike_step_subprocess(
         template_format=template_format,
         emodel_properties=emodel_properties)
 
-    sec = get_section(cell, section)
+    sec = cell.get_section(section)
     cell.add_voltage_recording(cell.sections[section], segx)
 
     neuron_section = sec
@@ -506,81 +505,6 @@ def validate_section_and_segment(cell: Cell, section_name: str, segment_position
     # Validate the segment position
     if not (0.0 <= segment_position <= 1.0):
         raise ValueError(f"Segment position must be between 0.0 and 1.0, got {segment_position}.")
-
-
-def get_section(cell: Cell, section_name: str) -> NeuronSection:
-    """Return a single, fully specified NEURON section (e.g., 'soma[0]',
-    'dend[3]').
-
-    Raises:
-        ValueError or TypeError if the section is not found or invalid.
-    """
-    if section_name in cell.sections:
-        section = cell.sections[section_name]
-        if hasattr(section, "nseg"):
-            return section
-        raise TypeError(f"'{section_name}' exists but is not a NEURON section.")
-
-    available = ", ".join(cell.sections.keys())
-    raise ValueError(f"Section '{section_name}' not found. Available: [{available}]")
-
-
-def get_sections(cell, section_name: str):
-    """Return a list of NEURON sections.
-
-    If the section name is a fully specified one (e.g., 'dend[3]'), return it as a list of one.
-    If the section name is a base name (e.g., 'dend'), return all matching sections like 'dend[0]', 'dend[1]', etc.
-
-    Raises:
-        ValueError or TypeError if no valid sections are found.
-    """
-    # Try to interpret as fully qualified section name
-    try:
-        return [get_section(cell, section_name)]
-    except ValueError:
-        pass  # Not a precise match; try prefix match
-
-    # Fallback to prefix-based match (e.g., 'dend' → 'dend[0]', 'dend[1]', ...)
-    matched = [
-        section for name, section in cell.sections.items()
-        if name.startswith(f"{section_name}[")
-    ]
-    if matched:
-        return matched
-
-    available = ", ".join(cell.sections.keys())
-    raise ValueError(f"Section '{section_name}' not found. Available: [{available}]")
-
-
-def resolve_segments_from_compartment_set(cell, node_id, compartment_nodes):
-    """Resolve segments for a cell using a predefined compartment node list."""
-    return [
-        (get_section(cell, sec), sec, seg)
-        for n_id, sec, seg in compartment_nodes
-        if n_id == node_id
-    ]
-
-
-def resolve_segments_from_config(cell, report_cfg):
-    """Resolve segments from NEURON sections based on config."""
-    compartment = report_cfg.get("compartments", "center")
-    if compartment not in {"center", "all"}:
-        raise ValueError(
-            f"Unsupported 'compartments' value '{compartment}' — must be 'center' or 'all'."
-        )
-
-    section_name = report_cfg.get("sections", "soma")
-    sections = get_sections(cell, section_name)
-
-    targets = []
-    for sec in sections:
-        sec_name = sec.name().split(".")[-1]
-        if compartment == "center":
-            targets.append((sec, sec_name, 0.5))
-        elif compartment == "all":
-            for seg in sec:
-                targets.append((sec, sec_name, seg.x))
-    return targets
 
 
 def resolve_source_nodes(source, report_type, cells, population):
