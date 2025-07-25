@@ -359,21 +359,33 @@ class BPAP:
         if dend_amps and dend_dist:
             dist = [0] + dend_dist  # add soma distance
             amps = soma_amp + dend_amps  # add soma amplitude
-            popt_dend, _ = curve_fit(exp_decay, dist, amps)
+            try:
+                popt_dend, _ = curve_fit(exp_decay, dist, amps)
+            except RuntimeError as e:
+                return None, None, True  # fitting error
 
         popt_apic = None
         if apic_amps and apic_dist:
             dist = [0] + apic_dist  # add soma distance
             amps = soma_amp + apic_amps  # add soma amplitude
-            popt_apic, _ = curve_fit(exp_decay, dist, amps)
+            try:
+                popt_apic, _ = curve_fit(exp_decay, dist, amps)
+            except RuntimeError as e:
+                return popt_dend, None, True
 
-        return popt_dend, popt_apic
+        return popt_dend, popt_apic, False
 
     def validate(self, soma_amp, dend_amps, dend_dist, apic_amps, apic_dist):
         """Check that the exponential fit is decaying."""
         validated = True
         notes = ""
-        popt_dend, popt_apic = self.fit(soma_amp, dend_amps, dend_dist, apic_amps, apic_dist)
+        popt_dend, popt_apic, fit_error = self.fit(soma_amp, dend_amps, dend_dist, apic_amps, apic_dist)
+        if fit_error:
+            logger.debug("Fitting error occurred.")
+            validated = False
+            notes += "Validation failed: Fitting error occurred.\n"
+            return validated, notes
+
         if dend_amps is not None:
             plt.cla()
             plt.plot([0], soma_amp, '.')
@@ -415,7 +427,7 @@ class BPAP:
         output_fname="bpap.pdf",
     ):
         """Plot the results of the BPAP analysis."""
-        popt_dend, popt_apic = self.fit(soma_amp, dend_amps, dend_dist, apic_amps, apic_dist)
+        popt_dend, popt_apic, _ = self.fit(soma_amp, dend_amps, dend_dist, apic_amps, apic_dist)
 
         outpath = pathlib.Path(output_dir) / output_fname
         fig, ax1 = plt.subplots(figsize=(10, 6))
