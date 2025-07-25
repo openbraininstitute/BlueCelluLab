@@ -3,16 +3,14 @@
     "population": "NodeA" ,
     "compartment_set": [
       [0, 0, 0.5],
-      [1, 2, 0.3],
-      [2, 276, 0.1]
+      [1, 2, 0.3]
     ]
   },
   "Mosaic_B": {
     "population": "NodeB",
     "compartment_set": [
       [0, 1, 0.1],
-      [1, 4, 0.1],
-      [2, 30, 0.1]
+      [1, 4, 0.1]
     ]
   }
 }
