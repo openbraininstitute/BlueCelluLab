@@ -16,7 +16,6 @@ import pytest
 from unittest.mock import MagicMock
 
 from bluecellulab.reports.utils import (
-    _configure_recording,
     build_recording_sites,
     extract_spikes_from_cells,
 )
@@ -28,22 +27,6 @@ def mock_cell():
     cell.cell_id.id = 42
     cell.add_variable_recording = MagicMock()
     return cell
-
-
-def test_configure_recording_success(mock_cell):
-    sites = [(None, "soma[0]", 0.5), (None, "dend[0]", 0.3)]
-    _configure_recording(mock_cell, sites, "v", "test_report")
-
-    assert mock_cell.add_variable_recording.call_count == 2
-    mock_cell.add_variable_recording.assert_any_call(variable="v", section=None, segx=0.5)
-    mock_cell.add_variable_recording.assert_any_call(variable="v", section=None, segx=0.3)
-
-
-def test_configure_recording_attribute_error(mock_cell, caplog):
-    mock_cell.add_variable_recording = MagicMock(side_effect=AttributeError)
-    _configure_recording(mock_cell, [(None, "soma[0]", 0.5)], "v", "test_report")
-
-    assert "Recording for variable 'v' is not implemented" in caplog.text
 
 
 def test_extract_spikes_from_cells_valid_cell():
@@ -67,9 +50,9 @@ def test_extract_spikes_invalid_cell_type():
         extract_spikes_from_cells(cells)
 
 
-def test_build_recording_sites_compartment(monkeypatch, mock_cell):
+def test_build_recording_sites_compartment(mock_cell):
     mock_cfg = {"sections": "soma", "compartments": "center"}
-    monkeypatch.setattr("bluecellulab.reports.utils.resolve_segments_from_config", lambda c, cfg: [("sec", "soma[0]", 0.5)])
+    mock_cell.resolve_segments_from_config.return_value = [("sec", "soma[0]", 0.5)]
 
     cells = {("pop", 1): mock_cell}
     result = build_recording_sites(cells, [1], "pop", "compartment", mock_cfg, None)
@@ -78,10 +61,10 @@ def test_build_recording_sites_compartment(monkeypatch, mock_cell):
     assert result[1][0][2] == 0.5
 
 
-def test_build_recording_sites_compartment_set(monkeypatch, mock_cell):
-    monkeypatch.setattr("bluecellulab.reports.utils.resolve_segments_from_compartment_set", lambda c, nid, nodes: [("sec", "dend[0]", 0.3)])
-    cells = {("pop", 1): mock_cell}
-    result = build_recording_sites(cells, [1], "pop", "compartment_set", {}, [[1, "dend[0]", 0.3]])
+def test_build_recording_sites_compartment_set(mock_cell):
+    mock_cell.resolve_segments_from_compartment_set.return_value = [("sec", "dend[0]", 0.3)]
+    cells = {("pop", 2): mock_cell}
+    result = build_recording_sites(cells, [2], "pop", "compartment_set", {}, [[2, "dend[0]", 0.3]])
 
-    assert 1 in result
-    assert result[1][0][1] == "dend[0]"
+    assert 2 in result
+    assert result[2][0][1] == "dend[0]"
