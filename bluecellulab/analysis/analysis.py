@@ -352,7 +352,7 @@ class BPAP:
 
     @staticmethod
     def fit(soma_amp, branch_amps, branch_dist):
-        """Fit the amplitudes vs distances (including soma) to an exponential decay function."""
+        """Fit the amplitudes vs distances to an exponential decay function."""
         from scipy.optimize import curve_fit
 
         if not branch_amps or not branch_dist or len(branch_amps) != len(branch_dist):
