@@ -17,6 +17,7 @@ from collections import defaultdict
 import logging
 from typing import Dict, Any, List
 
+from bluecellulab.cell.core import Cell
 from bluecellulab.tools import (
     resolve_source_nodes,
 )
@@ -93,7 +94,7 @@ def configure_all_reports(cells, simulation_config):
 
 
 def build_recording_sites(
-    cells, node_ids, population, report_type, report_cfg, compartment_nodes
+    cells_or_traces, node_ids, population, report_type, report_cfg, compartment_nodes
 ):
     """Build per-cell recording sites based on source type and report
     configuration.
@@ -104,8 +105,9 @@ def build_recording_sites(
 
     Parameters
     ----------
-    cells : dict
-        Mapping from (population, node_id) to Cell object.
+    cells_or_traces : dict
+        Either a mapping from (population, node_id) to Cell objects (live sim),
+        or from gid_key strings to trace dicts (gathered traces on rank 0).
 
     node_ids : list of int
         List of node IDs for which recordings should be configured.
@@ -132,21 +134,41 @@ def build_recording_sites(
     targets_per_cell = {}
 
     for node_id in node_ids:
-        cell = cells.get((population, node_id)) or cells.get(f"{population}_{node_id}")
-        if not cell:
+        # Handle both (pop, id) and "pop_id" keys
+        key = (population, node_id)
+        cell_or_trace = cells_or_traces.get(key) or cells_or_traces.get(f"{population}_{node_id}")
+        if not cell_or_trace:
             continue
 
-        if report_type == "compartment_set":
-            targets = cell.resolve_segments_from_compartment_set(
-                node_id, compartment_nodes
-            )
-        elif report_type == "compartment":
-            targets = cell.resolve_segments_from_config(report_cfg)
+        if isinstance(cell_or_trace, dict):  # Trace dict, not Cell
+            if report_type == "compartment_set":
+                # Find all entries matching node_id
+                targets = [
+                    (None, section_name, segx)
+                    for nid, section_name, segx in compartment_nodes
+                    if nid == node_id
+                ]
+            elif report_type == "compartment":
+                section_name = report_cfg.get("sections", "soma")
+                segx = 0.5 if report_cfg.get("compartments", "center") == "center" else 0.0
+                targets = [(None, f"{section_name}[0]", segx)]
+            else:
+                raise NotImplementedError(
+                    f"Unsupported report type '{report_type}' in trace-based output."
+                )
         else:
-            raise NotImplementedError(
-                f"Report type '{report_type}' is not supported. "
-                f"Supported types: {SUPPORTED_REPORT_TYPES}"
-            )
+            # Cell object
+            if report_type == "compartment_set":
+                targets = cell_or_trace.resolve_segments_from_compartment_set(
+                    node_id, compartment_nodes
+                )
+            elif report_type == "compartment":
+                targets = cell_or_trace.resolve_segments_from_config(report_cfg)
+            else:
+                raise NotImplementedError(
+                    f"Report type '{report_type}' is not supported. "
+                    f"Supported types: {SUPPORTED_REPORT_TYPES}"
+                )
 
         targets_per_cell[node_id] = targets
 
