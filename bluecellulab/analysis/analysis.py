@@ -351,36 +351,27 @@ class BPAP:
         return soma_amp, dend_amps, dend_dist, apic_amps, apic_dist
 
     @staticmethod
-    def fit(soma_amp, dend_amps, dend_dist, apic_amps, apic_dist):
-        """Fit the amplitudes vs distances to an exponential decay function."""
+    def fit(soma_amp, branch_amps, branch_dist):
+        """Fit the amplitudes vs distances (including soma) to an exponential decay function."""
         from scipy.optimize import curve_fit
 
-        popt_dend = None
-        if dend_amps and dend_dist:
-            dist = [0] + dend_dist  # add soma distance
-            amps = soma_amp + dend_amps  # add soma amplitude
-            try:
-                popt_dend, _ = curve_fit(exp_decay, dist, amps)
-            except RuntimeError as e:
-                return None, None, True  # fitting error
-
-        popt_apic = None
-        if apic_amps and apic_dist:
-            dist = [0] + apic_dist  # add soma distance
-            amps = soma_amp + apic_amps  # add soma amplitude
-            try:
-                popt_apic, _ = curve_fit(exp_decay, dist, amps)
-            except RuntimeError as e:
-                return popt_dend, None, True
-
-        return popt_dend, popt_apic, False
+        if not branch_amps or not branch_dist or len(branch_amps) != len(branch_dist):
+            return None, False
+        try:
+            dist = [0] + branch_dist
+            amps = soma_amp + branch_amps
+            popt, _ = curve_fit(exp_decay, dist, amps)
+            return popt, False
+        except RuntimeError:
+            return None, True
 
     def validate(self, soma_amp, dend_amps, dend_dist, apic_amps, apic_dist):
         """Check that the exponential fit is decaying."""
         validated = True
         notes = ""
-        popt_dend, popt_apic, fit_error = self.fit(soma_amp, dend_amps, dend_dist, apic_amps, apic_dist)
-        if fit_error:
+        popt_dend, dend_fit_error = self.fit(soma_amp, dend_amps, dend_dist)
+        popt_apic, apic_fit_error = self.fit(soma_amp, apic_amps, apic_dist)
+        if dend_fit_error or apic_fit_error:
             logger.debug("Fitting error occurred.")
             validated = False
             notes += "Validation failed: Fitting error occurred.\n"
@@ -427,7 +418,8 @@ class BPAP:
         output_fname="bpap.pdf",
     ):
         """Plot the results of the BPAP analysis."""
-        popt_dend, popt_apic, _ = self.fit(soma_amp, dend_amps, dend_dist, apic_amps, apic_dist)
+        popt_dend, _ = self.fit(soma_amp, dend_amps, dend_dist)
+        popt_apic, _ = self.fit(soma_amp, apic_amps, apic_dist)
 
         outpath = pathlib.Path(output_dir) / output_fname
         fig, ax1 = plt.subplots(figsize=(10, 6))
