@@ -168,7 +168,7 @@ class CompartmentReportWriter(BaseReportWriter):
         # Downsample the data if needed
         # Compute start and end indices in the original data
         start_index = int(round((start_time - tstart) / sim_dt))
-        end_index = int(round((end_time - tstart) / sim_dt)) + 1  # inclusive
+        end_index = int(round((end_time - tstart) / sim_dt))
 
         # Now slice and downsample
         data_matrix_downsampled = [
