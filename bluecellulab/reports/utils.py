@@ -17,7 +17,6 @@ from collections import defaultdict
 import logging
 from typing import Dict, Any, List
 
-from bluecellulab.cell.core import Cell
 from bluecellulab.tools import (
     resolve_source_nodes,
 )
