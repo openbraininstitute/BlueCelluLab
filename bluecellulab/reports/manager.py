@@ -79,6 +79,7 @@ class ReportManager:
                 logger.error(f"Unsupported report type '{report_type}' in configuration for report '{name}'")
 
             rcfg["_source_sets"] = src_sets
+            rcfg["name"] = name
 
             out_path = self.cfg.report_file_path(rcfg, name)
             writer = get_writer("compartment")(rcfg, out_path, self.dt)
