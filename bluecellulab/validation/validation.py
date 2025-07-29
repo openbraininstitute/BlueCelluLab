@@ -83,7 +83,7 @@ def plot_traces(recordings, out_dir, fname, title, labels=None, xlim=None):
     return outpath
 
 
-def spiking_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30.):
+def spiking_test(template_params, rheobase, out_dir, spike_threshold_voltage=-20.):
     """Spiking test: cell should spike."""
     stim_factory = StimulusFactory(dt=1.0)
     step_stimulus = stim_factory.idrest(threshold_current=rheobase, threshold_percentage=200)
@@ -194,7 +194,7 @@ def bpap_test(template_params, rheobase, out_dir="./"):
     }
 
 
-def ais_spiking_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30.):
+def ais_spiking_test(template_params, rheobase, out_dir, spike_threshold_voltage=-20.):
     """AIS spiking test: axon should spike before soma."""
     name = "Simulatable Neuron AIS Spiking Validation"
     # Check that the cell has an axon
@@ -337,7 +337,7 @@ def rin_test(rin):
     }
 
 
-def iv_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30., n_processes=None):
+def iv_test(template_params, rheobase, out_dir, spike_threshold_voltage=-20., n_processes=None):
     """IV curve should have a positive slope."""
     name = "Simulatable Neuron IV Curve Validation"
     amps, steady_states = compute_plot_iv_curve(
@@ -377,7 +377,7 @@ def iv_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30., n_
     }
 
 
-def fi_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30., n_processes=None):
+def fi_test(template_params, rheobase, out_dir, spike_threshold_voltage=-20., n_processes=None):
     """FI curve should have a positive slope."""
     name = "Simulatable Neuron FI Curve Validation"
     amps, spike_counts = compute_plot_fi_curve(
@@ -449,7 +449,7 @@ def thumbnail_test(template_params, rheobase, out_dir):
 def run_validations(
     cell,
     cell_name,
-    spike_threshold_voltage=-30,
+    spike_threshold_voltage=-20,
     v_init=-80.0,
     celsius=34.0,
     output_dir="./memodel_validation_figures",
@@ -489,6 +489,7 @@ def run_validations(
         morphology_path=cell.template_params.morph_filepath,
         template_format=cell.template_params.template_format,
         emodel_properties=cell.template_params.emodel_properties,
+        current_delta=-0.2 * rheobase,
     )
 
     logger.debug("Running validations...")

@@ -40,7 +40,7 @@ def calculate_input_resistance(
     morphology_path: str | Path,
     template_format: str,
     emodel_properties: EmodelProperties | None,
-    current_delta: float = 0.01,
+    current_delta: float = -0.02,
     section: str = "soma[0]",
     segx: float = 0.5
 ) -> float:
