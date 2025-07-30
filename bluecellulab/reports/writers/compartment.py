@@ -58,7 +58,8 @@ class CompartmentReportWriter(BaseReportWriter):
         idx_ptr: List[int] = [0]
         elem_ids: List[int] = []
 
-        for nid, recording_sites in recording_sites_per_cell.items():
+        for nid in sorted(recording_sites_per_cell):
+            recording_sites = recording_sites_per_cell[nid]
             cell = cells.get((population, nid)) or cells.get(f"{population}_{nid}")
             if cell is None:
                 continue
