@@ -17,7 +17,7 @@ import math
 import random
 import warnings
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 import uuid
 
 import neuron
@@ -556,6 +556,90 @@ class TestCellV6:
         attempting to retrieve a voltage recording that was not previously added."""
         with pytest.raises(BluecellulabError, match="get_voltage_recording: Voltage recording .* was not added previously using add_voltage_recording"):
             self.cell.get_voltage_recording(self.cell.soma, segx=1.5)
+
+    def test_get_section_direct_match(self):
+        """Test get_section with a direct section name match."""
+        section = self.cell.get_section("soma[0]")
+        assert hasattr(section, "nseg")
+
+    def test_get_section_soma_fallback(self):
+        """Test get_section fallback from 'soma' to 'soma[0]'."""
+        section = self.cell.get_sections("soma")
+        assert hasattr(section[0], "nseg")
+
+    def test_get_section_invalid_name(self):
+        """Test get_section with an invalid section name (not in cell.sections)."""
+        with pytest.raises(ValueError, match=r"Section 'invalid' not found\. Available:"):
+            self.cell.get_sections("invalid")
+
+    def test_resolve_segments_node_set(self):
+        """Test resolving segments for node_set with center compartment."""
+        report_cfg = {
+            "sections": "soma",
+            "compartments": "center"
+        }
+        targets = self.cell.resolve_segments_from_config(report_cfg)
+        assert len(targets) == 1
+
+        _, sec_name, seg = targets[0]
+        assert sec_name == "soma[0]"
+        assert seg == 0.5
+
+    def test_resolve_segments_node_set_all(self):
+        """Test resolving segments for node_set with all compartments."""
+        report_cfg = {
+            "sections": "dend[0]",
+            "compartments": "all"
+        }
+        targets = self.cell.resolve_segments_from_config(report_cfg)
+        assert len(targets) == 1
+        sec, sec_name, seg = targets[0]
+        assert sec_name == "dend[0]"
+        assert 0.0 <= seg <= 1.0
+
+    def test_resolve_segments_compartment_set_by_name(self):
+        """Test resolving segments for a compartment_set."""
+        compartment_nodes = [[1, "soma[0]", 0.5], [1, "dend[0]", 0.25]]
+        targets = self.cell.resolve_segments_from_compartment_set(1, compartment_nodes)
+        assert len(targets) == 2
+
+        _, sec_name_0, seg_0 = targets[0]
+        _, sec_name_1, seg_1 = targets[1]
+
+        assert sec_name_0 == "soma[0]"
+        assert seg_0 == 0.5
+        assert sec_name_1 == "dend[0]"
+        assert seg_1 == 0.25
+
+    def test_resolve_segments_compartment_set_by_id(self):
+        """Test resolving segments for a compartment_set."""
+        compartment_nodes = [[1, 0, 0.5], [1, 2, 0.25]]
+        targets = self.cell.resolve_segments_from_compartment_set(1, compartment_nodes)
+        assert len(targets) == 2
+
+        _, sec_name_0, seg_0 = targets[0]
+        _, sec_name_1, seg_1 = targets[1]
+
+        assert sec_name_0 == "soma[0]"
+        assert seg_0 == 0.5
+        assert sec_name_1 == "axon[1]"
+        assert seg_1 == 0.25
+
+    def test_configure_recording_success(self):
+        sites = [(None, "soma[0]", 0.5), (None, "dend[0]", 0.3)]
+        self.cell.add_variable_recording = MagicMock()
+
+        self.cell.configure_recording(sites, "v", "test_report")
+
+        self.cell.add_variable_recording.assert_any_call(variable="v", section=None, segx=0.5)
+        self.cell.add_variable_recording.assert_any_call(variable="v", section=None, segx=0.3)
+
+        # Optional: check number of total calls
+        assert self.cell.add_variable_recording.call_count == 2
+
+    def test_configure_recording_attribute_error(self, caplog):
+        self.cell.configure_recording([(0, "soma[0]", 0.5)], "v", "test_report")
+        assert "Recording for variable 'v' is not implemented" in caplog.text
 
 
 @pytest.mark.v6
