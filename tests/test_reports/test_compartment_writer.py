@@ -12,13 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from pathlib import Path
 import numpy as np
 import h5py
 from unittest.mock import MagicMock, patch
 
 import pytest
+from bluecellulab.circuit_simulation import CircuitSimulation
 from bluecellulab.reports.writers.compartment import CompartmentReportWriter
+from bluecellulab.reports.manager import ReportManager
 
+script_dir = Path(__file__).parent.parent
 
 @pytest.fixture
 def mock_cell():
@@ -94,7 +98,6 @@ def test_write_node_set(mock_build_sites, mock_resolve_nodes, tmp_path, mock_cel
     with h5py.File(tmp_path / "report.h5", "r") as f:
         assert "/report/default/data" in f
         data = f["/report/default/data"][:]
-        print(data)
         assert data.shape[0] == 10
         assert data.shape[1] == 3
 
@@ -115,3 +118,38 @@ def test_write_compartment_set(mock_build_sites, mock_resolve_nodes, tmp_path, m
     with h5py.File(tmp_path / "report.h5", "r") as f:
         assert "/report/default/data" in f
         assert f["/report/default/data"].shape[1] == 2
+
+
+class TestSimCompartmentSet():
+    """Test the graph.py module."""
+    def setup_method(self):
+        """Set up the test environment."""
+        sim_path = (
+            script_dir
+            / "examples/sim_quick_scx_sonata_multicircuit/simulation_config_compartment_set.json"
+        )
+        self.sim = CircuitSimulation(sim_path)
+        dstut_cells = [('NodeA', 0), ('NodeA', 1)]
+
+        self.sim.instantiate_gids(dstut_cells, add_stimuli=True, add_synapses=True)
+        self.sim.run()
+
+        report_mgr = ReportManager(self.sim.circuit_access.config, self.sim.dt)
+        report_mgr.write_all(self.sim.cells)
+
+
+        self.file1_path = f"{script_dir}/examples/sim_quick_scx_sonata_multicircuit/output_sonata_compartment_set/soma.h5"
+        self.file2_path = f"{script_dir}/examples/sim_quick_scx_sonata_multicircuit/output_sonata_compartment_set/soma_compartment_set.h5"
+        self.dataset_path = "/report/NodeA/data"
+
+    def test_compartment_compartmentset_match(self):
+        """Compare voltage reports from compartment and compartment_set output."""
+        with h5py.File(self.file1_path, "r") as f1, h5py.File(self.file2_path, "r") as f2:
+            assert self.dataset_path in f1, f"'{self.dataset_path}' not found in {self.file1_path}"
+            assert self.dataset_path in f2, f"'{self.dataset_path}' not found in {self.file2_path}"
+
+            data1 = np.array(f1[self.dataset_path])
+            data2 = np.array(f2[self.dataset_path])
+
+            assert data1.shape == data2.shape, f"Shape mismatch: {data1.shape} != {data2.shape}"
+            assert np.allclose(data1, data2), "Data mismatch in dataset content"
