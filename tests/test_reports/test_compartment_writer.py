@@ -24,6 +24,7 @@ from bluecellulab.reports.manager import ReportManager
 
 script_dir = Path(__file__).parent.parent
 
+
 @pytest.fixture
 def mock_cell():
     cell = MagicMock()
@@ -136,7 +137,6 @@ class TestSimCompartmentSet():
 
         report_mgr = ReportManager(self.sim.circuit_access.config, self.sim.dt)
         report_mgr.write_all(self.sim.cells)
-
 
         self.file1_path = f"{script_dir}/examples/sim_quick_scx_sonata_multicircuit/output_sonata_compartment_set/soma.h5"
         self.file2_path = f"{script_dir}/examples/sim_quick_scx_sonata_multicircuit/output_sonata_compartment_set/soma_compartment_set.h5"
