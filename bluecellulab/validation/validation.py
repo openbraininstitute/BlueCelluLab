@@ -18,7 +18,6 @@ import numpy
 import pathlib
 
 import efel
-import neuron
 
 from bluecellulab.analysis.analysis import BPAP
 from bluecellulab.analysis.analysis import compute_plot_fi_curve
@@ -31,6 +30,7 @@ from bluecellulab.stimulus.factory import IDRestTimings
 from bluecellulab.stimulus.factory import StimulusFactory
 from bluecellulab.tools import calculate_input_resistance
 from bluecellulab.tools import calculate_rheobase
+from bluecellulab.tools import section_exists
 from bluecellulab.utils import NestedPool
 
 logger = logging.getLogger(__name__)
@@ -216,7 +216,7 @@ def ais_spiking_test(template_params, rheobase, out_dir, spike_threshold_voltage
     """AIS spiking test: axon should spike before soma."""
     name = "Simulatable Neuron AIS Spiking Validation"
     # Check that the cell has an axon
-    if len(Cell.from_template_parameters(template_params).axonal) == 0 or not neuron.h.section_exists("axon[0]"):
+    if len(Cell.from_template_parameters(template_params).axonal) == 0 or not section_exists("axon[0]"):
         return {
             "name": name,
             "passed": True,

@@ -394,6 +394,15 @@ def check_empty_topology() -> bool:
     return stdout == ['', '']
 
 
+def section_exists(name: str) -> bool:
+    """Check if a section exists in the NEURON simulator.
+    
+    Args:
+        name (str): The name of the section to check.
+    """
+    return bool(neuron.h.section_exists(name))
+
+
 def calculate_max_thresh_current(cell: Cell,
                                  threshold_voltage: float = -20.0,
                                  section: str = "soma[0]",
