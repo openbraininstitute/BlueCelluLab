@@ -381,7 +381,10 @@ def test_validate(mock_bpap_amplitude_distance):
     # bad data: validated is False, and we have some logging in notes
     validated, notes = bpap.validate([100], [110, 120], [10, 20], [110, 120], [10, 20], validate_with_fit=False)
     assert validated is False
-    assert notes == "Dendritic fit is not decaying.\nApical fit is not decaying.\n"
+    assert notes == (
+        "Dendritic validation failed: dendritic amplitude is not decaying with distance relative to soma.\n"
+        "Apical validation failed: apical amplitude is not decaying with distance relative to soma.\n"
+    )
 
 
 def test_plot_amp_vs_dist(mock_bpap_amplitude_distance, tmp_path):
