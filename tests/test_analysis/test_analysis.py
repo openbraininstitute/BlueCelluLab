@@ -42,11 +42,6 @@ def mock_search_threshold_current():
 
 
 @pytest.fixture
-def mock_steady_state_voltage_stimend():
-    return MagicMock(return_value=-65)
-
-
-@pytest.fixture
 def mock_efel():
     efel_mock = MagicMock()
     efel_mock.getFeatureValues.return_value = [{'steady_state_voltage_stimend': [-65]}]
