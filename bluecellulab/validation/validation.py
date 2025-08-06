@@ -541,7 +541,7 @@ def run_validations(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # set initial voltage and temperature
-    set_neuron_globals(temperature=celsius, v_init=v_init)  # <-- should set this inside each pool
+    set_neuron_globals(temperature=celsius, v_init=v_init)
 
     # get me-model properties
     holding_current = cell.hypamp if cell.hypamp else 0.0
