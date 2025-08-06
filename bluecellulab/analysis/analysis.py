@@ -410,7 +410,7 @@ class BPAP:
         else:
             if dend_amps and dend_dist:
                 furthest_dend_idx = np.argmax(dend_dist)
-                if dend_amps[furthest_dend_idx] < soma_amp:
+                if dend_amps[furthest_dend_idx] < soma_amp[0]:
                     notes += "Dendritic validation passed: dendritic amplitude is decaying with distance relative to soma.\n"
                 else:
                     validated = False
@@ -419,7 +419,7 @@ class BPAP:
                 notes += "No dendritic recordings found.\n"
             if apic_amps and apic_dist:
                 furthest_apic_idx = np.argmax(apic_dist)
-                if apic_amps[furthest_apic_idx] < soma_amp:
+                if apic_amps[furthest_apic_idx] < soma_amp[0]:
                     notes += "Apical validation passed: apical amplitude is decaying with distance relative to soma.\n"
                 else:
                     validated = False
