@@ -43,7 +43,9 @@ def compute_plot_iv_curve(cell,
                           save_figure=False,
                           output_dir="./",
                           output_fname="iv_curve.pdf",
-                          n_processes=None):
+                          n_processes=None,
+                          celsius=None,
+                          v_init=None):
     """Compute and plot the Current-Voltage (I-V) curve for a given cell by
     injecting a range of currents.
 
@@ -78,6 +80,8 @@ def compute_plot_iv_curve(cell,
         n_processes (int, optional): The number of processes to use for parallel execution.
             If None or if it is higher than the number of steps,
             it will use the number of steps as the number of processes.
+        celsius (float, optional): Temperature in Celsius.
+        v_init (float, optional): Initial membrane potential.
 
     Returns:
         tuple: A tuple containing:
@@ -115,6 +119,8 @@ def compute_plot_iv_curve(cell,
                 repeat(True),  # add_hypamp
                 repeat(recording_section),
                 repeat(recording_segment),
+                repeat(celsius),
+                repeat(v_init),
             )
         )
 
@@ -162,7 +168,9 @@ def compute_plot_fi_curve(cell,
                           save_figure=False,
                           output_dir="./",
                           output_fname="fi_curve.pdf",
-                          n_processes=None):
+                          n_processes=None,
+                          celsius=None,
+                          v_init=None):
     """Compute and plot the Frequency-Current (F-I) curve for a given cell by
     injecting a range of currents.
 
@@ -199,6 +207,8 @@ def compute_plot_fi_curve(cell,
         n_processes (int, optional): The number of processes to use for parallel execution.
             If None or if it is higher than the number of steps,
             it will use the number of steps as the number of processes.
+        celsius (float, optional): Temperature in Celsius.
+        v_init (float, optional): Initial membrane potential.
 
     Returns:
         tuple: A tuple containing:
@@ -232,6 +242,8 @@ def compute_plot_fi_curve(cell,
                 repeat(True),  # add_hypamp
                 repeat(recording_section),
                 repeat(recording_segment),
+                repeat(celsius),
+                repeat(v_init),
                 repeat(True),  # enable_spike_detection
                 repeat(threshold_voltage),  # threshold_spike_detection
             )
@@ -365,43 +377,55 @@ class BPAP:
         except RuntimeError:
             return None, True
 
-    def validate(self, soma_amp, dend_amps, dend_dist, apic_amps, apic_dist):
+    def validate(self, soma_amp, dend_amps, dend_dist, apic_amps, apic_dist, validate_with_fit=True):
         """Check that the exponential fit is decaying."""
         validated = True
         notes = ""
-        popt_dend, dend_fit_error = self.fit(soma_amp, dend_amps, dend_dist)
-        popt_apic, apic_fit_error = self.fit(soma_amp, apic_amps, apic_dist)
-        if dend_fit_error or apic_fit_error:
-            logger.debug("Fitting error occurred.")
-            validated = False
-            notes += "Validation failed: Fitting error occurred.\n"
-            return validated, notes
-
-        if dend_amps is not None:
-            plt.cla()
-            plt.plot([0], soma_amp, '.')
-            plt.plot(dend_dist, dend_amps, '.')
-            x = np.linspace(0, max(dend_dist), 100)
-            plt.plot(x, exp_decay(x, *popt_dend), color='darkgreen', linestyle='--', label='Basal Dendritic Fit')
-            plt.savefig("bad_dendritic_fit.png")
-        if popt_dend is None:
-            logger.debug("No dendritic recordings found.")
-            notes += "No dendritic recordings found.\n"
-        elif popt_dend[1] <= 0 or popt_dend[0] <= 0:
-            logger.debug("Dendritic fit is not decaying.")
-            validated = False
-            notes += "Dendritic fit is not decaying.\n"
+        if validate_with_fit:
+            popt_dend, dend_fit_error = self.fit(soma_amp, dend_amps, dend_dist)
+            popt_apic, apic_fit_error = self.fit(soma_amp, apic_amps, apic_dist)
+            if dend_fit_error or apic_fit_error:
+                logger.debug("Fitting error occurred.")
+                validated = False
+                notes += "Validation failed: Fitting error occurred.\n"
+                return validated, notes
+            if popt_dend is None:
+                logger.debug("No dendritic recordings found.")
+                notes += "No dendritic recordings found.\n"
+            elif popt_dend[1] <= 0 or popt_dend[0] <= 0:
+                logger.debug("Dendritic fit is not decaying.")
+                validated = False
+                notes += "Dendritic fit is not decaying.\n"
+            else:
+                notes += "Dendritic validation passed: dendritic amplitude is decaying with distance relative to soma.\n"
+            if popt_apic is None:
+                logger.debug("No apical recordings found.")
+                notes += "No apical recordings found.\n"
+            elif popt_apic[1] <= 0 or popt_apic[0] <= 0:
+                logger.debug("Apical fit is not decaying.")
+                validated = False
+                notes += "Apical fit is not decaying.\n"
+            else:
+                notes += "Apical validation passed: apical amplitude is decaying with distance relative to soma.\n"
         else:
-            notes += "Dendritic validation passed: dendritic amplitude is decaying with distance relative to soma.\n"
-        if popt_apic is None:
-            logger.debug("No apical recordings found.")
-            notes += "No apical recordings found.\n"
-        elif popt_apic[1] <= 0 or popt_apic[0] <= 0:
-            logger.debug("Apical fit is not decaying.")
-            validated = False
-            notes += "Apical fit is not decaying.\n"
-        else:
-            notes += "Apical validation passed: apical amplitude is decaying with distance relative to soma.\n"
+            if dend_amps and dend_dist:
+                furthest_dend_idx = np.argmax(dend_dist)
+                if dend_amps[furthest_dend_idx] < soma_amp:
+                    notes += "Dendritic validation passed: dendritic amplitude is decaying with distance relative to soma.\n"
+                else:
+                    validated = False
+                    notes += "Dendritic validation failed: dendritic amplitude is not decaying with distance relative to soma.\n"
+            else:
+                notes += "No dendritic recordings found.\n"
+            if apic_amps and apic_dist:
+                furthest_apic_idx = np.argmax(apic_dist)
+                if apic_amps[furthest_apic_idx] < soma_amp:
+                    notes += "Apical validation passed: apical amplitude is decaying with distance relative to soma.\n"
+                else:
+                    validated = False
+                    notes += "Apical validation failed: apical amplitude is not decaying with distance relative to soma.\n"
+            else:
+                notes += "No apical recordings found.\n"
 
         return validated, notes
 
@@ -416,10 +440,14 @@ class BPAP:
         save_figure=False,
         output_dir="./",
         output_fname="bpap.pdf",
+        do_fit=True,
     ):
         """Plot the results of the BPAP analysis."""
-        popt_dend, _ = self.fit(soma_amp, dend_amps, dend_dist)
-        popt_apic, _ = self.fit(soma_amp, apic_amps, apic_dist)
+        popt_dend = None
+        popt_apic = None
+        if do_fit:
+            popt_dend, _ = self.fit(soma_amp, dend_amps, dend_dist)
+            popt_apic, _ = self.fit(soma_amp, apic_amps, apic_dist)
 
         outpath = pathlib.Path(output_dir) / output_fname
         fig, ax1 = plt.subplots(figsize=(10, 6))

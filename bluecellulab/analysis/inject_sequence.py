@@ -7,6 +7,7 @@ import neuron
 import numpy as np
 from bluecellulab.cell.core import Cell
 from bluecellulab.cell.template import TemplateParams
+from bluecellulab.simulation.neuron_globals import set_neuron_globals
 from bluecellulab.simulation.parallel import IsolatedProcess
 from bluecellulab.simulation.simulation import Simulation
 from bluecellulab.stimulus.circuit_stimulus_definitions import Hyperpolarizing
@@ -45,6 +46,8 @@ def run_multirecordings_stimulus(
     cvode: bool = True,
     add_hypamp: bool = True,
     recording_locations: list[tuple[str, float]] = [("soma[0]", 0.5)],
+    celsius: float | None = None,
+    v_init: float | None = None,
     enable_spike_detection: bool = False,
     threshold_spike_detection: float = -20.0,
 ) -> list[Recording]:
@@ -70,6 +73,8 @@ def run_multirecordings_stimulus(
             where voltage is recorded and the normalized position (0.0 to 1.0) along the recording
             section where voltage is recorded.
             (e.g. [("soma[0]", 0.5), ("dend[0]", 0.5)])
+        celsius (float, optional): Temperature in Celsius.
+        v_init (float, optional): Initial membrane potential.
         enable_spike_detection (bool, optional): If True, enables spike detection at the
             recording location. Defaults to False.
         threshold_spike_detection (float, optional): The voltage threshold (mV) for spike detection.
@@ -86,6 +91,7 @@ def run_multirecordings_stimulus(
         ValueError: If the time, current, and voltage arrays do not have the same length,
             or if the specified sections or segments are not found in the cell model.
     """
+    set_neuron_globals(temperature=celsius, v_init=v_init)
     cell = Cell.from_template_parameters(template_params)
 
     validate_section_and_segment(cell, section, segment)
@@ -118,6 +124,9 @@ def run_multirecordings_stimulus(
 
     simulation = Simulation(cell)
     simulation.run(stimulus.stimulus_time, cvode=cvode)
+    # simulation.run(stimulus.stimulus_time, cvode=False)  # for testing
+    # simulation.run(stimulus.stimulus_time, cvode=cvode, cvode_maxstep=0.1)  # for testing
+    # neuron.h.cvode.statistics()  # for testing
 
     # Retrieve simulation results
     recordings = []
@@ -153,6 +162,8 @@ def run_stimulus(
     add_hypamp: bool = True,
     recording_section: str = "soma[0]",
     recording_segment: float = 0.5,
+    celsius: float | None = None,
+    v_init: float | None = None,
     enable_spike_detection: bool = False,
     threshold_spike_detection: float = -20.0,
 ) -> Recording:
@@ -177,6 +188,8 @@ def run_stimulus(
         recording_section (str): Name of the section of the cell where voltage is recorded.
         recording_segment (float): The normalized position (0.0 to 1.0) along the recording
             section where voltage is recorded.
+        celsius (float, optional): Temperature in Celsius.
+        v_init (float, optional): Initial membrane potential.
         enable_spike_detection (bool, optional): If True, enables spike detection at the
             recording location. Defaults to False.
         threshold_spike_detection (float, optional): The voltage threshold (mV) for spike detection.
@@ -201,6 +214,8 @@ def run_stimulus(
         cvode=cvode,
         add_hypamp=add_hypamp,
         recording_locations=[(recording_section, recording_segment)],
+        celsius=celsius,
+        v_init=v_init,
         enable_spike_detection=enable_spike_detection,
         threshold_spike_detection=threshold_spike_detection,
     )[0]
