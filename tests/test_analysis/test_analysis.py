@@ -365,6 +365,24 @@ def test_validate(mock_bpap_amplitude_distance):
     assert validated is False
     assert notes == "Dendritic fit is not decaying.\nApical fit is not decaying.\n"
 
+    # validate without fit
+    # good data
+    validated, notes = bpap.validate(*mock_bpap_amplitude_distance, validate_with_fit=False)
+    assert validated is True
+    assert notes == (
+        "Dendritic validation passed: dendritic amplitude is decaying with distance "
+        "relative to soma.\nApical validation passed: apical amplitude is decaying with distance "
+        "relative to soma.\n"
+    )
+    # empty data: validated is True, but we have some logging in notes
+    validated, notes = bpap.validate([100], None, None, None, None, validate_with_fit=False)
+    assert validated is True
+    assert notes == "No dendritic recordings found.\nNo apical recordings found.\n"
+    # bad data: validated is False, and we have some logging in notes
+    validated, notes = bpap.validate([100], [110, 120], [10, 20], [110, 120], [10, 20], validate_with_fit=False)
+    assert validated is False
+    assert notes == "Dendritic fit is not decaying.\nApical fit is not decaying.\n"
+
 
 def test_plot_amp_vs_dist(mock_bpap_amplitude_distance, tmp_path):
     """Test the plot_amp_vs_dist method of the BPAP class."""
