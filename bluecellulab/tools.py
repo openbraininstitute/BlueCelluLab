@@ -396,7 +396,7 @@ def check_empty_topology() -> bool:
 
 def section_exists(name: str) -> bool:
     """Check if a section exists in the NEURON simulator.
-    
+
     Args:
         name (str): The name of the section to check.
     """
