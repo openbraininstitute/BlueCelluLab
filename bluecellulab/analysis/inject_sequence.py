@@ -46,7 +46,7 @@ def run_multirecordings_stimulus(
     cvode: bool = True,
     add_hypamp: bool = True,
     recording_locations: list[tuple[str, float]] = [("soma[0]", 0.5)],
-    celsius: Optional[float]  = None,
+    celsius: Optional[float] = None,
     v_init: Optional[float] = None,
     enable_spike_detection: bool = False,
     threshold_spike_detection: float = -20.0,
