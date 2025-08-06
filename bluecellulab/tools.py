@@ -190,7 +190,6 @@ def template_accepts_cvode(template_name: str | Path) -> bool:
         accepts_cvode = False
     else:
         accepts_cvode = True
-    # return False #accepts_cvode
     return accepts_cvode
 
 

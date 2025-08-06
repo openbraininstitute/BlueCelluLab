@@ -93,7 +93,6 @@ class Simulation:
             cvode_minstep=None,
             cvode_maxstep=None,
             dt=0.025,
-            # dt=0.001,  # for testing
             forward_skip=None,
             forward_skip_value=False,
             show_progress=None

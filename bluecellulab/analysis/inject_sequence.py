@@ -124,9 +124,6 @@ def run_multirecordings_stimulus(
 
     simulation = Simulation(cell)
     simulation.run(stimulus.stimulus_time, cvode=cvode)
-    # simulation.run(stimulus.stimulus_time, cvode=False)  # for testing
-    # simulation.run(stimulus.stimulus_time, cvode=cvode, cvode_maxstep=0.1)  # for testing
-    # neuron.h.cvode.statistics()  # for testing
 
     # Retrieve simulation results
     recordings = []
