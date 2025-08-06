@@ -257,16 +257,6 @@ def ais_spiking_test(template_params, rheobase, out_dir, spike_threshold_voltage
         xlim=(IDRestTimings.PRE_DELAY.value, IDRestTimings.PRE_DELAY.value + 100),
     )
 
-    # Check for spiking
-    for recording in recordings:
-        if recording.spike is None or len(recording.spike) == 0:
-            return {
-                "name": name,
-                "passed": False,
-                "validation_details": "Validation failed: No spikes detected in one or both recordings.",
-                "figures": [outpath1, outpath2],
-            }
-
     # Extract spike times using efel
     traces = [
         {

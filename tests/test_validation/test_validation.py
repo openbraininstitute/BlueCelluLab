@@ -189,43 +189,38 @@ def test_ais_spiking_test(
         == "Validation failed: Axon does not spike before soma."
     )
 
-    # no spiking cases
-    rec1 = MagicMock(spike=None)
-    mock_run_multi.return_value = [rec1, rec2]
+    # efel extraction failed case
+    mock_efel.return_value = [{"peak_time": None}, {"peak_time": [2]}]
     result = validation.ais_spiking_test(dummy_template_params, 1.0, dummy_out_dir)
     assert result["passed"] is False
     assert result["name"] == "Simulatable Neuron AIS Spiking Validation"
     assert (
         result["validation_details"]
-        == "Validation failed: No spikes detected in one or both recordings."
+        == "Validation failed: Could not determine spike times for axon or soma."
     )
-    rec1 = MagicMock(spike=[])
-    mock_run_multi.return_value = [rec1, rec2]
+    mock_efel.return_value = [{"peak_time": []}, {"peak_time": [2]}]
     result = validation.ais_spiking_test(dummy_template_params, 1.0, dummy_out_dir)
     assert result["passed"] is False
     assert result["name"] == "Simulatable Neuron AIS Spiking Validation"
     assert (
         result["validation_details"]
-        == "Validation failed: No spikes detected in one or both recordings."
+        == "Validation failed: Could not determine spike times for axon or soma."
     )
-    rec1 = MagicMock(spike=[1])
-    rec2 = MagicMock(spike=None)
-    mock_run_multi.return_value = [rec1, rec2]
+    mock_efel.return_value = [{"peak_time": [1]}, {"peak_time": None}]
     result = validation.ais_spiking_test(dummy_template_params, 1.0, dummy_out_dir)
     assert result["passed"] is False
     assert result["name"] == "Simulatable Neuron AIS Spiking Validation"
     assert (
         result["validation_details"]
-        == "Validation failed: No spikes detected in one or both recordings."
+        == "Validation failed: Could not determine spike times for axon or soma."
     )
-    rec2 = MagicMock(spike=[])
-    mock_run_multi.return_value = [rec1, rec2]
+    mock_efel.return_value = [{"peak_time": [1]}, {"peak_time": []}]
     result = validation.ais_spiking_test(dummy_template_params, 1.0, dummy_out_dir)
     assert result["passed"] is False
     assert result["name"] == "Simulatable Neuron AIS Spiking Validation"
     assert (
         result["validation_details"]
-        == "Validation failed: No spikes detected in one or both recordings."
+        == "Validation failed: Could not determine spike times for axon or soma."
     )
 
     # no axon case
