@@ -26,7 +26,7 @@ import bluecellulab
 from bluecellulab.cell import Cell
 from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.exceptions import UnsteadyCellError
-from bluecellulab.simulation.neuron_globals import NeuronGlobals
+from bluecellulab.simulation.neuron_globals import set_neuron_globals
 from bluecellulab.simulation.parallel import IsolatedProcess
 from bluecellulab.utils import CaptureOutput
 from bluecellulab.type_aliases import NeuronSection
@@ -394,6 +394,15 @@ def check_empty_topology() -> bool:
     return stdout == ['', '']
 
 
+def section_exists(name: str) -> bool:
+    """Check if a section exists in the NEURON simulator.
+
+    Args:
+        name (str): The name of the section to check.
+    """
+    return bool(neuron.h.section_exists(name))
+
+
 def calculate_max_thresh_current(cell: Cell,
                                  threshold_voltage: float = -20.0,
                                  section: str = "soma[0]",
@@ -608,9 +617,7 @@ def compute_memodel_properties(
         celsius (float, optional): Temperature in Celsius. Default is 34.0 C.
     """
     # set initial voltage and temperature
-    neuron_globals = NeuronGlobals.get_instance()
-    neuron_globals.temperature = celsius
-    neuron_globals.v_init = v_init
+    set_neuron_globals(temperature=celsius, v_init=v_init)
 
     # get me-model properties
     holding_current = cell.hypamp if cell.hypamp else 0.0

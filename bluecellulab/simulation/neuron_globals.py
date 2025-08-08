@@ -13,6 +13,7 @@
 # limitations under the License.
 """Module that handles the global NEURON parameters."""
 
+from typing import Optional
 from typing import NamedTuple
 import neuron
 from bluecellulab.circuit.config.sections import Conditions, MechanismConditions
@@ -109,3 +110,14 @@ class NeuronGlobals:
     def load_params(self, params: NeuronGlobalParams) -> None:
         self.temperature = params.temperature
         self.v_init = params.v_init
+
+
+def set_neuron_globals(temperature: Optional[float] = 34.0, v_init: Optional[float] = -80.0) -> None:
+    """Set the global NEURON parameters."""
+    if temperature is None and v_init is None:
+        return
+    neuron_globals = NeuronGlobals.get_instance()
+    if temperature is not None:
+        neuron_globals.temperature = temperature
+    if v_init is not None:
+        neuron_globals.v_init = v_init
