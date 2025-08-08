@@ -20,6 +20,7 @@ from bluecellulab.analysis.inject_sequence import run_stimulus
 from bluecellulab.analysis.plotting import plot_iv_curve, plot_fi_curve
 from bluecellulab.analysis.utils import exp_decay
 from bluecellulab.simulation import Simulation
+from bluecellulab.simulation.neuron_globals import set_neuron_globals
 from bluecellulab.stimulus import StimulusFactory
 from bluecellulab.stimulus.circuit_stimulus_definitions import Hyperpolarizing
 from bluecellulab.tools import calculate_rheobase
@@ -107,7 +108,7 @@ def compute_plot_iv_curve(cell,
 
     if n_processes is None or n_processes > len(steps):
         n_processes = len(steps)
-    with Pool(n_processes) as p:
+    with Pool(n_processes, initializer=set_neuron_globals, initargs=(celsius, v_init)) as p:
         recordings = p.starmap(
             run_stimulus,
             zip(
@@ -119,8 +120,6 @@ def compute_plot_iv_curve(cell,
                 repeat(True),  # add_hypamp
                 repeat(recording_section),
                 repeat(recording_segment),
-                repeat(celsius),
-                repeat(v_init),
             )
         )
 
@@ -230,7 +229,7 @@ def compute_plot_fi_curve(cell,
 
     if n_processes is None or n_processes > len(steps):
         n_processes = len(steps)
-    with Pool(n_processes) as p:
+    with Pool(n_processes, initializer=set_neuron_globals, initargs=(celsius, v_init)) as p:
         recordings = p.starmap(
             run_stimulus,
             zip(
@@ -242,8 +241,6 @@ def compute_plot_fi_curve(cell,
                 repeat(True),  # add_hypamp
                 repeat(recording_section),
                 repeat(recording_segment),
-                repeat(celsius),
-                repeat(v_init),
                 repeat(True),  # enable_spike_detection
                 repeat(threshold_voltage),  # threshold_spike_detection
             )
