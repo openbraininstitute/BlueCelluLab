@@ -26,7 +26,8 @@ from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.circuit.node_id import create_cell_id
 from bluecellulab.exceptions import UnsteadyCellError
 from bluecellulab.tools import calculate_SS_voltage, calculate_SS_voltage_subprocess, calculate_input_resistance, detect_hyp_current, detect_spike, detect_spike_step, detect_spike_step_subprocess, holding_current, holding_current_subprocess, search_threshold_current, template_accepts_cvode, check_empty_topology, calculate_max_thresh_current, calculate_rheobase, validate_section_and_segment
-
+import types
+import bluecellulab.tools as tools_mod
 
 script_dir = Path(__file__).parent
 
@@ -336,3 +337,93 @@ def test_validate_section_and_segment_invalid_segment_position(mock_cell_section
         validate_section_and_segment(mock_cell_sections, 'soma', -0.1)
     with pytest.raises(ValueError, match="Segment position must be between 0.0 and 1.0, got 1.1."):
         validate_section_and_segment(mock_cell_sections, 'axon[0]', 1.1)
+
+
+
+def test_list_segment_variables():
+    """Unit test for list_segment_variables."""
+    from bluecellulab.tools import list_segment_variables
+
+    class MockSeg:
+        def __init__(self, has_v=True):
+            self._ref_v = 1 if has_v else None
+            self._ref_ina = 2
+            self._ref_ik = 3
+            self._ref_gna = 4
+        def __dir__(self):
+            return ['_ref_v', '_ref_ina', '_ref_ik', '_ref_gna']
+
+    class MockSec:
+        def __init__(self, name):
+            self._name = name
+        def name(self):
+            return self._name
+        def __call__(self, x):
+            return MockSeg()
+
+    class MockCell:
+        def __init__(self):
+            self.soma = MockSec('cell[0].soma[0]')
+
+    tools_mod.neuron = types.SimpleNamespace()
+    tools_mod.neuron.h = types.SimpleNamespace()
+    tools_mod.neuron.h.finitialize = lambda: None
+    tools_mod.neuron.h.allsec = lambda: [MockSec('cell[0].soma[0]'), MockSec('cell[0].axon[0]')]
+
+    cell = MockCell()
+    result = list_segment_variables(cell, xs=(0.1, 0.5))
+    # Should return a dict with section names as keys and x positions as subkeys
+    assert 'cell[0].soma[0]' in result
+    assert 0.1 in result['cell[0].soma[0]']
+    assert 'v' in result['cell[0].soma[0]'][0.1]
+    assert 'ina' in result['cell[0].soma[0]'][0.1]
+    assert 'ik' in result['cell[0].soma[0]'][0.1]
+    assert 'gna' in result['cell[0].soma[0]'][0.1]
+
+
+def test_list_mechanism_variables():
+    """Unit test for list_mechanism_variables."""
+    from bluecellulab.tools import list_mechanism_variables
+
+    class MockMech:
+        def __dir__(self):
+            return ['_ref_m', '_ref_h', '_ref_gNaTg']
+
+    class MockSeg:
+        def __init__(self):
+            self.hh = MockMech()
+        def __getattr__(self, name):
+            if name == 'hh':
+                return self.hh
+            raise AttributeError
+
+    class MockSec:
+        def __init__(self, name):
+            self._name = name
+        def name(self):
+            return self._name
+        def __call__(self, x):
+            return MockSeg()
+        def psection(self):
+            return {'density_mechs': {'hh': {'m': 1, 'h': 2, 'gNaTg': 3}}, 'point_mechs': {}}
+
+    class MockCell:
+        def __init__(self):
+            self.soma = MockSec('cell[0].soma[0]')
+
+
+    tools_mod.neuron = types.SimpleNamespace()
+    tools_mod.neuron.h = types.SimpleNamespace()
+    tools_mod.neuron.h.finitialize = lambda: None
+    tools_mod.neuron.h.allsec = lambda: [MockSec('cell[0].soma[0]')]
+
+    cell = MockCell()
+    result = list_mechanism_variables(cell, xs=(0.1,))
+    # Should return a dict with section names as keys and x positions as subkeys
+    assert 'cell[0].soma[0]' in result
+    assert 0.1 in result['cell[0].soma[0]']
+    mech_vars = result['cell[0].soma[0]'][0.1]['mech']
+    assert 'hh' in mech_vars
+    assert 'm' in mech_vars['hh']
+    assert 'h' in mech_vars['hh']
+    assert 'gNaTg' in mech_vars['hh']
