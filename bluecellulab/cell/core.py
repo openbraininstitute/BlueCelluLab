@@ -769,8 +769,8 @@ class Cell(InjectableMixin, PlottableMixin):
         segx: float = 0.5,
         dt: Optional[float] = None
     ) -> None:
-        """
-        Add a recording of any NEURON RANGE variable (e.g., gna, gk, ina) from a given section and segment.
+        """Add a recording of any NEURON RANGE variable (e.g., gna, gk, ina)
+        from a given section and segment.
 
         Args:
             variable: The NEURON variable name to record (e.g., "gna").
@@ -897,8 +897,7 @@ class Cell(InjectableMixin, PlottableMixin):
 
 
 def section_to_variable_recording_str(section, segx: float, variable: str) -> str:
-    """
-    Build an eval'able NEURON pointer string for `add_recording`.
+    """Build an eval'able NEURON pointer string for `add_recording`.
 
     Accepts:
       - top-level vars: "v", "ina", "ik", ...

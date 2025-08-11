@@ -635,7 +635,10 @@ def compute_memodel_properties(
 
 
 def list_segment_variables(cell, xs=(0.1, 0.5, 0.9)):
-    """{section_name: {x: [ 'v', 'ina', 'ik', 'ena', 'gna', ... ]}}"""
+    """{section_name: {x: [ 'v', 'ina', 'ik', 'ena', 'gna', ...
+
+    ]}}
+    """
     try:
         neuron.h.finitialize()
     except Exception:
@@ -658,11 +661,9 @@ def list_segment_variables(cell, xs=(0.1, 0.5, 0.9)):
 
 
 def list_mechanism_variables(cell, xs=(0.1, 0.5, 0.9), include_point_mechs=False):
-    """
-    {section_name: {x: {'mech': {mech: [vars]}, 'point': {pp: [vars]} (opt)}}}
-    Variables are returned as plain names (e.g. 'm','h','gNaTg'); you can
-    build 'mech.var' tokens when recording.
-    """
+    """{section_name: {x: {'mech': {mech: [vars]}, 'point': {pp: [vars]}
+    (opt)}}} Variables are returned as plain names (e.g. 'm','h','gNaTg'); you
+    can build 'mech.var' tokens when recording."""
     try:
         neuron.h.finitialize()
     except Exception:
