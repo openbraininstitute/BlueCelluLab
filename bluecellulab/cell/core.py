@@ -916,4 +916,3 @@ def section_to_variable_recording_str(section, segx: float, variable: str) -> st
         return f"neuron.h.{sec_name}({segx}).{mech}._ref_{var}"
     else:
         return f"neuron.h.{sec_name}({segx})._ref_{variable}"
-

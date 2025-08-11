@@ -339,7 +339,6 @@ def test_validate_section_and_segment_invalid_segment_position(mock_cell_section
         validate_section_and_segment(mock_cell_sections, 'axon[0]', 1.1)
 
 
-
 def test_list_segment_variables():
     """Unit test for list_segment_variables."""
     from bluecellulab.tools import list_segment_variables
@@ -350,14 +349,17 @@ def test_list_segment_variables():
             self._ref_ina = 2
             self._ref_ik = 3
             self._ref_gna = 4
+
         def __dir__(self):
             return ['_ref_v', '_ref_ina', '_ref_ik', '_ref_gna']
 
     class MockSec:
         def __init__(self, name):
             self._name = name
+
         def name(self):
             return self._name
+
         def __call__(self, x):
             return MockSeg()
 
@@ -392,6 +394,7 @@ def test_list_mechanism_variables():
     class MockSeg:
         def __init__(self):
             self.hh = MockMech()
+
         def __getattr__(self, name):
             if name == 'hh':
                 return self.hh
@@ -400,17 +403,19 @@ def test_list_mechanism_variables():
     class MockSec:
         def __init__(self, name):
             self._name = name
+
         def name(self):
             return self._name
+
         def __call__(self, x):
             return MockSeg()
+
         def psection(self):
             return {'density_mechs': {'hh': {'m': 1, 'h': 2, 'gNaTg': 3}}, 'point_mechs': {}}
 
     class MockCell:
         def __init__(self):
             self.soma = MockSec('cell[0].soma[0]')
-
 
     tools_mod.neuron = types.SimpleNamespace()
     tools_mod.neuron.h = types.SimpleNamespace()
