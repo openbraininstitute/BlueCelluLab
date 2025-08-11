@@ -632,3 +632,69 @@ def compute_memodel_properties(
     )
 
     return {"holding_current": holding_current, "rheobase": rheobase, "rin": rin}
+
+
+def list_segment_variables(cell, xs=(0.1, 0.5, 0.9)):
+    """{section_name: {x: [ 'v', 'ina', 'ik', 'ena', 'gna', ... ]}}"""
+    try: neuron.h.finitialize()
+    except Exception: pass
+
+    out = {}
+    prefix = cell.soma.name().split('.')[0]
+    secs = [sec for sec in neuron.h.allsec() if sec.name().startswith(prefix)]
+
+    for sec in secs:
+        xmap = {}
+        for x in xs:
+            seg = sec(x)
+            names = set(a[5:] for a in dir(seg) if a.startswith("_ref_"))
+            if hasattr(seg, "_ref_v"): names.add("v")
+            # (No heuristics needed: we just return whatever NEURON exposes at top level)
+            xmap[float(x)] = sorted(names)
+        out[sec.name()] = xmap
+    return out
+
+
+def list_mechanism_variables(cell, xs=(0.1, 0.5, 0.9), include_point_mechs=False):
+    """
+    {section_name: {x: {'mech': {mech: [vars]}, 'point': {pp: [vars]} (opt)}}}
+    Variables are returned as plain names (e.g. 'm','h','gNaTg'); you can
+    build 'mech.var' tokens when recording.
+    """
+    try: neuron.h.finitialize()
+    except Exception: pass
+
+    out = {}
+    prefix = cell.soma.name().split('.')[0]
+    secs = [sec for sec in neuron.h.allsec() if sec.name().startswith(prefix)]
+
+    for sec in secs:
+        dens  = sec.psection().get("density_mechs", {})
+        points = sec.psection().get("point_mechs", {}) if include_point_mechs else {}
+        xmap = {}
+        for x in xs:
+            seg = sec(x)
+            mech_map = {}
+            for mech, vardict in dens.items():
+                seg_mobj = getattr(seg, mech, None)
+
+                ref_vars = set()
+                if seg_mobj is not None:
+                    ref_vars = {a[5:] for a in dir(seg_mobj) if a.startswith("_ref_")}
+
+                if not ref_vars:
+                    ref_vars = set(vardict.keys())
+
+                if ref_vars:
+                    mech_map[mech] = sorted(ref_vars)
+            pp_map = {}
+            if include_point_mechs:
+                for pp in points.keys():
+                    pobj = getattr(seg, pp, None)
+                    if not pobj: continue
+                    vars_ = sorted({a[5:] for a in dir(pobj) if a.startswith("_ref_")})
+                    if vars_: pp_map[pp] = vars_
+
+            xmap[float(x)] = {"mech": mech_map, **({"point": pp_map} if include_point_mechs else {})}
+        out[sec.name()] = xmap
+    return out
