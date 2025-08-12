@@ -639,11 +639,6 @@ def list_segment_variables(cell, xs=(0.1, 0.5, 0.9)):
 
     ]}}
     """
-    try:
-        neuron.h.finitialize()
-    except Exception:
-        pass
-
     out = {}
     prefix = cell.soma.name().split('.')[0]
     secs = [sec for sec in neuron.h.allsec() if sec.name().startswith(prefix)]
@@ -664,11 +659,6 @@ def list_mechanism_variables(cell, xs=(0.1, 0.5, 0.9), include_point_mechs=False
     """{section_name: {x: {'mech': {mech: [vars]}, 'point': {pp: [vars]}
     (opt)}}} Variables are returned as plain names (e.g. 'm','h','gNaTg'); you
     can build 'mech.var' tokens when recording."""
-    try:
-        neuron.h.finitialize()
-    except Exception:
-        pass
-
     out = {}
     prefix = cell.soma.name().split('.')[0]
     secs = [sec for sec in neuron.h.allsec() if sec.name().startswith(prefix)]

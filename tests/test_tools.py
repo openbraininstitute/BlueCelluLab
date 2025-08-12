@@ -432,3 +432,116 @@ def test_list_mechanism_variables():
     assert 'm' in mech_vars['hh']
     assert 'h' in mech_vars['hh']
     assert 'gNaTg' in mech_vars['hh']
+
+
+def test_list_mechanism_variables_with_point_mechs():
+    """Unit test for list_mechanism_variables with include_point_mechs=True."""
+    from bluecellulab.tools import list_mechanism_variables
+
+    # Mock point process object
+    class MockPoint:
+        def __dir__(self):
+            return ['_ref_var1', '_ref_var2']
+
+    # Mock segment
+    class MockSeg:
+        def __init__(self):
+            self.hh = type('MockMech', (), {'__dir__': lambda self: ['_ref_m', '_ref_h']})()
+            self.pproc = MockPoint()
+
+        def __getattr__(self, name):
+            if name == 'hh':
+                return self.hh
+            if name == 'pproc':
+                return self.pproc
+            raise AttributeError
+
+    class MockSec:
+        def __init__(self, name):
+            self._name = name
+
+        def name(self):
+            return self._name
+
+        def __call__(self, x):
+            return MockSeg()
+
+        def psection(self):
+            return {
+                'density_mechs': {'hh': {'m': 1, 'h': 2}},
+                'point_mechs': {'pproc': {}}
+            }
+
+    class MockCell:
+        def __init__(self):
+            self.soma = MockSec('cell[0].soma[0]')
+
+    import types
+    import bluecellulab.tools as tools_mod
+    tools_mod.neuron = types.SimpleNamespace()
+    tools_mod.neuron.h = types.SimpleNamespace()
+    tools_mod.neuron.h.finitialize = lambda: None
+    tools_mod.neuron.h.allsec = lambda: [MockSec('cell[0].soma[0]')]
+
+    cell = MockCell()
+    result = list_mechanism_variables(cell, xs=(0.1,), include_point_mechs=True)
+    assert 'cell[0].soma[0]' in result
+    assert 0.1 in result['cell[0].soma[0]']
+    assert 'point' in result['cell[0].soma[0]'][0.1]
+    point_vars = result['cell[0].soma[0]'][0.1]['point']
+    assert 'pproc' in point_vars
+    assert 'var1' in point_vars['pproc']
+    assert 'var2' in point_vars['pproc']
+
+
+def test_list_mechanism_variables_fallback_to_vardict():
+    """Test list_mechanism_variables fallback to vardict.keys() when no _ref_ attributes are present."""
+    from bluecellulab.tools import list_mechanism_variables
+
+    # Mock segment mechanism object with no _ref_ attributes
+    class MockMech:
+        def __dir__(self):
+            return []  # No _ref_ attributes
+
+    class MockSeg:
+        def __init__(self):
+            self.hh = MockMech()
+
+        def __getattr__(self, name):
+            if name == 'hh':
+                return self.hh
+            raise AttributeError
+
+    class MockSec:
+        def __init__(self, name):
+            self._name = name
+
+        def name(self):
+            return self._name
+
+        def __call__(self, x):
+            return MockSeg()
+
+        def psection(self):
+            return {'density_mechs': {'hh': {'m': 1, 'h': 2, 'gNaTg': 3}}, 'point_mechs': {}}
+
+    class MockCell:
+        def __init__(self):
+            self.soma = MockSec('cell[0].soma[0]')
+
+    import types
+    import bluecellulab.tools as tools_mod
+    tools_mod.neuron = types.SimpleNamespace()
+    tools_mod.neuron.h = types.SimpleNamespace()
+    tools_mod.neuron.h.finitialize = lambda: None
+    tools_mod.neuron.h.allsec = lambda: [MockSec('cell[0].soma[0]')]
+
+    cell = MockCell()
+    result = list_mechanism_variables(cell, xs=(0.1,))
+    # Should fall back to vardict.keys() for 'hh'
+    assert 'cell[0].soma[0]' in result
+    assert 0.1 in result['cell[0].soma[0]']
+    mech_vars = result['cell[0].soma[0]'][0.1]['mech']
+    assert 'hh' in mech_vars
+    # All vardict keys should be present
+    assert set(mech_vars['hh']) == {'m', 'h', 'gNaTg'}
