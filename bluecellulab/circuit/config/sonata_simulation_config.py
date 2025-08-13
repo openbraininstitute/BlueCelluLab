@@ -125,6 +125,8 @@ class SonataSimulationConfig:
         """Resolve the full path for the report output file."""
         output_dir = Path(self.output_root_path)
         file_name = report_cfg.get("file_name", f"{report_key}.h5")
+        if not file_name.endswith(".h5"):
+            file_name += ".h5"
         return output_dir / file_name
 
     @property
