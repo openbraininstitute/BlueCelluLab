@@ -26,8 +26,8 @@ from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.circuit.node_id import create_cell_id
 from bluecellulab.exceptions import UnsteadyCellError
 from bluecellulab.tools import calculate_SS_voltage, calculate_SS_voltage_subprocess, calculate_input_resistance, detect_hyp_current, detect_spike, detect_spike_step, detect_spike_step_subprocess, holding_current, holding_current_subprocess, search_threshold_current, template_accepts_cvode, check_empty_topology, calculate_max_thresh_current, calculate_rheobase, validate_section_and_segment
-import types
-import bluecellulab.tools as tools_mod
+from bluecellulab.tools import list_segment_ion_variables, list_segment_mechanism_variables
+
 
 script_dir = Path(__file__).parent
 
@@ -339,19 +339,16 @@ def test_validate_section_and_segment_invalid_segment_position(mock_cell_section
         validate_section_and_segment(mock_cell_sections, 'axon[0]', 1.1)
 
 
-def test_list_segment_variables():
-    """Unit test for list_segment_variables."""
-    from bluecellulab.tools import list_segment_variables
-
+def test_list_segment_ion_variables():
+    """Unit test for list_segment_ion_variables."""
     class MockSeg:
         def __init__(self, has_v=True):
-            self._ref_v = 1 if has_v else None
+            if has_v:
+                self._ref_v = 1
             self._ref_ina = 2
             self._ref_ik = 3
             self._ref_gna = 4
-
-        def __dir__(self):
-            return ['_ref_v', '_ref_ina', '_ref_ik', '_ref_gna']
+            self._ref_ena = -65
 
     class MockSec:
         def __init__(self, name):
@@ -365,31 +362,31 @@ def test_list_segment_variables():
 
     class MockCell:
         def __init__(self):
-            self.soma = MockSec('cell[0].soma[0]')
-
-    tools_mod.neuron = types.SimpleNamespace()
-    tools_mod.neuron.h = types.SimpleNamespace()
-    tools_mod.neuron.h.finitialize = lambda: None
-    tools_mod.neuron.h.allsec = lambda: [MockSec('cell[0].soma[0]'), MockSec('cell[0].axon[0]')]
+            self.sections = {
+                'cell[0].soma[0]': MockSec('cell[0].soma[0]'),
+                'cell[0].axon[0]': MockSec('cell[0].axon[0]'),
+            }
 
     cell = MockCell()
-    result = list_segment_variables(cell, xs=(0.1, 0.5))
-    # Should return a dict with section names as keys and x positions as subkeys
+    result = list_segment_ion_variables(cell, xs=(0.1, 0.5))
+    # Should return dict with section names as keys and x positions as subkeys
     assert 'cell[0].soma[0]' in result
     assert 0.1 in result['cell[0].soma[0]']
-    assert 'v' in result['cell[0].soma[0]'][0.1]
-    assert 'ina' in result['cell[0].soma[0]'][0.1]
-    assert 'ik' in result['cell[0].soma[0]'][0.1]
-    assert 'gna' in result['cell[0].soma[0]'][0.1]
+    vars_at_seg = result['cell[0].soma[0]'][0.1]
+    assert 'v' in vars_at_seg
+    assert 'ina' in vars_at_seg
+    assert 'ik' in vars_at_seg
+    assert 'gna' in vars_at_seg
+    assert 'ena' in vars_at_seg
 
 
 def test_list_mechanism_variables():
     """Unit test for list_mechanism_variables."""
-    from bluecellulab.tools import list_mechanism_variables
-
     class MockMech:
-        def __dir__(self):
-            return ['_ref_m', '_ref_h', '_ref_gNaTg']
+        def __init__(self):
+            self._ref_m = 1
+            self._ref_h = 2
+            self._ref_gNaTg = 3
 
     class MockSeg:
         def __init__(self):
@@ -411,19 +408,17 @@ def test_list_mechanism_variables():
             return MockSeg()
 
         def psection(self):
+            # vardict keys must match those we want to check via hasattr
             return {'density_mechs': {'hh': {'m': 1, 'h': 2, 'gNaTg': 3}}, 'point_mechs': {}}
 
     class MockCell:
         def __init__(self):
-            self.soma = MockSec('cell[0].soma[0]')
-
-    tools_mod.neuron = types.SimpleNamespace()
-    tools_mod.neuron.h = types.SimpleNamespace()
-    tools_mod.neuron.h.finitialize = lambda: None
-    tools_mod.neuron.h.allsec = lambda: [MockSec('cell[0].soma[0]')]
+            self.sections = {
+                'cell[0].soma[0]': MockSec('cell[0].soma[0]')
+            }
 
     cell = MockCell()
-    result = list_mechanism_variables(cell, xs=(0.1,))
+    result = list_segment_mechanism_variables(cell, xs=(0.1,))
     # Should return a dict with section names as keys and x positions as subkeys
     assert 'cell[0].soma[0]' in result
     assert 0.1 in result['cell[0].soma[0]']
@@ -436,17 +431,22 @@ def test_list_mechanism_variables():
 
 def test_list_mechanism_variables_with_point_mechs():
     """Unit test for list_mechanism_variables with include_point_mechs=True."""
-    from bluecellulab.tools import list_mechanism_variables
-
     # Mock point process object
     class MockPoint:
-        def __dir__(self):
-            return ['_ref_var1', '_ref_var2']
+        def __init__(self):
+            self._ref_var1 = 1
+            self._ref_var2 = 2
+
+    # Mock density mechanism object
+    class MockMech:
+        def __init__(self):
+            self._ref_m = 1
+            self._ref_h = 2
 
     # Mock segment
     class MockSeg:
         def __init__(self):
-            self.hh = type('MockMech', (), {'__dir__': lambda self: ['_ref_m', '_ref_h']})()
+            self.hh = MockMech()
             self.pproc = MockPoint()
 
         def __getattr__(self, name):
@@ -469,79 +469,23 @@ def test_list_mechanism_variables_with_point_mechs():
         def psection(self):
             return {
                 'density_mechs': {'hh': {'m': 1, 'h': 2}},
-                'point_mechs': {'pproc': {}}
+                'point_mechs': {'pproc': {'var1': 1, 'var2': 2}}
             }
 
     class MockCell:
         def __init__(self):
-            self.soma = MockSec('cell[0].soma[0]')
-
-    import types
-    import bluecellulab.tools as tools_mod
-    tools_mod.neuron = types.SimpleNamespace()
-    tools_mod.neuron.h = types.SimpleNamespace()
-    tools_mod.neuron.h.finitialize = lambda: None
-    tools_mod.neuron.h.allsec = lambda: [MockSec('cell[0].soma[0]')]
+            self.sections = {
+                'cell[0].soma[0]': MockSec('cell[0].soma[0]')
+            }
 
     cell = MockCell()
-    result = list_mechanism_variables(cell, xs=(0.1,), include_point_mechs=True)
+    result = list_segment_mechanism_variables(cell, xs=(0.1,), include_point_mechs=True)
+
     assert 'cell[0].soma[0]' in result
     assert 0.1 in result['cell[0].soma[0]']
     assert 'point' in result['cell[0].soma[0]'][0.1]
+
     point_vars = result['cell[0].soma[0]'][0.1]['point']
     assert 'pproc' in point_vars
     assert 'var1' in point_vars['pproc']
     assert 'var2' in point_vars['pproc']
-
-
-def test_list_mechanism_variables_fallback_to_vardict():
-    """Test list_mechanism_variables fallback to vardict.keys() when no _ref_ attributes are present."""
-    from bluecellulab.tools import list_mechanism_variables
-
-    # Mock segment mechanism object with no _ref_ attributes
-    class MockMech:
-        def __dir__(self):
-            return []  # No _ref_ attributes
-
-    class MockSeg:
-        def __init__(self):
-            self.hh = MockMech()
-
-        def __getattr__(self, name):
-            if name == 'hh':
-                return self.hh
-            raise AttributeError
-
-    class MockSec:
-        def __init__(self, name):
-            self._name = name
-
-        def name(self):
-            return self._name
-
-        def __call__(self, x):
-            return MockSeg()
-
-        def psection(self):
-            return {'density_mechs': {'hh': {'m': 1, 'h': 2, 'gNaTg': 3}}, 'point_mechs': {}}
-
-    class MockCell:
-        def __init__(self):
-            self.soma = MockSec('cell[0].soma[0]')
-
-    import types
-    import bluecellulab.tools as tools_mod
-    tools_mod.neuron = types.SimpleNamespace()
-    tools_mod.neuron.h = types.SimpleNamespace()
-    tools_mod.neuron.h.finitialize = lambda: None
-    tools_mod.neuron.h.allsec = lambda: [MockSec('cell[0].soma[0]')]
-
-    cell = MockCell()
-    result = list_mechanism_variables(cell, xs=(0.1,))
-    # Should fall back to vardict.keys() for 'hh'
-    assert 'cell[0].soma[0]' in result
-    assert 0.1 in result['cell[0].soma[0]']
-    mech_vars = result['cell[0].soma[0]'][0.1]['mech']
-    assert 'hh' in mech_vars
-    # All vardict keys should be present
-    assert set(mech_vars['hh']) == {'m', 'h', 'gNaTg'}
