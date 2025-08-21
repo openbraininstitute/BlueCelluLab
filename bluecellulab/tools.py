@@ -635,9 +635,8 @@ def compute_memodel_properties(
 
 
 def list_segment_ion_variables(cell, xs=(0.5,)):
-    """
-    Enumerate top-level ionic variables (e.g. v, ina, ik, gna)
-    available for each section at specified segment locations.
+    """Enumerate top-level ionic variables (e.g. v, ina, ik, gna) available for
+    each section at specified segment locations.
 
     Includes:
       - Membrane potential (v)
@@ -672,8 +671,7 @@ def list_segment_ion_variables(cell, xs=(0.5,)):
 
 
 def list_segment_mechanism_variables(cell, xs=(0.5,), include_point_mechs=False):
-    """
-    Enumerate mechanism-scoped recordables per section/segment.
+    """Enumerate mechanism-scoped recordables per section/segment.
 
     Returns:
       {
