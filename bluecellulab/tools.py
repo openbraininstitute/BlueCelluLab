@@ -634,64 +634,104 @@ def compute_memodel_properties(
     return {"holding_current": holding_current, "rheobase": rheobase, "rin": rin}
 
 
-def list_segment_variables(cell, xs=(0.1, 0.5, 0.9)):
-    """{section_name: {x: [ 'v', 'ina', 'ik', 'ena', 'gna', ...
+def list_segment_ion_variables(cell, xs=(0.5,)):
+    """
+    Enumerate top-level ionic variables (e.g. v, ina, ik, gna)
+    available for each section at specified segment locations.
 
-    ]}}
+    Includes:
+      - Membrane potential (v)
+      - Standard ionic currents (ina, ik, ica, icl)
+      - Reversal potentials (ena, ek, eca, ecl)
+      - Conductances if exposed (gna, gk, gca, gcl)
     """
     out = {}
-    prefix = cell.soma.name().split('.')[0]
-    secs = [sec for sec in neuron.h.allsec() if sec.name().startswith(prefix)]
-
-    for sec in secs:
+    for sec in cell.sections.values():
         xmap = {}
         for x in xs:
             seg = sec(x)
-            names = set(a[5:] for a in dir(seg) if a.startswith("_ref_"))
+
+            vars_ = []
+            # voltage always there
             if hasattr(seg, "_ref_v"):
-                names.add("v")
-            xmap[float(x)] = sorted(names)
+                vars_.append("v")
+
+            # ionic currents (present if mechanisms with ions are inserted)
+            for ion in ("na", "k", "ca", "cl"):
+                if hasattr(seg, f"_ref_i{ion}"):
+                    vars_.append(f"i{ion}")
+                if hasattr(seg, f"_ref_e{ion}"):
+                    vars_.append(f"e{ion}")
+                if hasattr(seg, f"_ref_g{ion}"):
+                    vars_.append(f"g{ion}")
+
+            xmap[float(x)] = sorted(set(vars_))
+
         out[sec.name()] = xmap
     return out
 
 
-def list_mechanism_variables(cell, xs=(0.1, 0.5, 0.9), include_point_mechs=False):
-    """{section_name: {x: {'mech': {mech: [vars]}, 'point': {pp: [vars]}
-    (opt)}}} Variables are returned as plain names (e.g. 'm','h','gNaTg'); you
-    can build 'mech.var' tokens when recording."""
-    out = {}
-    prefix = cell.soma.name().split('.')[0]
-    secs = [sec for sec in neuron.h.allsec() if sec.name().startswith(prefix)]
+def list_segment_mechanism_variables(cell, xs=(0.5,), include_point_mechs=False):
+    """
+    Enumerate mechanism-scoped recordables per section/segment.
 
-    for sec in secs:
-        dens = sec.psection().get("density_mechs", {})
-        points = sec.psection().get("point_mechs", {}) if include_point_mechs else {}
+    Returns:
+      {
+        "<secname>": {
+          x: {
+            "mech":  { "<density_mech>": [<vars>], ... },
+            "point": { "<point_mech>"  : [<vars>], ... }  # present only if include_point_mechs
+          }, ...
+        }, ...
+      }
+
+    Notes:
+    - Variable names come from psection()['density_mechs'] / ['point_mechs'] and
+      are kept only if the corresponding _ref_<var> exists on the segment object.
+    - This lists mechanism-scoped variables (e.g., 'm','h','gNaTg','ik','ina') under
+      their mechanism keys. Build 'mech.var' tokens when recording.
+    """
+    out = {}
+    for sec in cell.sections.values():
+        dens = sec.psection().get("density_mechs", {}) or {}
+        points = sec.psection().get("point_mechs", {}) or {}
         xmap = {}
+
         for x in xs:
             seg = sec(x)
+
+            # Density mechanisms
             mech_map = {}
             for mech, vardict in dens.items():
-                seg_mobj = getattr(seg, mech, None)
+                mobj = getattr(seg, mech, None)
+                if mobj is None:
+                    continue
+                # take var names advertised by psection(), keep those that are actually _ref_-exposed
+                vars_found = sorted(
+                    v for v in vardict.keys()
+                    if hasattr(mobj, f"_ref_{v}")
+                )
+                if vars_found:
+                    mech_map[mech] = vars_found
 
-                ref_vars = set()
-                if seg_mobj is not None:
-                    ref_vars = {a[5:] for a in dir(seg_mobj) if a.startswith("_ref_")}
+            entry = {"mech": mech_map}
 
-                if not ref_vars:
-                    ref_vars = set(vardict.keys())
-
-                if ref_vars:
-                    mech_map[mech] = sorted(ref_vars)
-            pp_map = {}
+            # Point processes
             if include_point_mechs:
-                for pp in points.keys():
+                pp_map = {}
+                for pp, vardict in points.items():
                     pobj = getattr(seg, pp, None)
-                    if not pobj:
+                    if pobj is None:
                         continue
-                    vars_ = sorted({a[5:] for a in dir(pobj) if a.startswith("_ref_")})
-                    if vars_:
-                        pp_map[pp] = vars_
+                    vars_found = sorted(
+                        v for v in vardict.keys()
+                        if hasattr(pobj, f"_ref_{v}")
+                    )
+                    if vars_found:
+                        pp_map[pp] = vars_found
+                entry["point"] = pp_map
 
-            xmap[float(x)] = {"mech": mech_map, **({"point": pp_map} if include_point_mechs else {})}
+            xmap[float(x)] = entry
+
         out[sec.name()] = xmap
     return out
