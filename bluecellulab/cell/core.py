@@ -897,7 +897,7 @@ class Cell(InjectableMixin, PlottableMixin):
 
 
 def section_to_variable_recording_str(section, segx: float, variable: str) -> str:
-    """Build an eval'able NEURON pointer string for `add_recording`.
+    """Build an evaluable NEURON pointer string for `add_recording`.
 
     Accepts:
       - top-level vars: "v", "ina", "ik", ...
