@@ -25,11 +25,13 @@ from bluecellulab.analysis.analysis import compute_plot_iv_curve
 from bluecellulab.analysis.inject_sequence import run_multirecordings_stimulus
 from bluecellulab.analysis.inject_sequence import run_stimulus
 from bluecellulab.cell.core import Cell
-from bluecellulab.simulation.neuron_globals import NeuronGlobals
+from bluecellulab.simulation.neuron_globals import set_neuron_globals
 from bluecellulab.stimulus.factory import IDRestTimings
 from bluecellulab.stimulus.factory import StimulusFactory
 from bluecellulab.tools import calculate_input_resistance
 from bluecellulab.tools import calculate_rheobase
+from bluecellulab.tools import section_exists
+from bluecellulab.utils import NestedPool
 
 logger = logging.getLogger(__name__)
 
@@ -83,10 +85,10 @@ def plot_traces(recordings, out_dir, fname, title, labels=None, xlim=None):
     return outpath
 
 
-def spiking_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30.):
+def spiking_test(template_params, rheobase, out_dir, spike_threshold_voltage=-40.):
     """Spiking test: cell should spike."""
     stim_factory = StimulusFactory(dt=1.0)
-    step_stimulus = stim_factory.idrest(threshold_current=rheobase, threshold_percentage=200)
+    step_stimulus = stim_factory.idrest(threshold_current=rheobase, threshold_percentage=130)
     recording = run_stimulus(
         template_params,
         step_stimulus,
@@ -103,7 +105,7 @@ def spiking_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30
         recording,
         out_dir,
         fname="spiking_test.pdf",
-        title="Spiking Test - Step at 200% of Rheobase",
+        title="Spiking Test - Step at 130% of Rheobase",
     )
 
     notes = "Validation passed: Spikes detected." if passed else "Validation failed: No spikes detected."
@@ -135,6 +137,7 @@ def depolarization_block_test(template_params, rheobase, out_dir):
         "stim_start": [IDRestTimings.PRE_DELAY.value],
         "stim_end": [IDRestTimings.PRE_DELAY.value + IDRestTimings.DURATION.value],
     }
+    efel.set_setting("depol_block_min_duration", 150)
     features_results = efel.get_feature_values([trace], ["depol_block_bool"])
     depol_block = bool(features_results[0]["depol_block_bool"][0])
 
@@ -167,7 +170,14 @@ def bpap_test(template_params, rheobase, out_dir="./"):
     bpap = BPAP(Cell.from_template_parameters(template_params))
     bpap.run(duration=1500, amplitude=amplitude)
     soma_amp, dend_amps, dend_dist, apic_amps, apic_dist = bpap.get_amplitudes_and_distances()
-    validated, notes = bpap.validate(soma_amp, dend_amps, dend_dist, apic_amps, apic_dist)
+    validated, notes = bpap.validate(
+        soma_amp,
+        dend_amps,
+        dend_dist,
+        apic_amps,
+        apic_dist,
+        validate_with_fit=False
+    )
     outpath_amp_dist = bpap.plot_amp_vs_dist(
         soma_amp,
         dend_amps,
@@ -177,7 +187,8 @@ def bpap_test(template_params, rheobase, out_dir="./"):
         show_figure=False,
         save_figure=True,
         output_dir=out_dir,
-        output_fname="bpap.pdf"
+        output_fname="bpap.pdf",
+        do_fit=False,
     )
     outpath_recordings = bpap.plot_recordings(
         show_figure=False,
@@ -194,11 +205,11 @@ def bpap_test(template_params, rheobase, out_dir="./"):
     }
 
 
-def ais_spiking_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30.):
+def ais_spiking_test(template_params, rheobase, out_dir, spike_threshold_voltage=-40.):
     """AIS spiking test: axon should spike before soma."""
     name = "Simulatable Neuron AIS Spiking Validation"
     # Check that the cell has an axon
-    if len(Cell.from_template_parameters(template_params).axonal) == 0:
+    if len(Cell.from_template_parameters(template_params).axonal) == 0 or not section_exists("axon[0]"):
         return {
             "name": name,
             "passed": True,
@@ -216,8 +227,7 @@ def ais_spiking_test(template_params, rheobase, out_dir, spike_threshold_voltage
         0.5,
         add_hypamp=True,
         recording_locations=[("axon[0]", 0.5), ("soma[0]", 0.5)],
-        enable_spike_detection=True,
-        threshold_spike_detection=spike_threshold_voltage,
+        enable_spike_detection=False,
     )
     axon_recording, soma_recording = recordings
 
@@ -238,23 +248,37 @@ def ais_spiking_test(template_params, rheobase, out_dir, spike_threshold_voltage
         xlim=(IDRestTimings.PRE_DELAY.value, IDRestTimings.PRE_DELAY.value + 100),
     )
 
-    # Check for spiking
-    for recording in recordings:
-        if recording.spike is None or len(recording.spike) == 0:
-            return {
-                "name": name,
-                "passed": False,
-                "validation_details": "Validation failed: No spikes detected in one or both recordings.",
-                "figures": [outpath1, outpath2],
-            }
+    # Extract spike times using efel
+    traces = [
+        {
+            "T": axon_recording.time,
+            "V": axon_recording.voltage,
+            "stim_start": [IDRestTimings.PRE_DELAY.value],
+            "stim_end": [IDRestTimings.PRE_DELAY.value + IDRestTimings.DURATION.value],
+        },
+        {
+            "T": soma_recording.time,
+            "V": soma_recording.voltage,
+            "stim_start": [IDRestTimings.PRE_DELAY.value],
+            "stim_end": [IDRestTimings.PRE_DELAY.value + IDRestTimings.DURATION.value],
+        }
+    ]
+    efel.set_setting("Threshold", spike_threshold_voltage)
+    features_results = efel.get_feature_values(traces, ["peak_time"])
+    axon_spike_time = features_results[0]["peak_time"]
+    soma_spike_time = features_results[1]["peak_time"]
 
     # Check if axon spike happens before soma spike
-    passed = bool(axon_recording.spike[0] < soma_recording.spike[0])
-    notes = (
-        "Validation passed: Axon spikes before soma."
-        if passed
-        else "Validation failed: Axon does not spike before soma."
-    )
+    if axon_spike_time is None or soma_spike_time is None or len(axon_spike_time) == 0 or len(soma_spike_time) == 0:
+        passed = False
+        notes = "Validation failed: Could not determine spike times for axon or soma."
+    else:
+        passed = bool(axon_spike_time[0] <= soma_spike_time[0])
+        notes = (
+            "Validation passed: Axon spikes before soma."
+            if passed
+            else "Validation failed: Axon does not spike before soma."
+        )
     return {
         "name": name,
         "passed": passed,
@@ -337,7 +361,15 @@ def rin_test(rin):
     }
 
 
-def iv_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30., n_processes=None):
+def iv_test(
+    template_params,
+    rheobase,
+    out_dir,
+    spike_threshold_voltage=-40.,
+    n_processes=None,
+    celsius=None,
+    v_init=None
+):
     """IV curve should have a positive slope."""
     name = "Simulatable Neuron IV Curve Validation"
     amps, steady_states = compute_plot_iv_curve(
@@ -350,6 +382,8 @@ def iv_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30., n_
         output_dir=out_dir,
         output_fname="iv_curve.pdf",
         n_processes=n_processes,
+        celsius=celsius,
+        v_init=v_init,
     )
 
     outpath = pathlib.Path(out_dir) / "iv_curve.pdf"
@@ -377,12 +411,21 @@ def iv_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30., n_
     }
 
 
-def fi_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30., n_processes=None):
+def fi_test(
+    template_params,
+    rheobase,
+    out_dir,
+    spike_threshold_voltage=-40.,
+    n_processes=None,
+    celsius=None,
+    v_init=None,
+):
     """FI curve should have a positive slope."""
     name = "Simulatable Neuron FI Curve Validation"
     amps, spike_counts = compute_plot_fi_curve(
         Cell.from_template_parameters(template_params),
         rheobase=rheobase,
+        max_current=3. * rheobase,
         threshold_voltage=spike_threshold_voltage,
         nb_bins=5,
         show_figure=False,
@@ -390,6 +433,8 @@ def fi_test(template_params, rheobase, out_dir, spike_threshold_voltage=-30., n_
         output_dir=out_dir,
         output_fname="fi_curve.pdf",
         n_processes=n_processes,
+        celsius=celsius,
+        v_init=v_init,
     )
 
     outpath = pathlib.Path(out_dir) / "fi_curve.pdf"
@@ -449,7 +494,7 @@ def thumbnail_test(template_params, rheobase, out_dir):
 def run_validations(
     cell,
     cell_name,
-    spike_threshold_voltage=-30,
+    spike_threshold_voltage=-40,
     v_init=-80.0,
     celsius=34.0,
     output_dir="./memodel_validation_figures",
@@ -461,6 +506,7 @@ def run_validations(
         cell (Cell): The cell to validate.
         cell_name (str): The name of the cell, used in the output directory.
         spike_threshold_voltage (float): The voltage threshold for spike detection.
+            Default value in this module is -40 mV because some cells do not reach -20 mv.
         v_init: Initial membrane potential. Default is -80.0 mV.
         celsius: Temperature in Celsius. Default is 34.0.
         output_dir (str): The directory to save the validation figures.
@@ -472,9 +518,7 @@ def run_validations(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # set initial voltage and temperature
-    neuron_globals = NeuronGlobals.get_instance()
-    neuron_globals.temperature = celsius
-    neuron_globals.v_init = v_init
+    set_neuron_globals(temperature=celsius, v_init=v_init)
 
     # get me-model properties
     holding_current = cell.hypamp if cell.hypamp else 0.0
@@ -489,12 +533,14 @@ def run_validations(
         morphology_path=cell.template_params.morph_filepath,
         template_format=cell.template_params.template_format,
         emodel_properties=cell.template_params.emodel_properties,
+        current_delta=-0.2 * rheobase,
     )
 
     logger.debug("Running validations...")
-    from bluecellulab.utils import NestedPool
     val_n_processes = n_processes if n_processes is not None else 7
-    with NestedPool(processes=val_n_processes) as pool:
+    with NestedPool(
+        processes=val_n_processes, initializer=set_neuron_globals, initargs=(celsius, v_init)
+    ) as pool:
         # Validation 1: Spiking Test
         spiking_test_result_future = pool.apply_async(
             spiking_test,
@@ -550,10 +596,14 @@ def run_validations(
 
     # IV and FI tests are outside of nestedpool, because they use multiprocessing internaly
     # Validation 8: IV Test
-    iv_test_result = iv_test(cell.template_params, rheobase, out_dir, spike_threshold_voltage, n_processes)
+    iv_test_result = iv_test(
+        cell.template_params, rheobase, out_dir, spike_threshold_voltage, n_processes, celsius, v_init
+    )
 
     # Validation 9: FI Test
-    fi_test_result = fi_test(cell.template_params, rheobase, out_dir, spike_threshold_voltage, n_processes)
+    fi_test_result = fi_test(
+        cell.template_params, rheobase, out_dir, spike_threshold_voltage, n_processes, celsius, v_init
+    )
 
     return {
         "memodel_properties": {

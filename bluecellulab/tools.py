@@ -26,7 +26,7 @@ import bluecellulab
 from bluecellulab.cell import Cell
 from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.exceptions import UnsteadyCellError
-from bluecellulab.simulation.neuron_globals import NeuronGlobals
+from bluecellulab.simulation.neuron_globals import set_neuron_globals
 from bluecellulab.simulation.parallel import IsolatedProcess
 from bluecellulab.utils import CaptureOutput
 
@@ -39,7 +39,7 @@ def calculate_input_resistance(
     morphology_path: str | Path,
     template_format: str,
     emodel_properties: EmodelProperties | None,
-    current_delta: float = 0.01,
+    current_delta: float = -0.02,
     section: str = "soma[0]",
     segx: float = 0.5
 ) -> float:
@@ -393,6 +393,15 @@ def check_empty_topology() -> bool:
     return stdout == ['', '']
 
 
+def section_exists(name: str) -> bool:
+    """Check if a section exists in the NEURON simulator.
+
+    Args:
+        name (str): The name of the section to check.
+    """
+    return bool(neuron.h.section_exists(name))
+
+
 def calculate_max_thresh_current(cell: Cell,
                                  threshold_voltage: float = -20.0,
                                  section: str = "soma[0]",
@@ -538,9 +547,7 @@ def compute_memodel_properties(
         celsius (float, optional): Temperature in Celsius. Default is 34.0 C.
     """
     # set initial voltage and temperature
-    neuron_globals = NeuronGlobals.get_instance()
-    neuron_globals.temperature = celsius
-    neuron_globals.v_init = v_init
+    set_neuron_globals(temperature=celsius, v_init=v_init)
 
     # get me-model properties
     holding_current = cell.hypamp if cell.hypamp else 0.0
@@ -555,3 +562,108 @@ def compute_memodel_properties(
     )
 
     return {"holding_current": holding_current, "rheobase": rheobase, "rin": rin}
+
+
+def list_segment_ion_variables(cell, xs=(0.5,)):
+    """Enumerate top-level ionic variables (e.g. v, ina, ik, gna) available for
+    each section at specified segment locations.
+
+    Includes:
+      - Membrane potential (v)
+      - Standard ionic currents (ina, ik, ica, icl)
+      - Reversal potentials (ena, ek, eca, ecl)
+      - Conductances if exposed (gna, gk, gca, gcl)
+    """
+    out = {}
+    for sec in cell.sections.values():
+        xmap = {}
+        for x in xs:
+            seg = sec(x)
+
+            vars_ = []
+            # voltage always there
+            if hasattr(seg, "_ref_v"):
+                vars_.append("v")
+
+            # ionic currents (present if mechanisms with ions are inserted)
+            for ion in ("na", "k", "ca", "cl"):
+                if hasattr(seg, f"_ref_i{ion}"):
+                    vars_.append(f"i{ion}")
+                if hasattr(seg, f"_ref_e{ion}"):
+                    vars_.append(f"e{ion}")
+                if hasattr(seg, f"_ref_g{ion}"):
+                    vars_.append(f"g{ion}")
+
+            xmap[float(x)] = sorted(set(vars_))
+
+        out[sec.name()] = xmap
+    return out
+
+
+def list_segment_mechanism_variables(cell, xs=(0.5,), include_point_mechs=False):
+    """Enumerate mechanism-scoped recordables per section/segment.
+
+    Returns:
+        dict: A nested dictionary of the form::
+
+            {
+                "<secname>": {
+                    x: {
+                        "mech": {
+                            "<density_mech>": [<vars>],
+                            ...
+                        },
+                        "point": {
+                            "<point_mech>": [<vars>],
+                            ...
+                        }  # present only if include_point_mechs
+                    },
+                    ...
+                },
+                ...
+            }
+    """
+    out = {}
+    for sec in cell.sections.values():
+        dens = sec.psection().get("density_mechs", {}) or {}
+        points = sec.psection().get("point_mechs", {}) or {}
+        xmap = {}
+
+        for x in xs:
+            seg = sec(x)
+
+            # Density mechanisms
+            mech_map = {}
+            for mech, vardict in dens.items():
+                mobj = getattr(seg, mech, None)
+                if mobj is None:
+                    continue
+                # take var names advertised by psection(), keep those that are actually _ref_-exposed
+                vars_found = sorted(
+                    v for v in vardict.keys()
+                    if hasattr(mobj, f"_ref_{v}")
+                )
+                if vars_found:
+                    mech_map[mech] = vars_found
+
+            entry = {"mech": mech_map}
+
+            # Point processes
+            if include_point_mechs:
+                pp_map = {}
+                for pp, vardict in points.items():
+                    pobj = getattr(seg, pp, None)
+                    if pobj is None:
+                        continue
+                    vars_found = sorted(
+                        v for v in vardict.keys()
+                        if hasattr(pobj, f"_ref_{v}")
+                    )
+                    if vars_found:
+                        pp_map[pp] = vars_found
+                entry["point"] = pp_map
+
+            xmap[float(x)] = entry
+
+        out[sec.name()] = xmap
+    return out

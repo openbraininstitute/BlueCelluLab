@@ -316,6 +316,7 @@ class Cell(InjectableMixin, PlottableMixin):
         """Adds recording to AIS."""
         self.add_recording("self.axonal[1](0.5)._ref_v", dt=dt)
 
+    @deprecated("Use add_variable_recording('v', ...) instead.")
     def add_voltage_recording(
         self, section: Optional[NeuronSection] = None, segx: float = 0.5, dt: Optional[float] = None
     ) -> None:
@@ -334,6 +335,7 @@ class Cell(InjectableMixin, PlottableMixin):
         var_name = section_to_voltage_recording_str(section, segx)
         self.add_recording(var_name, dt)
 
+    @deprecated("Use get_variable_recording('v', ...) instead.")
     def get_voltage_recording(
         self, section: Optional[NeuronSection] = None, segx: float = 0.5
     ) -> np.ndarray:
@@ -760,17 +762,66 @@ class Cell(InjectableMixin, PlottableMixin):
         """Get a vector of AIS voltage."""
         return self.get_recording('self.axonal[1](0.5)._ref_v')
 
-    def add_variable_recording(self, variable: str, section, segx):
-        if variable == "v":
-            self.add_voltage_recording(section, segx)
-        else:
-            raise ValueError(f"Unsupported variable for recording: {variable}")
+    def add_variable_recording(
+        self,
+        variable: str,
+        section: Optional[NeuronSection] = None,
+        segx: float = 0.5,
+        dt: Optional[float] = None
+    ) -> None:
+        """Add a recording of any NEURON RANGE variable (e.g., gna, gk, ina)
+        from a given section and segment.
 
-    def get_variable_recording(self, variable: str, section, segx) -> np.ndarray:
-        if variable == "v":
-            return self.get_voltage_recording(section=section, segx=segx)
+        Args:
+            variable: The NEURON variable name to record (e.g., "gna").
+            section: The section to record from (defaults to soma).
+            segx: Segment position between 0 and 1.
+            dt: Optional recording time step.
+        """
+
+        if section is None:
+            section = self.soma
+
+        # Optional: validate before constructing the string
+        seg = section(segx)
+        if "." in variable:
+            mech, var = variable.split(".", 1)
+            mobj = getattr(seg, mech, None)
+            if mobj is None or not hasattr(mobj, f"_ref_{var}"):
+                raise ValueError(
+                    f"'{variable}' not recordable at {section.name()}({segx}). "
+                    f"Mechanisms here: {list(section.psection()['density_mechs'].keys())}"
+                )
         else:
-            raise ValueError(f"Unsupported variable '{variable}'")
+            if not hasattr(seg, f"_ref_{variable}"):
+                raise ValueError(
+                    f"'{variable}' not recordable at {section.name()}({segx}). "
+                    f"(Top-level vars are typically v/ina/ik/ica)"
+                )
+
+        var_name = section_to_variable_recording_str(section, segx, variable)
+        self.add_recording(var_name, dt)
+
+    def get_variable_recording(
+        self, variable: str, section: Optional[NeuronSection], segx: float
+    ) -> np.ndarray:
+        """Get a recording of any variable recorded from a section and segment.
+
+        Args:
+            variable: The name of the recorded variable (e.g., 'v', 'gna').
+            section: The NEURON section object.
+            segx: Segment location from 0 to 1.
+
+        Returns:
+            NumPy array of recorded values.
+
+        Raises:
+            ValueError: If the recording is not found.
+        """
+        if section is None:
+            section = self.soma
+        recording_name = section_to_variable_recording_str(section, segx, variable)
+        return self.get_recording(recording_name)
 
     @property
     def n_segments(self) -> int:
@@ -973,12 +1024,14 @@ class Cell(InjectableMixin, PlottableMixin):
         node_id = self.cell_id.id
 
         for sec, sec_name, seg in recording_sites:
+            print("section", sec_name, "seg", seg)
+            print("sec", sec)
             try:
                 self.add_variable_recording(variable=variable_name, section=sec, segx=seg)
                 logger.info(
                     f"Recording '{variable_name}' at {sec_name}({seg}) on GID {node_id} for report '{report_name}'"
                 )
-            except AttributeError:
+            except ValueError:
                 logger.warning(
                     f"Recording for variable '{variable_name}' is not implemented in Cell."
                 )
@@ -987,3 +1040,24 @@ class Cell(InjectableMixin, PlottableMixin):
                 logger.warning(
                     f"Failed to record '{variable_name}' at {sec_name}({seg}) on GID {node_id} for report '{report_name}': {e}"
                 )
+
+
+def section_to_variable_recording_str(section, segx: float, variable: str) -> str:
+    """Build an evaluable NEURON pointer string for `add_recording`.
+
+    Accepts:
+      - top-level vars: "v", "ina", "ik", ...
+      - mechanism-scoped vars: "kca.gkca", "na3.m", "na3.h", ...
+
+    Returns examples:
+      neuron.h.soma[0](0.5)._ref_v
+      neuron.h.soma[0](0.5)._ref_ina
+      neuron.h.soma[0](0.5).kca._ref_gkca
+      neuron.h.dend[3](0.7).na3._ref_m
+    """
+    sec_name = section.name()
+    if "." in variable:
+        mech, var = variable.split(".", 1)
+        return f"neuron.h.{sec_name}({segx}).{mech}._ref_{var}"
+    else:
+        return f"neuron.h.{sec_name}({segx})._ref_{variable}"

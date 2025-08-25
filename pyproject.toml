@@ -41,6 +41,11 @@ dependencies = [
 ]
 requires-python = ">=3.9"
 
+[project.optional-dependencies]
+examples = [
+    "ipywidgets",
+]
+
 [project.urls]
 Homepage = "https://github.com/openbraininstitute/BlueCelluLab"
 Documentation = "https://bluecellulab.readthedocs.io/"

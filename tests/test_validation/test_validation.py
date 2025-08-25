@@ -150,11 +150,13 @@ def test_bpap_test(mock_Cell, mock_Bpap, dummy_template_params, dummy_out_dir):
     assert result["figures"][1] == dummy_out_dir / "bpap_recordings.pdf"
 
 
+@patch("bluecellulab.validation.validation.efel.get_feature_values")
+@patch("bluecellulab.validation.validation.section_exists", return_value=True)
 @patch("bluecellulab.validation.validation.plot_traces")
 @patch("bluecellulab.validation.validation.run_multirecordings_stimulus")
 @patch("bluecellulab.validation.validation.Cell")
 def test_ais_spiking_test(
-    mock_Cell, mock_run_multi, mock_plot_traces, dummy_template_params, dummy_out_dir
+    mock_Cell, mock_run_multi, mock_plot_traces, mock_section_exists, mock_efel, dummy_template_params, dummy_out_dir
 ):
     # passed case
     cell = MagicMock()
@@ -166,6 +168,7 @@ def test_ais_spiking_test(
     mock_plot_traces.side_effect = itertools.cycle(
         [dummy_out_dir / "ais1.pdf", dummy_out_dir / "ais2.pdf"]
     )
+    mock_efel.return_value = [{"peak_time": [1]}, {"peak_time": [2]}]
     result = validation.ais_spiking_test(dummy_template_params, 1.0, dummy_out_dir)
     assert result["passed"] is True
     assert result["name"] == "Simulatable Neuron AIS Spiking Validation"
@@ -177,6 +180,7 @@ def test_ais_spiking_test(
     # soma spikes first case
     rec1 = MagicMock(spike=[3])
     mock_run_multi.return_value = [rec1, rec2]
+    mock_efel.return_value = [{"peak_time": [3]}, {"peak_time": [2]}]
     result = validation.ais_spiking_test(dummy_template_params, 1.0, dummy_out_dir)
     assert result["passed"] is False
     assert result["name"] == "Simulatable Neuron AIS Spiking Validation"
@@ -185,43 +189,38 @@ def test_ais_spiking_test(
         == "Validation failed: Axon does not spike before soma."
     )
 
-    # no spiking cases
-    rec1 = MagicMock(spike=None)
-    mock_run_multi.return_value = [rec1, rec2]
+    # efel extraction failed case
+    mock_efel.return_value = [{"peak_time": None}, {"peak_time": [2]}]
     result = validation.ais_spiking_test(dummy_template_params, 1.0, dummy_out_dir)
     assert result["passed"] is False
     assert result["name"] == "Simulatable Neuron AIS Spiking Validation"
     assert (
         result["validation_details"]
-        == "Validation failed: No spikes detected in one or both recordings."
+        == "Validation failed: Could not determine spike times for axon or soma."
     )
-    rec1 = MagicMock(spike=[])
-    mock_run_multi.return_value = [rec1, rec2]
+    mock_efel.return_value = [{"peak_time": []}, {"peak_time": [2]}]
     result = validation.ais_spiking_test(dummy_template_params, 1.0, dummy_out_dir)
     assert result["passed"] is False
     assert result["name"] == "Simulatable Neuron AIS Spiking Validation"
     assert (
         result["validation_details"]
-        == "Validation failed: No spikes detected in one or both recordings."
+        == "Validation failed: Could not determine spike times for axon or soma."
     )
-    rec1 = MagicMock(spike=[1])
-    rec2 = MagicMock(spike=None)
-    mock_run_multi.return_value = [rec1, rec2]
+    mock_efel.return_value = [{"peak_time": [1]}, {"peak_time": None}]
     result = validation.ais_spiking_test(dummy_template_params, 1.0, dummy_out_dir)
     assert result["passed"] is False
     assert result["name"] == "Simulatable Neuron AIS Spiking Validation"
     assert (
         result["validation_details"]
-        == "Validation failed: No spikes detected in one or both recordings."
+        == "Validation failed: Could not determine spike times for axon or soma."
     )
-    rec2 = MagicMock(spike=[])
-    mock_run_multi.return_value = [rec1, rec2]
+    mock_efel.return_value = [{"peak_time": [1]}, {"peak_time": []}]
     result = validation.ais_spiking_test(dummy_template_params, 1.0, dummy_out_dir)
     assert result["passed"] is False
     assert result["name"] == "Simulatable Neuron AIS Spiking Validation"
     assert (
         result["validation_details"]
-        == "Validation failed: No spikes detected in one or both recordings."
+        == "Validation failed: Could not determine spike times for axon or soma."
     )
 
     # no axon case
@@ -453,7 +452,7 @@ class DummyPool:
 @patch("bluecellulab.validation.validation.iv_test")
 @patch("bluecellulab.validation.validation.fi_test")
 @patch("bluecellulab.validation.validation.thumbnail_test")
-@patch("bluecellulab.utils.NestedPool", new=DummyPool)
+@patch("bluecellulab.validation.validation.NestedPool", new=DummyPool)
 def test_run_validations(
     mock_thumbnail,
     mock_fi,
