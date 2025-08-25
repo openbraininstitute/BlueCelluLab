@@ -671,8 +671,7 @@ def list_segment_ion_variables(cell, xs=(0.5,)):
 
 
 def list_segment_mechanism_variables(cell, xs=(0.5,), include_point_mechs=False):
-    """
-    Enumerate mechanism-scoped recordables per section/segment.
+    """Enumerate mechanism-scoped recordables per section/segment.
 
     Returns:
         dict: A nested dictionary of the form::
