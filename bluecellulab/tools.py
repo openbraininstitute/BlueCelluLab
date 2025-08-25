@@ -671,23 +671,28 @@ def list_segment_ion_variables(cell, xs=(0.5,)):
 
 
 def list_segment_mechanism_variables(cell, xs=(0.5,), include_point_mechs=False):
-    """Enumerate mechanism-scoped recordables per section/segment.
+    """
+    Enumerate mechanism-scoped recordables per section/segment.
 
     Returns:
-      {
-        "<secname>": {
-          x: {
-            "mech":  { "<density_mech>": [<vars>], ... },
-            "point": { "<point_mech>"  : [<vars>], ... }  # present only if include_point_mechs
-          }, ...
-        }, ...
-      }
+        dict: A nested dictionary of the form::
 
-    Notes:
-    - Variable names come from psection()['density_mechs'] / ['point_mechs'] and
-      are kept only if the corresponding _ref_<var> exists on the segment object.
-    - This lists mechanism-scoped variables (e.g., 'm','h','gNaTg','ik','ina') under
-      their mechanism keys. Build 'mech.var' tokens when recording.
+            {
+                "<secname>": {
+                    x: {
+                        "mech": {
+                            "<density_mech>": [<vars>],
+                            ...
+                        },
+                        "point": {
+                            "<point_mech>": [<vars>],
+                            ...
+                        }  # present only if include_point_mechs
+                    },
+                    ...
+                },
+                ...
+            }
     """
     out = {}
     for sec in cell.sections.values():
