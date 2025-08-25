@@ -639,8 +639,8 @@ class TestCellV6:
         assert self.cell.add_variable_recording.call_count == 2
 
     def test_configure_recording_attribute_error(self, caplog):
-        self.cell.configure_recording([(0, "soma[0]", 0.5)], "v", "test_report")
-        assert "Recording for variable 'v' is not implemented" in caplog.text
+        self.cell.configure_recording([(self.cell.soma, "soma[0]", 0.5)], "x", "test_report")
+        assert "Recording for variable 'x' is not implemented" in caplog.text
 
 
 @pytest.mark.v6
