@@ -16,10 +16,11 @@ from pathlib import Path
 import numpy as np
 import h5py
 from typing import Dict, List
+
 from .base_writer import BaseReportWriter
 from bluecellulab.reports.utils import (
+    build_recording_sites,
     resolve_source_nodes,
-    resolve_segments,
 )
 import logging
 
@@ -33,24 +34,32 @@ class CompartmentReportWriter(BaseReportWriter):
         report_name = self.cfg.get("name", "unnamed")
         # section     = self.cfg.get("sections")
         variable = self.cfg.get("variable_name", "v")
+        report_type = self.cfg.get("type", "compartment")
 
         source_sets = self.cfg["_source_sets"]
-        source_type = self.cfg["_source_type"]
-        src_name = self.cfg.get("cells") if source_type == "node_set" else self.cfg.get("compartments")
+        if report_type == "compartment":
+            src_name = self.cfg.get("cells")
+        elif report_type == "compartment_set":
+            src_name = self.cfg.get("compartment_set")
+        else:
+            raise NotImplementedError(f"Unsupported source type '{report_type}' in configuration for report '{report_name}'")
+
         src = source_sets.get(src_name)
         if not src:
-            logger.warning(f"{source_type.title()} '{src_name}' not found – skipping '{report_name}'.")
+            logger.warning(f"{report_type} '{src_name}' not found – skipping '{report_name}'.")
             return
 
         population = src["population"]
-        node_ids, comp_nodes = resolve_source_nodes(src, source_type, cells, population)
+        node_ids, comp_nodes = resolve_source_nodes(src, report_type, cells, population)
+        recording_sites_per_cell = build_recording_sites(cells, node_ids, population, report_type, self.cfg, comp_nodes)
 
         data_matrix: List[np.ndarray] = []
         node_id_list: List[int] = []
         idx_ptr: List[int] = [0]
         elem_ids: List[int] = []
 
-        for nid in node_ids:
+        for nid in sorted(recording_sites_per_cell):
+            recording_sites = recording_sites_per_cell[nid]
             cell = cells.get((population, nid)) or cells.get(f"{population}_{nid}")
             if cell is None:
                 continue
@@ -64,8 +73,7 @@ class CompartmentReportWriter(BaseReportWriter):
                 idx_ptr.append(idx_ptr[-1] + 1)
                 continue
 
-            targets = resolve_segments(cell, self.cfg, nid, comp_nodes, source_type)
-            for sec, sec_name, seg in targets:
+            for sec, sec_name, seg in recording_sites:
                 try:
                     if hasattr(cell, "get_variable_recording"):
                         trace = cell.get_variable_recording(variable=variable, section=sec, segx=seg)
@@ -161,7 +169,7 @@ class CompartmentReportWriter(BaseReportWriter):
         # Downsample the data if needed
         # Compute start and end indices in the original data
         start_index = int(round((start_time - tstart) / sim_dt))
-        end_index = int(round((end_time - tstart) / sim_dt)) + 1  # inclusive
+        end_index = int(round((end_time - tstart) / sim_dt))
 
         # Now slice and downsample
         data_matrix_downsampled = [
