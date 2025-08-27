@@ -744,15 +744,15 @@ def _mech_vars_for_segment(seg, dens, points, include_point_mechs=False) -> dict
 
 
 def list_segment_mechanism_variables_at(
-    section, x: float = 0.5, include_point_mechs: bool = False
+    section, segx: float = 0.5, include_point_mechs: bool = False
 ) -> dict:
-    """Return mechanism-scoped variables at (section, x).
+    """Return mechanism-scoped variables at (section, segx).
 
     Example:
       list_segment_mechanism_variables_at(cell.soma, 0.5)
       -> {"mech": {"NaTg": ["m","h","ina"], ...}, "point": {...}}
     """
-    seg = section(x)
+    seg = section(segx)
     dens = section.psection().get("density_mechs", {}) or {}
     points = section.psection().get("point_mechs", {}) or {}
     return _mech_vars_for_segment(seg, dens, points, include_point_mechs)
