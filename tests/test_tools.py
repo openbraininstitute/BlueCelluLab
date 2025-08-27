@@ -347,6 +347,7 @@ def test_currents_vars():
     class MockSection:
         def __call__(self):
             return MockSeg()
+
         def psection(self):
             return {
                 "ions": {
@@ -376,11 +377,13 @@ def test_currents_vars():
     assert "AlphaSyn.i" not in result
     assert "hh.i" not in result
 
+
 def test_mechs_vars():
     """Unit test for mechs_vars."""
     class MockSection:
         def __call__(self, x):
             return None
+
         def psection(self):
             return {
                 "density_mechs": {

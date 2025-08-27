@@ -895,7 +895,6 @@ class Cell(InjectableMixin, PlottableMixin):
     def __del__(self):
         self.delete()
 
-
     def add_currents_recordings(
         self,
         section,
@@ -905,7 +904,8 @@ class Cell(InjectableMixin, PlottableMixin):
         include_point_processes: bool = True,
         dt: float | None = None,
     ) -> list[str]:
-        """Record all available currents (ionic + optionally nonspecific) at (section, segx)."""
+        """Record all available currents (ionic + optionally nonspecific) at
+        (section, segx)."""
 
         from bluecellulab.tools import currents_vars
 
@@ -931,6 +931,7 @@ class Cell(InjectableMixin, PlottableMixin):
 
         return chosen
 
+
 def section_to_variable_recording_str(section, segx: float, variable: str) -> str:
     """Build an evaluable NEURON pointer string for `add_recording`.
 
@@ -950,5 +951,3 @@ def section_to_variable_recording_str(section, segx: float, variable: str) -> st
         return f"neuron.h.{sec_name}({segx}).{mech}._ref_{var}"
     else:
         return f"neuron.h.{sec_name}({segx})._ref_{variable}"
-
-

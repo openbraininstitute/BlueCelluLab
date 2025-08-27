@@ -633,9 +633,10 @@ def compute_memodel_properties(
 
     return {"holding_current": holding_current, "rheobase": rheobase, "rin": rin}
 
+
 def currents_vars(section) -> dict:
-    """
-    Return ionic and nonspecific currents (with units) at a given section/segment.
+    """Return ionic and nonspecific currents (with units) at a given
+    section/segment.
 
     Args:
         section: NEURON Section object.
@@ -667,8 +668,7 @@ def currents_vars(section) -> dict:
 
 
 def mechs_vars(section, include_point_mechs: bool = False) -> dict:
-    """
-    Return mechanism-scoped variables at a given section/segment.
+    """Return mechanism-scoped variables at a given section/segment.
 
     Args:
         section: NEURON Section object.
