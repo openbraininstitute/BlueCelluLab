@@ -345,7 +345,7 @@ def test_currents_vars():
         pass
 
     class MockSection:
-        def __call__(self, x):
+        def __call__(self):
             return MockSeg()
         def psection(self):
             return {
@@ -364,7 +364,7 @@ def test_currents_vars():
             }
 
     section = MockSection()
-    result = currents_vars(section, 0.5)
+    result = currents_vars(section)
     # Should include ionic currents
     assert result["ina"] == {"units": "mA/cm²", "kind": "ionic_current"}
     assert result["ik"] == {"units": "mA/cm²", "kind": "ionic_current"}
@@ -395,7 +395,7 @@ def test_mechs_vars():
 
     section = MockSection()
     # Test without point mechanisms
-    result = mechs_vars(section, 0.5, include_point_mechs=False)
+    result = mechs_vars(section, include_point_mechs=False)
     assert "mech" in result
     assert "hh" in result["mech"]
     assert "pas" in result["mech"]
@@ -404,7 +404,7 @@ def test_mechs_vars():
     assert "point" not in result
 
     # Test with point mechanisms
-    result_with_point = mechs_vars(section, 0.5, include_point_mechs=True)
+    result_with_point = mechs_vars(section, include_point_mechs=True)
     assert "point" in result_with_point
     assert "ExpSyn" in result_with_point["point"]
     assert sorted(result_with_point["point"]["ExpSyn"]) == ["g", "i"]

@@ -759,13 +759,12 @@ class TestCellCurrentsRecordings:
             chosen = self.cell.add_currents_recordings(
                 section=section,
                 segx=0.5,
-                ions=("na", "k"),
-                include_nonspecific=True,
+                include_nonspecific=False,
                 include_point_processes=False,
                 dt=0.1,
             )
 
         assert "ina" in chosen
         assert "ik" in chosen
-        assert "pas.i" in chosen
+        assert "pas.i" not in chosen
         assert "ExpSyn.i" not in chosen
