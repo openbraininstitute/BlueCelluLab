@@ -896,6 +896,52 @@ class Cell(InjectableMixin, PlottableMixin):
         self.delete()
 
 
+    def add_currents_recordings(
+        self,
+        section,
+        segx: float = 0.5,
+        *,
+        ions: tuple[str, ...] = ("na", "k", "ca", "cl"),
+        include_nonspecific: bool = True,
+        include_point_processes: bool = True,
+        dt: float | None = None,
+    ) -> list[str]:
+        """
+        Record all ionic and (optionally) nonspecific currents at (section, segx).
+
+        - Ionic currents recorded as top-level:  i{ion}  (e.g., 'ina', 'ik', 'ica')
+        Unit: mA/cm² (distributed)
+        - Nonspecific mechanism currents:        <mech>.i  (e.g., 'pas.i', 'Ih.i')
+        Unit: mA/cm² for density, nA for point processes
+
+        Returns: list of variable tokens actually recorded.
+        """
+        from bluecellulab.tools import currents_vars
+
+        # discover what’s available at this site
+        available = currents_vars(section, segx)  # your helper that inspects psection()
+        chosen: list[str] = []
+
+        # 1) ionic currents i{ion}
+        for ion in ions:
+            name = f"i{ion}"
+            if name in available:
+                self.add_variable_recording(name, section=section, segx=segx, dt=dt)
+                chosen.append(name)
+
+        # 2) nonspecific currents (density + point processes)
+        if include_nonspecific:
+            for var in sorted(available.keys()):
+                if not var.endswith(".i"):
+                    continue
+                # If caller doesn’t want PP, skip those (units == nA flag PP in currents_vars)
+                if not include_point_processes and available[var]["units"] == "nA":
+                    continue
+                self.add_variable_recording(var, section=section, segx=segx, dt=dt)
+                chosen.append(var)
+
+        return chosen
+
 def section_to_variable_recording_str(section, segx: float, variable: str) -> str:
     """Build an evaluable NEURON pointer string for `add_recording`.
 
@@ -915,3 +961,5 @@ def section_to_variable_recording_str(section, segx: float, variable: str) -> st
         return f"neuron.h.{sec_name}({segx}).{mech}._ref_{var}"
     else:
         return f"neuron.h.{sec_name}({segx})._ref_{variable}"
+
+

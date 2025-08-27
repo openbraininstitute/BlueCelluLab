@@ -728,3 +728,44 @@ def test_add_variable_recording_success_and_errors():
         match=r"'gna' not recordable at soma\[0\]\(0\.5\)"
     ):
         Cell.add_variable_recording(cell, "gna", section=bad_sec_top, segx=0.5)
+
+
+@pytest.mark.v5
+class TestCellCurrentsRecordings:
+    """Cell: Test adding current recordings."""
+
+    def setup_method(self):
+        """Setup a test cell."""
+        self.cell = bluecellulab.Cell(
+            f"{parent_dir}/examples/cell_example1/test_cell.hoc",
+            f"{parent_dir}/examples/cell_example1"
+        )
+
+    def teardown_method(self):
+        """Teardown."""
+        del self.cell
+
+    def test_add_currents_recordings(self):
+        fake_currents = {
+            "ina": {"units": "mA/cm²", "kind": "ionic_current"},
+            "ik": {"units": "mA/cm²", "kind": "ionic_current"},
+            "pas.i": {"units": "mA/cm²", "kind": "nonspecific_current"},
+            "ExpSyn.i": {"units": "nA", "kind": "nonspecific_current"},
+        }
+
+        section = self.cell.soma
+
+        with patch("bluecellulab.tools.currents_vars", return_value=fake_currents):
+            chosen = self.cell.add_currents_recordings(
+                section=section,
+                segx=0.5,
+                ions=("na", "k"),
+                include_nonspecific=True,
+                include_point_processes=False,
+                dt=0.1,
+            )
+
+        assert "ina" in chosen
+        assert "ik" in chosen
+        assert "pas.i" in chosen
+        assert "ExpSyn.i" not in chosen
