@@ -901,7 +901,7 @@ class Cell(InjectableMixin, PlottableMixin):
         segx: float = 0.5,
         *,
         include_nonspecific: bool = True,
-        include_point_processes: bool = True,
+        include_point_processes: bool = False,
         dt: float | None = None,
     ) -> list[str]:
         """Record all available currents (ionic + optionally nonspecific) at
