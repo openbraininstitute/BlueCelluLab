@@ -651,6 +651,8 @@ def currents_vars(section) -> dict:
     # ionic currents from ions block
     ions = psec.get("ions", {}) or {}
     for ion, vars_dict in ions.items():
+        if ion == "ttx":
+            continue
         if f"i{ion}" in vars_dict:
             out[f"i{ion}"] = {"units": "mA/cm²", "kind": "ionic_current"}
 
@@ -662,7 +664,7 @@ def currents_vars(section) -> dict:
     # point processes currents
     for pp_name, vars_dict in (psec.get("point_mechs") or {}).items():
         if "i" in vars_dict:
-            out[f"{pp_name}.i"] = {"units": "nA", "kind": "nonspecific_current"}
+            out[f"{pp_name}.i"] = {"units": "nA", "kind": "point_process_current"}
 
     return dict(sorted(out.items()))
 
