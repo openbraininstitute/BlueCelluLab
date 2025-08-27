@@ -633,157 +633,68 @@ def compute_memodel_properties(
 
     return {"holding_current": holding_current, "rheobase": rheobase, "rin": rin}
 
+def currents_vars(section, segx: float = 0.5) -> dict:
+    """
+    Return ionic and nonspecific currents (with units) at a given section/segment.
 
-def _ion_vars_for_segment(seg) -> dict:
-    """Inspect one NEURON Segment and return available top-level ionic vars
-    with units."""
+    Args:
+        section: NEURON Section object.
+        segx: Location along the section (0–1).
 
-    UNIT_BY_PREFIX = {
-        "i": ("mA/cm²", "ionic_current"),      # distributed ionic currents (ina/ik/ica/icl)
-        "e": ("mV", "reversal_potential"),     # ena/ek/eca/ecl
-        "g": ("S/cm²", "conductance"),         # gna/gk/gca/gcl (if RANGE exists)
-    }
+    Returns:
+        dict mapping variable names to {"units": str, "kind": str}.
+    """
+    psec = section.psection()
 
     out = {}
 
-    for ion in ("na", "k", "ca", "cl"):
-        # current density
-        if hasattr(seg, f"_ref_i{ion}"):
-            u, k = UNIT_BY_PREFIX["i"]
-            out[f"i{ion}"] = {"units": u, "kind": "ionic_current"}
-        # reversal potential
-        if hasattr(seg, f"_ref_e{ion}"):
-            u, k = UNIT_BY_PREFIX["e"]
-            out[f"e{ion}"] = {"units": u, "kind": "reversal_potential"}
-        # conductance density (only if exposed by the model)
-        if hasattr(seg, f"_ref_g{ion}"):
-            u, k = UNIT_BY_PREFIX["g"]
-            out[f"g{ion}"] = {"units": u, "kind": "conductance"}
+    # ionic currents from ions block
+    ions = psec.get("ions", {}) or {}
+    for ion, vars_dict in ions.items():
+        if f"i{ion}" in vars_dict:
+            out[f"i{ion}"] = {"units": "mA/cm²", "kind": "ionic_current"}
+
+    # nonspecific currents from mechanisms
+    for mech_name, vars_dict in (psec.get("density_mechs") or {}).items():
+        if "i" in vars_dict:  # nonspecific
+            out[f"{mech_name}.i"] = {"units": "mA/cm²", "kind": "nonspecific_current"}
+
+    # point processes currents
+    for pp_name, vars_dict in (psec.get("point_mechs") or {}).items():
+        if "i" in vars_dict:
+            out[f"{pp_name}.i"] = {"units": "nA", "kind": "nonspecific_current"}
 
     return dict(sorted(out.items()))
 
 
-def list_segment_ion_variables_at(section, segx: float = 0.5) -> dict:
-    """Return the top-level ionic variables available at (section, segx) with
-    units.
-
-    Example:
-      list_segment_ion_variables_at(cell.soma, 0.5)
-      -> {"v": {...}, "ina": {...}, "ik": {...}, "ena": {...}, ...}
+def mechs_vars(section, segx: float = 0.5, include_point_mechs: bool = False) -> dict:
     """
-    seg = section(segx)
-    return _ion_vars_for_segment(seg)
-
-
-def list_segment_ion_variables(cell, segx=0.5) -> dict:
-    """Enumerate top-level ionic variables (with units) for each section and
-    segment.
+    Return mechanism-scoped variables at a given section/segment.
 
     Args:
-        cell (Cell): The cell to inspect.
-        segx (float, optional): Segment location along the section (0–1). Defaults to 0.5.
+        section: NEURON Section object.
+        segx: Location along the section (0–1).
+        include_point_mechs: Whether to include point processes.
 
     Returns:
-        dict: A nested dictionary with section names as keys and segment positions as subkeys. Example::
-
-            {
-              "soma[0]": {
-                0.5: {"v": {...}, "ina": {...}, "ik": {...}, "ena": {...}, ...}
-              },
-              "axon[0]": { ... },
-            }
+        dict of {"mech": {...}, "point": {...}}.
     """
-    out = {}
-    for sec_name, sec in cell.sections.items():
-        xmap = {}
-        seg = sec(segx)
-        xmap[float(segx)] = _ion_vars_for_segment(seg)
-        out[sec_name] = xmap
-    return out
+    psec = section.psection()
+    dens = psec.get("density_mechs", {}) or {}
+    points = psec.get("point_mechs", {}) or {}
 
-
-def _mech_vars_for_segment(seg, dens, points, include_point_mechs=False) -> dict:
-    """Inspect a single segment for mechanism-scoped variables.
-
-    Returns:
-      {
-        "mech": { "NaTg": ["m","h","ina",...], ... },
-        "point": { "ExpSyn": ["i","tau"], ... }  # only if include_point_mechs
-      }
-    """
-    mech_map = {}
-    for mech, vardict in dens.items():
-        mobj = getattr(seg, mech, None)
-        if mobj is None:
-            continue
-        # keep only those actually exposed as _ref_*
-        vars_found = sorted(
-            v for v in vardict.keys()
-            if hasattr(mobj, f"_ref_{v}")
-        )
-        if vars_found:
-            mech_map[mech] = vars_found
+    mech_map = {
+        mech: sorted(vars_dict.keys())
+        for mech, vars_dict in dens.items() if vars_dict
+    }
 
     entry = {"mech": mech_map}
 
     if include_point_mechs:
-        pp_map = {}
-        for pp, vardict in points.items():
-            pobj = getattr(seg, pp, None)
-            if pobj is None:
-                continue
-            vars_found = sorted(
-                v for v in vardict.keys()
-                if hasattr(pobj, f"_ref_{v}")
-            )
-            if vars_found:
-                pp_map[pp] = vars_found
-        entry["point"] = pp_map
+        point_map = {
+            pp: sorted(vars_dict.keys())
+            for pp, vars_dict in points.items() if vars_dict
+        }
+        entry["point"] = point_map
 
     return entry
-
-
-def list_segment_mechanism_variables_at(
-    section, segx: float = 0.5, include_point_mechs: bool = False
-) -> dict:
-    """Return mechanism-scoped variables at (section, segx).
-
-    Example:
-      list_segment_mechanism_variables_at(cell.soma, 0.5)
-      -> {"mech": {"NaTg": ["m","h","ina"], ...}, "point": {...}}
-    """
-    seg = section(segx)
-    dens = section.psection().get("density_mechs", {}) or {}
-    points = section.psection().get("point_mechs", {}) or {}
-    return _mech_vars_for_segment(seg, dens, points, include_point_mechs)
-
-
-def list_segment_mechanism_variables(
-    cell, segx=0.5, include_point_mechs: bool = False
-) -> dict:
-    """Enumerate mechanism-scoped variables for all sections and segments.
-
-    Args:
-        cell (Cell): The cell to inspect.
-        segx (float, optional): Segment location along the section (0–1). Defaults to 0.5.
-        include_point_mechs (bool, optional): Whether to include point processes. Defaults to False.
-
-    Returns:
-        dict: A nested dictionary. Example::
-
-            {
-              "soma[0]": {
-                0.5: {"mech": {"NaTg": ["m","h","ina"], ...}}
-              },
-              "axon[0]": { ... },
-            }
-    """
-    out = {}
-    for sec_name, sec in cell.sections.items():
-        xmap = {}
-        dens = sec.psection().get("density_mechs", {}) or {}
-        points = sec.psection().get("point_mechs", {}) or {}
-        seg = sec(segx)
-        xmap[float(segx)] = _mech_vars_for_segment(seg, dens, points, include_point_mechs)
-        out[sec_name] = xmap
-    return out
