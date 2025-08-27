@@ -677,16 +677,21 @@ def list_segment_ion_variables_at(section, segx: float = 0.5) -> dict:
 
 def list_segment_ion_variables(cell, segx=0.5) -> dict:
     """Enumerate top-level ionic variables (with units) for each section and
-    each x.
+    segment.
+
+    Args:
+        cell (Cell): The cell to inspect.
+        segx (float, optional): Segment location along the section (0–1). Defaults to 0.5.
 
     Returns:
-    {
-      "soma[0]": {
-        0.5: {"v": {...}, "ina": {...}, "ik": {...}, "ena": {...}, ...}
-      },
-      "axon[0]": { ... },
-      ...
-    }
+        dict: A nested dictionary with section names as keys and segment positions as subkeys. Example::
+
+            {
+              "soma[0]": {
+                0.5: {"v": {...}, "ina": {...}, "ik": {...}, "ena": {...}, ...}
+              },
+              "axon[0]": { ... },
+            }
     """
     out = {}
     for sec_name, sec in cell.sections.items():
@@ -758,13 +763,20 @@ def list_segment_mechanism_variables(
 ) -> dict:
     """Enumerate mechanism-scoped variables for all sections and segments.
 
+    Args:
+        cell (Cell): The cell to inspect.
+        segx (float, optional): Segment location along the section (0–1). Defaults to 0.5.
+        include_point_mechs (bool, optional): Whether to include point processes. Defaults to False.
+
     Returns:
-      {
-        "soma[0]": {
-          0.5: {"mech": {"NaTg": ["m","h","ina"], ...}}
-        },
-        "axon[0]": { ... },
-      }
+        dict: A nested dictionary. Example::
+
+            {
+              "soma[0]": {
+                0.5: {"mech": {"NaTg": ["m","h","ina"], ...}}
+              },
+              "axon[0]": { ... },
+            }
     """
     out = {}
     for sec_name, sec in cell.sections.items():
