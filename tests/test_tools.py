@@ -26,7 +26,7 @@ from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.circuit.node_id import create_cell_id
 from bluecellulab.exceptions import UnsteadyCellError
 from bluecellulab.tools import calculate_SS_voltage, calculate_SS_voltage_subprocess, calculate_input_resistance, detect_hyp_current, detect_spike, detect_spike_step, detect_spike_step_subprocess, holding_current, holding_current_subprocess, search_threshold_current, template_accepts_cvode, check_empty_topology, calculate_max_thresh_current, calculate_rheobase, validate_section_and_segment
-from bluecellulab.tools import list_segment_ion_variables, list_segment_mechanism_variables
+from bluecellulab.tools import list_segment_ion_variables, list_segment_mechanism_variables, list_segment_ion_variables_at, list_segment_mechanism_variables_at
 
 
 script_dir = Path(__file__).parent
@@ -368,12 +368,11 @@ def test_list_segment_ion_variables():
             }
 
     cell = MockCell()
-    result = list_segment_ion_variables(cell, xs=(0.1, 0.5))
+    result = list_segment_ion_variables(cell, 0.5)
     # Should return dict with section names as keys and x positions as subkeys
     assert 'cell[0].soma[0]' in result
-    assert 0.1 in result['cell[0].soma[0]']
-    vars_at_seg = result['cell[0].soma[0]'][0.1]
-    assert 'v' in vars_at_seg
+    assert 0.5 in result['cell[0].soma[0]']
+    vars_at_seg = result['cell[0].soma[0]'][0.5]
     assert 'ina' in vars_at_seg
     assert 'ik' in vars_at_seg
     assert 'gna' in vars_at_seg
@@ -418,7 +417,7 @@ def test_list_mechanism_variables():
             }
 
     cell = MockCell()
-    result = list_segment_mechanism_variables(cell, xs=(0.1,))
+    result = list_segment_mechanism_variables(cell, 0.1)
     # Should return a dict with section names as keys and x positions as subkeys
     assert 'cell[0].soma[0]' in result
     assert 0.1 in result['cell[0].soma[0]']
@@ -479,7 +478,7 @@ def test_list_mechanism_variables_with_point_mechs():
             }
 
     cell = MockCell()
-    result = list_segment_mechanism_variables(cell, xs=(0.1,), include_point_mechs=True)
+    result = list_segment_mechanism_variables(cell, 0.1, include_point_mechs=True)
 
     assert 'cell[0].soma[0]' in result
     assert 0.1 in result['cell[0].soma[0]']
@@ -489,3 +488,98 @@ def test_list_mechanism_variables_with_point_mechs():
     assert 'pproc' in point_vars
     assert 'var1' in point_vars['pproc']
     assert 'var2' in point_vars['pproc']
+
+
+def test_list_segment_mechanism_variables_at():
+    """Unit test for list_segment_mechanism_variables_at."""
+    # Mock mechanism object with _ref_m and _ref_h attributes
+    class MockMech:
+        def __init__(self):
+            self._ref_m = 1
+            self._ref_h = 2
+
+    # Mock segment with a mechanism
+    class MockSeg:
+        def __init__(self):
+            self.hh = MockMech()
+
+    # Mock section
+    class MockSec:
+        def __init__(self):
+            self._name = "cell[0].soma[0]"
+
+        def __call__(self, x):
+            return MockSeg()
+
+        def psection(self):
+            return {'density_mechs': {'hh': {'m': 1, 'h': 2}}, 'point_mechs': {}}
+
+        def name(self):
+            return self._name
+
+    sec = MockSec()
+    result = list_segment_mechanism_variables_at(sec, 0.5)
+    assert "mech" in result
+    assert "hh" in result["mech"]
+    assert "m" in result["mech"]["hh"]
+    assert "h" in result["mech"]["hh"]
+
+    # Test with point mechanisms
+    class MockPoint:
+        def __init__(self):
+            self._ref_var1 = 1
+            self._ref_var2 = 2
+
+    class MockSegWithPoint(MockSeg):
+        def __init__(self):
+            super().__init__()
+            self.pproc = MockPoint()
+
+    class MockSecWithPoint(MockSec):
+        def __call__(self, x):
+            return MockSegWithPoint()
+
+        def psection(self):
+            return {
+                'density_mechs': {'hh': {'m': 1, 'h': 2}},
+                'point_mechs': {'pproc': {'var1': 1, 'var2': 2}}
+            }
+
+    sec_with_point = MockSecWithPoint()
+    result = list_segment_mechanism_variables_at(sec_with_point, 0.5, include_point_mechs=True)
+    assert "point" in result
+    assert "pproc" in result["point"]
+    assert "var1" in result["point"]["pproc"]
+    assert "var2" in result["point"]["pproc"]
+
+
+def test_list_segment_ion_variables_at():
+    """Unit test for list_segment_ion_variables_at."""
+    class MockSeg:
+        def __init__(self):
+            self._ref_ina = 1
+            self._ref_ik = 2
+            self._ref_gna = 3
+            self._ref_ena = 4
+
+        def __getattr__(self, name):
+            if name in ("_ref_ina", "_ref_ik", "_ref_gna", "_ref_ena"):
+                return 1
+            raise AttributeError
+
+    class MockSec:
+        def __init__(self):
+            self._name = "cell[0].soma[0]"
+
+        def __call__(self, x):
+            return MockSeg()
+
+        def name(self):
+            return self._name
+
+    sec = MockSec()
+    result = list_segment_ion_variables_at(sec, 0.5)
+    assert "ina" in result
+    assert "ik" in result
+    assert "gna" in result
+    assert "ena" in result
