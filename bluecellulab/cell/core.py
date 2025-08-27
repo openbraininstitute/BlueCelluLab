@@ -250,6 +250,10 @@ class Cell(InjectableMixin, PlottableMixin):
         else:
             self._default_disable_ttx()
 
+    @property
+    def ttx_enabled(self):
+        return getattr(self, "_ttx_enabled", False)
+
     def _default_enable_ttx(self) -> None:
         """Default enable_ttx implementation."""
         for section in self.sections.values():
