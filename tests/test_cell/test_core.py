@@ -755,7 +755,7 @@ class TestCellCurrentsRecordings:
 
         section = self.cell.soma
 
-        with patch("bluecellulab.tools.currents_vars", return_value=fake_currents):
+        with patch("bluecellulab.cell.section_tools.currents_vars", return_value=fake_currents):
             chosen = self.cell.add_currents_recordings(
                 section=section,
                 segx=0.5,

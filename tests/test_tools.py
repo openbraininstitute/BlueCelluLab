@@ -25,7 +25,8 @@ from bluecellulab.cell.ballstick import create_ball_stick
 from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.circuit.node_id import create_cell_id
 from bluecellulab.exceptions import UnsteadyCellError
-from bluecellulab.tools import calculate_SS_voltage, calculate_SS_voltage_subprocess, calculate_input_resistance, currents_vars, detect_hyp_current, detect_spike, detect_spike_step, detect_spike_step_subprocess, holding_current, holding_current_subprocess, mechs_vars, search_threshold_current, template_accepts_cvode, check_empty_topology, calculate_max_thresh_current, calculate_rheobase, validate_section_and_segment
+from bluecellulab.tools import calculate_SS_voltage, calculate_SS_voltage_subprocess, calculate_input_resistance, detect_hyp_current, detect_spike, detect_spike_step, detect_spike_step_subprocess, holding_current, holding_current_subprocess, search_threshold_current, template_accepts_cvode, check_empty_topology, calculate_max_thresh_current, calculate_rheobase, validate_section_and_segment
+from bluecellulab.cell.section_tools import currents_vars, mechs_vars
 
 
 script_dir = Path(__file__).parent
