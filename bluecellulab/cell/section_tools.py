@@ -15,8 +15,7 @@
 
 
 def currents_vars(section) -> dict:
-    """Return ionic and nonspecific currents (with units) at a given
-    section.
+    """Return ionic and nonspecific currents (with units) at a given section.
 
     Args:
         section: NEURON Section object.
