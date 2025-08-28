@@ -47,6 +47,7 @@ from bluecellulab.stimulus.circuit_stimulus_definitions import SynapseReplay
 from bluecellulab.synapse import SynapseFactory, Synapse
 from bluecellulab.synapse.synapse_types import SynapseID
 from bluecellulab.type_aliases import HocObjectType, NeuronSection, SectionMapping
+from bluecellulab.cell.section_tools import currents_vars, section_to_variable_recording_str
 
 logger = logging.getLogger(__name__)
 
@@ -911,8 +912,6 @@ class Cell(InjectableMixin, PlottableMixin):
         """Record all available currents (ionic + optionally nonspecific) at
         (section, segx)."""
 
-        from bluecellulab.tools import currents_vars
-
         # discover what’s available at this site
         available = currents_vars(section)  # your helper that inspects psection()
         chosen: list[str] = []
@@ -939,24 +938,3 @@ class Cell(InjectableMixin, PlottableMixin):
                 chosen.append(name)
 
         return chosen
-
-
-def section_to_variable_recording_str(section, segx: float, variable: str) -> str:
-    """Build an evaluable NEURON pointer string for `add_recording`.
-
-    Accepts:
-      - top-level vars: "v", "ina", "ik", ...
-      - mechanism-scoped vars: "kca.gkca", "na3.m", "na3.h", ...
-
-    Returns examples:
-      neuron.h.soma[0](0.5)._ref_v
-      neuron.h.soma[0](0.5)._ref_ina
-      neuron.h.soma[0](0.5).kca._ref_gkca
-      neuron.h.dend[3](0.7).na3._ref_m
-    """
-    sec_name = section.name()
-    if "." in variable:
-        mech, var = variable.split(".", 1)
-        return f"neuron.h.{sec_name}({segx}).{mech}._ref_{var}"
-    else:
-        return f"neuron.h.{sec_name}({segx})._ref_{variable}"
