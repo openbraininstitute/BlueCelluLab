@@ -750,7 +750,7 @@ class TestCellCurrentsRecordings:
             "ina": {"units": "mA/cm²", "kind": "ionic_current"},
             "ik": {"units": "mA/cm²", "kind": "ionic_current"},
             "pas.i": {"units": "mA/cm²", "kind": "nonspecific_current"},
-            "ExpSyn.i": {"units": "nA", "kind": "nonspecific_current"},
+            "ExpSyn.i": {"units": "nA", "kind": "point_process_current"},
         }
 
         section = self.cell.soma
