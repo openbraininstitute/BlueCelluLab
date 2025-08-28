@@ -927,9 +927,14 @@ class Cell(InjectableMixin, PlottableMixin):
             elif kind == "nonspecific_current":
                 if not include_nonspecific:
                     continue
-                # point processes report in nA; density mechs in mA/cm²
-                if not include_point_processes and meta.get("units") == "nA":
+                # density-mech nonspecific currents
+                self.add_variable_recording(name, section=section, segx=segx, dt=dt)
+                chosen.append(name)
+
+            elif kind == "point_process_current":
+                if not include_point_processes:
                     continue
+                # point process nonspecific currents
                 self.add_variable_recording(name, section=section, segx=segx, dt=dt)
                 chosen.append(name)
 
