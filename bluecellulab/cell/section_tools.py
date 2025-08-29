@@ -38,11 +38,15 @@ def currents_vars(section) -> dict:
         if name in vars_dict:
             out[name] = {"units": "mA/cm²", "kind": "ionic_current"}
 
-    CURRENT_LIKE_VARS = {"i", "ihcn"}
-    for mech, vars_dict in (psec.get("density_mechs") or {}).items():
-        for var in vars_dict:
-            if var in CURRENT_LIKE_VARS:
-                out[f"{var}_{mech}"] = {"units": "mA/cm²", "kind": "nonspecific_current"}
+    special_currents = {
+        ("pas", "i"): "i_pas",
+        ("Ih", "ihcn"): "ihcn_Ih",
+        ("hd", "i"): "i_hd",
+    }
+
+    for (mech, var), out_name in special_currents.items():
+        if var in (psec.get("density_mechs") or {}).get(mech, {}):
+            out[out_name] = {"units": "mA/cm²", "kind": "nonspecific_current"}
 
     return dict(sorted(out.items()))
 
