@@ -15,16 +15,21 @@
 
 
 def currents_vars(section) -> dict:
-    """Return current variables (with units) at a given section.
+    """Return recordable currents (with units) at a given section.
 
-    - ionic currents (ina/ik/ica/icl) as mA/cm²
-    - density-mech currents that look like currents (i, ihcn, ...) as mA/cm²
-    - point-process currents (i, iampa, ...) as nA
+    - Ionic currents from the ions block (e.g. ``ina``, ``ik``, ``ica``), in mA/cm².
+    - Mechanism currents for variables ``i`` or ``ihcn``, reported as ``<var>_<mech>``
+      (e.g. ``i_pas``, ``ihcn_Ih``), in mA/cm².
+
+    Args:
+        section: NEURON Section object.
+
+    Returns:
+        dict mapping variable names to {"units": str, "kind": str}.
     """
     psec = section.psection()
     out = {}
 
-    # 1) Top-level ionic currents
     ions = psec.get("ions", {}) or {}
     for ion, vars_dict in ions.items():
         if ion == "ttx":
@@ -33,29 +38,11 @@ def currents_vars(section) -> dict:
         if name in vars_dict:
             out[name] = {"units": "mA/cm²", "kind": "ionic_current"}
 
-    # helper: current-like var names, but avoid duplicating ion currents
-    def _is_current_var(var: str) -> bool:
-        if var in ("ina", "ik", "ica", "icl"):
-            return False
-        return var == "i" or var.startswith("i")
-
-    # 2) Density mechanisms (mA/cm²)
-    for mech_name, vars_dict in (psec.get("density_mechs") or {}).items():
-        for var in vars_dict.keys():
-            if _is_current_var(var):
-                out[f"{var}_{mech_name}"] = {
-                    "units": "mA/cm²",
-                    "kind": "nonspecific_current",
-                }
-
-    # 3) Point processes (nA)
-    for pp_name, vars_dict in (psec.get("point_mechs") or {}).items():
-        for var in vars_dict.keys():
-            if _is_current_var(var):
-                out[f"{var}_{pp_name}"] = {
-                    "units": "nA",
-                    "kind": "point_process_current",
-                }
+    CURRENT_LIKE_VARS = {"i", "ihcn"}
+    for mech, vars_dict in (psec.get("density_mechs") or {}).items():
+        for var in vars_dict:
+            if var in CURRENT_LIKE_VARS:
+                out[f"{var}_{mech}"] = {"units": "mA/cm²", "kind": "nonspecific_current"}
 
     return dict(sorted(out.items()))
 
