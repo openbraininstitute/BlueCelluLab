@@ -735,48 +735,82 @@ class TestCellCurrentsRecordings:
     """Cell: Test adding current recordings."""
 
     def setup_method(self):
-        """Setup a test cell."""
         self.cell = bluecellulab.Cell(
             f"{parent_dir}/examples/cell_example1/test_cell.hoc",
             f"{parent_dir}/examples/cell_example1"
         )
 
     def teardown_method(self):
-        """Teardown."""
         del self.cell
 
-    def test_add_currents_recordings(self):
+    def test_add_currents_recordings_no_nonspecific(self):
+        """Ionic yes; nonspecific + point-process no."""
         fake_currents = {
             "ina": {"units": "mA/cm²", "kind": "ionic_current"},
             "ik": {"units": "mA/cm²", "kind": "ionic_current"},
-            "pas.i": {"units": "mA/cm²", "kind": "nonspecific_current"},
-            "ExpSyn.i": {"units": "nA", "kind": "point_process_current"},
+            "i_pas": {"units": "mA/cm²", "kind": "nonspecific_current"},
+            "ihcn_Ih": {"units": "mA/cm²", "kind": "nonspecific_current"},
+            "i_ExpSyn": {"units": "nA", "kind": "point_process_current"},
         }
-
         section = self.cell.soma
 
-        with patch("bluecellulab.cell.core.currents_vars", return_value=fake_currents):
+        with patch("bluecellulab.cell.core.currents_vars", return_value=fake_currents), \
+             patch.object(self.cell, "add_variable_recording") as mock_add:
             chosen = self.cell.add_currents_recordings(
                 section=section,
                 segx=0.5,
-                include_nonspecific=False,
+                include_nonspecific=False,        # exclude nonspecific
+                include_point_processes=False,    # exclude point-process
+                dt=0.1,
+            )
+
+        # ionic currents are kept
+        assert "ina" in chosen
+        assert "ik" in chosen
+        # nonspecific & point-process are filtered out
+        assert "i_pas" not in chosen
+        assert "ihcn_Ih" not in chosen
+        assert "i_ExpSyn" not in chosen
+
+        called = [c.args[0] for c in mock_add.call_args_list]
+        assert "ina" in called and "ik" in called
+        assert "i_pas" not in called and "ihcn_Ih" not in called and "i_ExpSyn" not in called
+
+    def test_add_currents_recordings_with_nonspecific(self):
+        """Include mechanism nonspecific currents like Ih.ihcn."""
+        fake_currents = {
+            "ina": {"units": "mA/cm²", "kind": "ionic_current"},
+            "ihcn_Ih": {"units": "mA/cm²", "kind": "nonspecific_current"},
+        }
+        section = self.cell.soma
+
+        with patch("bluecellulab.cell.core.currents_vars", return_value=fake_currents), \
+             patch.object(self.cell, "add_variable_recording") as mock_add:
+            chosen = self.cell.add_currents_recordings(
+                section=section,
+                segx=0.5,
+                include_nonspecific=True,
                 include_point_processes=False,
                 dt=0.1,
             )
 
         assert "ina" in chosen
-        assert "ik" in chosen
-        assert "pas.i" not in chosen
-        assert "ExpSyn.i" not in chosen
+        assert "ihcn_Ih" in chosen
+
+        called = [c.args[0] for c in mock_add.call_args_list]
+        assert "ina" in called
+        assert "ihcn_Ih" in called
 
     def test_add_currents_recordings_with_point_process(self):
+        """Include point-process currents when enabled."""
         fake_currents = {
             "ina": {"units": "mA/cm²", "kind": "ionic_current"},
-            "ExpSyn.i": {"units": "nA", "kind": "point_process_current"},
+            "i_ExpSyn": {"units": "nA", "kind": "point_process_current"},
         }
         section = self.cell.soma
 
-        with patch("bluecellulab.cell.core.currents_vars", return_value=fake_currents), patch.object(self.cell, "add_variable_recording") as mock_add:
+        with patch("bluecellulab.cell.core.currents_vars", return_value=fake_currents), \
+             patch.object(self.cell, "add_variable_recording") as mock_add:
             chosen = self.cell.add_currents_recordings(
                 section=section,
                 segx=0.5,
@@ -786,8 +820,8 @@ class TestCellCurrentsRecordings:
             )
 
         assert "ina" in chosen
-        assert "ExpSyn.i" in chosen
+        assert "i_ExpSyn" in chosen
 
-        calls = [c.args[0] for c in mock_add.call_args_list]
-        assert "ina" in calls
-        assert "ExpSyn.i" in calls
+        called = [c.args[0] for c in mock_add.call_args_list]
+        assert "ina" in called
+        assert "i_ExpSyn" in called

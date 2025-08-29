@@ -371,12 +371,12 @@ def test_currents_vars():
     assert result["ina"] == {"units": "mA/cm²", "kind": "ionic_current"}
     assert result["ik"] == {"units": "mA/cm²", "kind": "ionic_current"}
     # Should include nonspecific current from pas
-    assert result["pas.i"] == {"units": "mA/cm²", "kind": "nonspecific_current"}
+    assert result["i_pas"] == {"units": "mA/cm²", "kind": "nonspecific_current"}
     # Should include nonspecific current from ExpSyn (point process)
-    assert result["ExpSyn.i"] == {"units": "nA", "kind": "point_process_current"}
+    assert result["i_ExpSyn"] == {"units": "nA", "kind": "point_process_current"}
     # Should not include AlphaSyn.i or hh.i
-    assert "AlphaSyn.i" not in result
-    assert "hh.i" not in result
+    assert "i_AlphaSyn" not in result
+    assert "i_hh" not in result
     assert "ittx" not in result  # ttx current should be excluded
 
 

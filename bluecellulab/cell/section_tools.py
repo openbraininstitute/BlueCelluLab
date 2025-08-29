@@ -15,25 +15,48 @@
 
 
 def currents_vars(section) -> dict:
-    """Return ionic and nonspecific currents (with units) at a given section.
+    """Return current variables (with units) at a given section.
 
-    Args:
-        section: NEURON Section object.
+    - ionic currents (ina/ik/ica/icl) as mA/cm²
+    - density-mech currents that look like currents (i, ihcn, ...) as mA/cm²
+    - point-process currents (i, iampa, ...) as nA
     """
     psec = section.psection()
     out = {}
+
+    # 1) Top-level ionic currents
     ions = psec.get("ions", {}) or {}
     for ion, vars_dict in ions.items():
         if ion == "ttx":
             continue
-        if f"i{ion}" in vars_dict:
-            out[f"i{ion}"] = {"units": "mA/cm²", "kind": "ionic_current"}
+        name = f"i{ion}"
+        if name in vars_dict:
+            out[name] = {"units": "mA/cm²", "kind": "ionic_current"}
+
+    # helper: current-like var names, but avoid duplicating ion currents
+    def _is_current_var(var: str) -> bool:
+        if var in ("ina", "ik", "ica", "icl"):
+            return False
+        return var == "i" or var.startswith("i")
+
+    # 2) Density mechanisms (mA/cm²)
     for mech_name, vars_dict in (psec.get("density_mechs") or {}).items():
-        if "i" in vars_dict:
-            out[f"{mech_name}.i"] = {"units": "mA/cm²", "kind": "nonspecific_current"}
+        for var in vars_dict.keys():
+            if _is_current_var(var):
+                out[f"{var}_{mech_name}"] = {
+                    "units": "mA/cm²",
+                    "kind": "nonspecific_current",
+                }
+
+    # 3) Point processes (nA)
     for pp_name, vars_dict in (psec.get("point_mechs") or {}).items():
-        if "i" in vars_dict:
-            out[f"{pp_name}.i"] = {"units": "nA", "kind": "point_process_current"}
+        for var in vars_dict.keys():
+            if _is_current_var(var):
+                out[f"{var}_{pp_name}"] = {
+                    "units": "nA",
+                    "kind": "point_process_current",
+                }
+
     return dict(sorted(out.items()))
 
 
