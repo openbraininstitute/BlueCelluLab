@@ -913,7 +913,7 @@ class Cell(InjectableMixin, PlottableMixin):
         (section, segx)."""
 
         # discover what’s available at this site
-        available = currents_vars(section)  # your helper that inspects psection()
+        available = currents_vars(section)
         chosen: list[str] = []
 
         for name, meta in available.items():

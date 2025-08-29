@@ -755,7 +755,7 @@ class TestCellCurrentsRecordings:
 
         section = self.cell.soma
 
-        with patch("bluecellulab.cell.section_tools.currents_vars", return_value=fake_currents):
+        with patch("bluecellulab.cell.core.currents_vars", return_value=fake_currents):
             chosen = self.cell.add_currents_recordings(
                 section=section,
                 segx=0.5,
@@ -768,3 +768,26 @@ class TestCellCurrentsRecordings:
         assert "ik" in chosen
         assert "pas.i" not in chosen
         assert "ExpSyn.i" not in chosen
+
+    def test_add_currents_recordings_with_point_process(self):
+        fake_currents = {
+            "ina": {"units": "mA/cm²", "kind": "ionic_current"},
+            "ExpSyn.i": {"units": "nA", "kind": "point_process_current"},
+        }
+        section = self.cell.soma
+
+        with patch("bluecellulab.cell.core.currents_vars", return_value=fake_currents), patch.object(self.cell, "add_variable_recording") as mock_add:
+            chosen = self.cell.add_currents_recordings(
+                section=section,
+                segx=0.5,
+                include_nonspecific=True,
+                include_point_processes=True,
+                dt=0.1,
+            )
+
+        assert "ina" in chosen
+        assert "ExpSyn.i" in chosen
+
+        calls = [c.args[0] for c in mock_add.call_args_list]
+        assert "ina" in calls
+        assert "ExpSyn.i" in calls
