@@ -47,6 +47,7 @@ from bluecellulab.stimulus.circuit_stimulus_definitions import SynapseReplay
 from bluecellulab.synapse import SynapseFactory, Synapse
 from bluecellulab.synapse.synapse_types import SynapseID
 from bluecellulab.type_aliases import HocObjectType, NeuronSection, SectionMapping
+from bluecellulab.cell.section_tools import currents_vars, section_to_variable_recording_str
 
 logger = logging.getLogger(__name__)
 
@@ -249,6 +250,10 @@ class Cell(InjectableMixin, PlottableMixin):
             public_hoc_cell(self.cell).disable_ttx()
         else:
             self._default_disable_ttx()
+
+    @property
+    def ttx_enabled(self):
+        return getattr(self, "_ttx_enabled", False)
 
     def _default_enable_ttx(self) -> None:
         """Default enable_ttx implementation."""
@@ -782,7 +787,7 @@ class Cell(InjectableMixin, PlottableMixin):
         if section is None:
             section = self.soma
 
-        # Optional: validate before constructing the string
+        # validate before constructing the string
         seg = section(segx)
         if "." in variable:
             mech, var = variable.split(".", 1)
@@ -895,23 +900,41 @@ class Cell(InjectableMixin, PlottableMixin):
     def __del__(self):
         self.delete()
 
+    def add_currents_recordings(
+        self,
+        section,
+        segx: float = 0.5,
+        *,
+        include_nonspecific: bool = True,
+        include_point_processes: bool = False,
+        dt: float | None = None,
+    ) -> list[str]:
+        """Record all available currents (ionic + optionally nonspecific) at
+        (section, segx)."""
 
-def section_to_variable_recording_str(section, segx: float, variable: str) -> str:
-    """Build an evaluable NEURON pointer string for `add_recording`.
+        # discover what’s available at this site
+        available = currents_vars(section)
+        chosen: list[str] = []
 
-    Accepts:
-      - top-level vars: "v", "ina", "ik", ...
-      - mechanism-scoped vars: "kca.gkca", "na3.m", "na3.h", ...
+        for name, meta in available.items():
+            kind = meta.get("kind")
 
-    Returns examples:
-      neuron.h.soma[0](0.5)._ref_v
-      neuron.h.soma[0](0.5)._ref_ina
-      neuron.h.soma[0](0.5).kca._ref_gkca
-      neuron.h.dend[3](0.7).na3._ref_m
-    """
-    sec_name = section.name()
-    if "." in variable:
-        mech, var = variable.split(".", 1)
-        return f"neuron.h.{sec_name}({segx}).{mech}._ref_{var}"
-    else:
-        return f"neuron.h.{sec_name}({segx})._ref_{variable}"
+            if kind == "ionic_current":
+                self.add_variable_recording(name, section=section, segx=segx, dt=dt)
+                chosen.append(name)
+
+            elif kind == "nonspecific_current":
+                if not include_nonspecific:
+                    continue
+                # density-mech nonspecific currents
+                self.add_variable_recording(name, section=section, segx=segx, dt=dt)
+                chosen.append(name)
+
+            elif kind == "point_process_current":
+                if not include_point_processes:
+                    continue
+                # point process nonspecific currents
+                self.add_variable_recording(name, section=section, segx=segx, dt=dt)
+                chosen.append(name)
+
+        return chosen
