@@ -127,7 +127,7 @@ def calculate_SS_voltage_subprocess(
     simulation.run(1000, cvode=template_accepts_cvode(template_path))
     time = cell.get_time()
     voltage = cell.get_voltage_recording(section=neuron_section, segx=segx)
-    SS_voltage = np.mean(voltage[np.where((time < 1000) & (time > 800))])
+    SS_voltage = np.mean(voltage[np.where((time <= 1000) & (time > 800))])
     cell.delete()
 
     if check_for_spiking:
