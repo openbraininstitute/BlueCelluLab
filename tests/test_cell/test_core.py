@@ -31,6 +31,7 @@ from bluecellulab.cell.template import NeuronTemplate, public_hoc_cell, shorten_
 from bluecellulab.exceptions import BluecellulabError
 from bluecellulab import CircuitSimulation
 from bluecellulab.cell.recording import section_to_voltage_recording_str
+from bluecellulab.cell.core import Cell
 
 
 warnings.filterwarnings("ignore", message="numpy.dtype size changed")
@@ -616,3 +617,211 @@ class TestWithinCircuit:
         assert second_gid_synapse_ids[1] == ('NodeA__NodeA__chemical', 1)
         assert second_gid_synapse_ids[2] == ('NodeB__NodeA__chemical', 1)
         assert second_gid_synapse_ids[3] == ('NodeB__NodeA__chemical', 3)
+
+
+def test_get_variable_recording_success_and_missing():
+    class MockSection:
+        def __init__(self, name):
+            self._name = name
+
+        def name(self):
+            return self._name
+
+    class MockCell:
+        def __init__(self):
+            self.soma = MockSection('soma[0]')
+            self.recordings = {
+                "neuron.h.soma[0](0.5).hh._ref_m": np.array([1, 2, 3]),
+                "neuron.h.soma[0](0.5)._ref_gna": np.array([4, 5, 6]),
+            }
+
+        def get_recording(self, var_name: str) -> np.ndarray:
+            try:
+                return self.recordings[var_name]
+            except KeyError as e:
+                raise ValueError(f"No recording for '{var_name}' was found.") from e
+
+    cell = MockCell()
+
+    # Success: mechanism-scoped variable
+    arr = Cell.get_variable_recording(cell, 'hh.m', cell.soma, 0.5)
+    assert np.array_equal(arr, np.array([1, 2, 3]))
+
+    # Success: top-level variable
+    arr2 = Cell.get_variable_recording(cell, 'gna', cell.soma, 0.5)
+    assert np.array_equal(arr2, np.array([4, 5, 6]))
+
+    # Missing: expect the actual ValueError message
+    with pytest.raises(ValueError, match=r"No recording for 'neuron\.h\.soma\[0\]\(0\.5\)\.hh\._ref_h' was found\."):
+        Cell.get_variable_recording(cell, 'hh.h', cell.soma, 0.5)
+
+    with pytest.raises(ValueError, match=r"No recording for 'neuron\.h\.soma\[0\]\(0\.5\)\._ref_ik' was found\."):
+        Cell.get_variable_recording(cell, 'ik', cell.soma, 0.5)
+
+
+def test_add_variable_recording_success_and_errors():
+    class MockSegOK:
+        """Segment exposing hh.m and top-level gna."""
+        def __init__(self):
+            self.hh = type("MockMech", (), {"_ref_m": object()})()
+            self._ref_gna = object()
+
+    class MockSegNoMechVar:
+        """Segment missing hh.m (no hh or no _ref_m)."""
+        pass
+
+    class MockSegNoTopVar:
+        """Segment missing top-level _ref_gna."""
+        def __init__(self):
+            self.hh = type("MockMech", (), {"_ref_m": object()})()
+
+    class MockSection:
+        def __init__(self, name, seg_factory, density_mechs=None):
+            self._name = name
+            self._seg_factory = seg_factory
+            self._density_mechs = density_mechs or {}
+
+        def name(self):
+            return self._name
+
+        def __call__(self, x):
+            return self._seg_factory()
+
+        def psection(self):
+            return {"density_mechs": self._density_mechs, "point_mechs": {}}
+
+    class MockCell:
+        def __init__(self):
+            # soma has hh + gna
+            self.soma = MockSection("soma[0]", MockSegOK, density_mechs={"hh": {"m": 1}})
+            self._added = []  # (var_name, dt)
+
+        def add_recording(self, var_name, dt=None):
+            self._added.append((var_name, dt))
+
+    cell = MockCell()
+
+    # ---- success: mechanism-scoped variable (hh.m) ---------------------------
+    Cell.add_variable_recording(cell, "hh.m", section=cell.soma, segx=0.5, dt=0.025)
+    assert cell._added[-1] == ("neuron.h.soma[0](0.5).hh._ref_m", 0.025)
+
+    # ---- success: top-level variable (gna) -----------------------------------
+    Cell.add_variable_recording(cell, "gna", section=cell.soma, segx=0.5, dt=None)
+    assert cell._added[-1] == ("neuron.h.soma[0](0.5)._ref_gna", None)
+
+    # ---- success: default section=None uses soma -----------------------------
+    Cell.add_variable_recording(cell, "hh.m", section=None, segx=0.5)
+    assert cell._added[-1][0] == "neuron.h.soma[0](0.5).hh._ref_m"
+
+    # ---- error: missing mechanism var (no hh.m at that segment) --------------
+    bad_sec_mech = MockSection("soma[0]", MockSegNoMechVar, density_mechs={})
+    with pytest.raises(
+        ValueError,
+        match=r"'hh\.m' not recordable at soma\[0\]\(0\.5\)"
+    ):
+        Cell.add_variable_recording(cell, "hh.m", section=bad_sec_mech, segx=0.5)
+
+    # ---- error: missing top-level var (no _ref_gna) --------------------------
+    bad_sec_top = MockSection("soma[0]", MockSegNoTopVar, density_mechs={"hh": {"m": 1}})
+    with pytest.raises(
+        ValueError,
+        match=r"'gna' not recordable at soma\[0\]\(0\.5\)"
+    ):
+        Cell.add_variable_recording(cell, "gna", section=bad_sec_top, segx=0.5)
+
+
+@pytest.mark.v5
+class TestCellCurrentsRecordings:
+    """Cell: Test adding current recordings."""
+
+    def setup_method(self):
+        self.cell = bluecellulab.Cell(
+            f"{parent_dir}/examples/cell_example1/test_cell.hoc",
+            f"{parent_dir}/examples/cell_example1"
+        )
+
+    def teardown_method(self):
+        del self.cell
+
+    def test_add_currents_recordings_no_nonspecific(self):
+        """Ionic yes; nonspecific + point-process no."""
+        fake_currents = {
+            "ina": {"units": "mA/cm²", "kind": "ionic_current"},
+            "ik": {"units": "mA/cm²", "kind": "ionic_current"},
+            "i_pas": {"units": "mA/cm²", "kind": "nonspecific_current"},
+            "ihcn_Ih": {"units": "mA/cm²", "kind": "nonspecific_current"},
+            "i_ExpSyn": {"units": "nA", "kind": "point_process_current"},
+        }
+        section = self.cell.soma
+
+        with patch("bluecellulab.cell.core.currents_vars", return_value=fake_currents), \
+             patch.object(self.cell, "add_variable_recording") as mock_add:
+            chosen = self.cell.add_currents_recordings(
+                section=section,
+                segx=0.5,
+                include_nonspecific=False,        # exclude nonspecific
+                include_point_processes=False,    # exclude point-process
+                dt=0.1,
+            )
+
+        # ionic currents are kept
+        assert "ina" in chosen
+        assert "ik" in chosen
+        # nonspecific & point-process are filtered out
+        assert "i_pas" not in chosen
+        assert "ihcn_Ih" not in chosen
+        assert "i_ExpSyn" not in chosen
+
+        called = [c.args[0] for c in mock_add.call_args_list]
+        assert "ina" in called and "ik" in called
+        assert "i_pas" not in called and "ihcn_Ih" not in called and "i_ExpSyn" not in called
+
+    def test_add_currents_recordings_with_nonspecific(self):
+        """Include mechanism nonspecific currents like Ih.ihcn."""
+        fake_currents = {
+            "ina": {"units": "mA/cm²", "kind": "ionic_current"},
+            "ihcn_Ih": {"units": "mA/cm²", "kind": "nonspecific_current"},
+        }
+        section = self.cell.soma
+
+        with patch("bluecellulab.cell.core.currents_vars", return_value=fake_currents), \
+             patch.object(self.cell, "add_variable_recording") as mock_add:
+            chosen = self.cell.add_currents_recordings(
+                section=section,
+                segx=0.5,
+                include_nonspecific=True,
+                include_point_processes=False,
+                dt=0.1,
+            )
+
+        assert "ina" in chosen
+        assert "ihcn_Ih" in chosen
+
+        called = [c.args[0] for c in mock_add.call_args_list]
+        assert "ina" in called
+        assert "ihcn_Ih" in called
+
+    def test_add_currents_recordings_with_point_process(self):
+        """Include point-process currents when enabled."""
+        fake_currents = {
+            "ina": {"units": "mA/cm²", "kind": "ionic_current"},
+            "i_ExpSyn": {"units": "nA", "kind": "point_process_current"},
+        }
+        section = self.cell.soma
+
+        with patch("bluecellulab.cell.core.currents_vars", return_value=fake_currents), \
+             patch.object(self.cell, "add_variable_recording") as mock_add:
+            chosen = self.cell.add_currents_recordings(
+                section=section,
+                segx=0.5,
+                include_nonspecific=True,
+                include_point_processes=True,
+                dt=0.1,
+            )
+
+        assert "ina" in chosen
+        assert "i_ExpSyn" in chosen
+
+        called = [c.args[0] for c in mock_add.call_args_list]
+        assert "ina" in called
+        assert "i_ExpSyn" in called

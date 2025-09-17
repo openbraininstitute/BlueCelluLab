@@ -26,6 +26,7 @@ from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.circuit.node_id import create_cell_id
 from bluecellulab.exceptions import UnsteadyCellError
 from bluecellulab.tools import calculate_SS_voltage, calculate_SS_voltage_subprocess, calculate_input_resistance, detect_hyp_current, detect_spike, detect_spike_step, detect_spike_step_subprocess, holding_current, holding_current_subprocess, search_threshold_current, template_accepts_cvode, check_empty_topology, calculate_max_thresh_current, calculate_rheobase, validate_section_and_segment
+from bluecellulab.cell.section_tools import currents_vars, mechs_vars
 
 
 script_dir = Path(__file__).parent
@@ -336,3 +337,79 @@ def test_validate_section_and_segment_invalid_segment_position(mock_cell_section
         validate_section_and_segment(mock_cell_sections, 'soma', -0.1)
     with pytest.raises(ValueError, match="Segment position must be between 0.0 and 1.0, got 1.1."):
         validate_section_and_segment(mock_cell_sections, 'axon[0]', 1.1)
+
+
+def test_currents_vars():
+    """Unit test for currents_vars."""
+    # Mock section and segment
+    class MockSeg:
+        pass
+
+    class MockSection:
+        def __call__(self):
+            return MockSeg()
+
+        def psection(self):
+            return {
+                "ions": {
+                    "na": {"ina": 1, "ena": 2},
+                    "k": {"ik": 1, "ek": 2},
+                },
+                "density_mechs": {
+                    "pas": {"i": 1},
+                    "hh": {"m": 1, "h": 2},  # no 'i', should not appear
+                },
+                "point_mechs": {
+                    "ExpSyn": {"i": 1},
+                    "AlphaSyn": {"g": 1},  # no 'i', should not appear
+                }
+            }
+
+    section = MockSection()
+    result = currents_vars(section)
+    # Should include ionic currents
+    assert result["ina"] == {"units": "mA/cm²", "kind": "ionic_current"}
+    assert result["ik"] == {"units": "mA/cm²", "kind": "ionic_current"}
+    # Should include nonspecific current from pas
+    assert result["i_pas"] == {"units": "mA/cm²", "kind": "nonspecific_current"}
+    # Should not include AlphaSyn.i or hh.i
+    assert "i_AlphaSyn" not in result
+    assert "i_hh" not in result
+    assert "ittx" not in result  # ttx current should be excluded
+
+
+def test_mechs_vars():
+    """Unit test for mechs_vars."""
+    class MockSection:
+        def __call__(self, x):
+            return None
+
+        def psection(self):
+            return {
+                "density_mechs": {
+                    "hh": {"m": 1, "h": 2},
+                    "pas": {"i": 1}
+                },
+                "point_mechs": {
+                    "ExpSyn": {"i": 1, "g": 2},
+                    "AlphaSyn": {"g": 1}
+                }
+            }
+
+    section = MockSection()
+    # Test without point mechanisms
+    result = mechs_vars(section, include_point_mechs=False)
+    assert "mech" in result
+    assert "hh" in result["mech"]
+    assert "pas" in result["mech"]
+    assert sorted(result["mech"]["hh"]) == ["h", "m"]
+    assert sorted(result["mech"]["pas"]) == ["i"]
+    assert "point" not in result
+
+    # Test with point mechanisms
+    result_with_point = mechs_vars(section, include_point_mechs=True)
+    assert "point" in result_with_point
+    assert "ExpSyn" in result_with_point["point"]
+    assert sorted(result_with_point["point"]["ExpSyn"]) == ["g", "i"]
+    assert "AlphaSyn" in result_with_point["point"]
+    assert sorted(result_with_point["point"]["AlphaSyn"]) == ["g"]

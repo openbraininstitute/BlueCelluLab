@@ -47,6 +47,7 @@ from bluecellulab.stimulus.circuit_stimulus_definitions import SynapseReplay
 from bluecellulab.synapse import SynapseFactory, Synapse
 from bluecellulab.synapse.synapse_types import SynapseID
 from bluecellulab.type_aliases import HocObjectType, NeuronSection, SectionMapping
+from bluecellulab.cell.section_tools import currents_vars, section_to_variable_recording_str
 
 logger = logging.getLogger(__name__)
 
@@ -250,6 +251,10 @@ class Cell(InjectableMixin, PlottableMixin):
         else:
             self._default_disable_ttx()
 
+    @property
+    def ttx_enabled(self):
+        return getattr(self, "_ttx_enabled", False)
+
     def _default_enable_ttx(self) -> None:
         """Default enable_ttx implementation."""
         for section in self.sections.values():
@@ -316,6 +321,7 @@ class Cell(InjectableMixin, PlottableMixin):
         """Adds recording to AIS."""
         self.add_recording("self.axonal[1](0.5)._ref_v", dt=dt)
 
+    @deprecated("Use add_variable_recording('v', ...) instead.")
     def add_voltage_recording(
         self, section: Optional[NeuronSection] = None, segx: float = 0.5, dt: Optional[float] = None
     ) -> None:
@@ -334,6 +340,7 @@ class Cell(InjectableMixin, PlottableMixin):
         var_name = section_to_voltage_recording_str(section, segx)
         self.add_recording(var_name, dt)
 
+    @deprecated("Use get_variable_recording('v', ...) instead.")
     def get_voltage_recording(
         self, section: Optional[NeuronSection] = None, segx: float = 0.5
     ) -> np.ndarray:
@@ -760,17 +767,66 @@ class Cell(InjectableMixin, PlottableMixin):
         """Get a vector of AIS voltage."""
         return self.get_recording('self.axonal[1](0.5)._ref_v')
 
-    def add_variable_recording(self, variable: str, section, segx):
-        if variable == "v":
-            self.add_voltage_recording(section, segx)
-        else:
-            raise ValueError(f"Unsupported variable for recording: {variable}")
+    def add_variable_recording(
+        self,
+        variable: str,
+        section: Optional[NeuronSection] = None,
+        segx: float = 0.5,
+        dt: Optional[float] = None
+    ) -> None:
+        """Add a recording of any NEURON RANGE variable (e.g., gna, gk, ina)
+        from a given section and segment.
 
-    def get_variable_recording(self, variable: str, section, segx) -> np.ndarray:
-        if variable == "v":
-            return self.get_voltage_recording(section=section, segx=segx)
+        Args:
+            variable: The NEURON variable name to record (e.g., "gna").
+            section: The section to record from (defaults to soma).
+            segx: Segment position between 0 and 1.
+            dt: Optional recording time step.
+        """
+
+        if section is None:
+            section = self.soma
+
+        # validate before constructing the string
+        seg = section(segx)
+        if "." in variable:
+            mech, var = variable.split(".", 1)
+            mobj = getattr(seg, mech, None)
+            if mobj is None or not hasattr(mobj, f"_ref_{var}"):
+                raise ValueError(
+                    f"'{variable}' not recordable at {section.name()}({segx}). "
+                    f"Mechanisms here: {list(section.psection()['density_mechs'].keys())}"
+                )
         else:
-            raise ValueError(f"Unsupported variable '{variable}'")
+            if not hasattr(seg, f"_ref_{variable}"):
+                raise ValueError(
+                    f"'{variable}' not recordable at {section.name()}({segx}). "
+                    f"(Top-level vars are typically v/ina/ik/ica)"
+                )
+
+        var_name = section_to_variable_recording_str(section, segx, variable)
+        self.add_recording(var_name, dt)
+
+    def get_variable_recording(
+        self, variable: str, section: Optional[NeuronSection], segx: float
+    ) -> np.ndarray:
+        """Get a recording of any variable recorded from a section and segment.
+
+        Args:
+            variable: The name of the recorded variable (e.g., 'v', 'gna').
+            section: The NEURON section object.
+            segx: Segment location from 0 to 1.
+
+        Returns:
+            NumPy array of recorded values.
+
+        Raises:
+            ValueError: If the recording is not found.
+        """
+        if section is None:
+            section = self.soma
+        recording_name = section_to_variable_recording_str(section, segx, variable)
+        return self.get_recording(recording_name)
 
     @property
     def n_segments(self) -> int:
@@ -843,3 +899,42 @@ class Cell(InjectableMixin, PlottableMixin):
 
     def __del__(self):
         self.delete()
+
+    def add_currents_recordings(
+        self,
+        section,
+        segx: float = 0.5,
+        *,
+        include_nonspecific: bool = True,
+        include_point_processes: bool = False,
+        dt: float | None = None,
+    ) -> list[str]:
+        """Record all available currents (ionic + optionally nonspecific) at
+        (section, segx)."""
+
+        # discover what’s available at this site
+        available = currents_vars(section)
+        chosen: list[str] = []
+
+        for name, meta in available.items():
+            kind = meta.get("kind")
+
+            if kind == "ionic_current":
+                self.add_variable_recording(name, section=section, segx=segx, dt=dt)
+                chosen.append(name)
+
+            elif kind == "nonspecific_current":
+                if not include_nonspecific:
+                    continue
+                # density-mech nonspecific currents
+                self.add_variable_recording(name, section=section, segx=segx, dt=dt)
+                chosen.append(name)
+
+            elif kind == "point_process_current":
+                if not include_point_processes:
+                    continue
+                # point process nonspecific currents
+                self.add_variable_recording(name, section=section, segx=segx, dt=dt)
+                chosen.append(name)
+
+        return chosen
