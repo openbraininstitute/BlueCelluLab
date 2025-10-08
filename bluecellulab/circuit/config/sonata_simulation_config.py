@@ -55,8 +55,9 @@ class SonataSimulationConfig:
         inputs = self.impl.config.get("inputs")
         if inputs is None:
             return result
+        config_dir = self._get_config_dir()
         for value in inputs.values():
-            stimulus = Stimulus.from_sonata(value)
+            stimulus = Stimulus.from_sonata(value, config_dir=config_dir)
             if stimulus:
                 result.append(stimulus)
         return result
@@ -84,7 +85,11 @@ class SonataSimulationConfig:
         filepath = self.impl.config.get("compartment_sets_file")
         if not filepath:
             raise ValueError("No 'compartment_sets_file' entry found in SONATA config.")
-        with open(filepath, 'r') as f:
+        config_dir = self._get_config_dir()
+        full_path = Path(filepath)
+        if config_dir is not None and not full_path.is_absolute():
+            full_path = Path(config_dir) / filepath
+        with open(full_path, 'r') as f:
             return json.load(f)
 
     @lru_cache(maxsize=1)
@@ -214,3 +219,12 @@ class SonataSimulationConfig:
         connection_override: ConnectionOverrides
     ) -> None:
         self._connection_overrides.append(connection_override)
+
+    def _get_config_dir(self):
+        # Prefer config_path, fallback to _simulation_config_path
+        config_path = getattr(self.impl, "config_path", None)
+        if config_path is None:
+            sim_config_path = getattr(self.impl, "_simulation_config_path", None)
+            if sim_config_path is not None:
+                config_path = Path(sim_config_path)
+        return str(config_path.parent) if config_path is not None else None
