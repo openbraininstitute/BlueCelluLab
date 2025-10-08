@@ -844,8 +844,8 @@ class Cell(InjectableMixin, PlottableMixin):
         file_path = Path(stimulus.spike_file).expanduser()
         if not file_path.is_absolute():
             config_dir = stimulus.config_dir
-        if config_dir is not None:
-            file_path = Path(config_dir) / file_path
+            if config_dir is not None:
+                file_path = Path(config_dir) / file_path
 
         file_path = file_path.resolve()
 
