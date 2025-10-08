@@ -25,7 +25,7 @@ from bluepysnap import Circuit as SnapCircuit
 import neuron
 import pandas as pd
 from bluecellulab import circuit
-from bluecellulab.circuit.circuit_access.definition import EmodelProperties
+from bluecellulab.circuit.circuit_access.definition import CircuitAccess, EmodelProperties
 from bluecellulab.circuit import CellId, SynapseProperty
 from bluecellulab.circuit.config import SimulationConfig
 from bluecellulab.circuit.synapse_properties import SynapseProperties
@@ -38,7 +38,7 @@ from bluecellulab.circuit.synapse_properties import (
 logger = logging.getLogger(__name__)
 
 
-class SonataCircuitAccess:
+class SonataCircuitAccess(CircuitAccess):
     """Sonata implementation of CircuitAccess protocol."""
 
     def __init__(self, simulation_config: str | Path | SimulationConfig) -> None:

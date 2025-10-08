@@ -42,7 +42,7 @@ class PlotWindow:
         linenumber = 0
         for var_name in self.var_list:
             recording = self.cell.get_recording(var_name)
-            if recording:
+            if recording is not None and recording.size > 0:
                 time = self.cell.get_time()
             else:
                 time = self.cell.get_time()[1:]
