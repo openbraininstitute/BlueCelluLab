@@ -840,7 +840,15 @@ class Cell(InjectableMixin, PlottableMixin):
         connected to that cell."""
         if self.sonata_proxy is None:
             raise BluecellulabError("Cell: add_synapse_replay requires a sonata proxy.")
-        synapse_spikes: dict = get_synapse_replay_spikes(stimulus.spike_file)
+
+        file_path = Path(stimulus.spike_file).expanduser()
+        if not file_path.is_absolute():
+            file_path = Path(stimulus.config_dir) / file_path
+        file_path = file_path.resolve()
+
+        if not file_path.exists():
+            raise FileNotFoundError(f"Spike file not found: {file_path}")
+        synapse_spikes: dict = get_synapse_replay_spikes(file_path)
         for synapse_id, synapse in self.synapses.items():
             source_population = synapse.syn_description["source_population_name"]
             pre_gid = CellId(

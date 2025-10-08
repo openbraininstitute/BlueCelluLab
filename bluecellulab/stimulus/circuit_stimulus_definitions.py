@@ -212,7 +212,7 @@ class Stimulus:
             raise ValueError(f"Unknown pattern {pattern}")
 
     @classmethod
-    def from_sonata(cls, stimulus_entry: dict) -> Optional[Stimulus]:
+    def from_sonata(cls, stimulus_entry: dict, config_dir: Optional[str] = None) -> Optional[Stimulus]:
         pattern = Pattern.from_sonata(stimulus_entry["module"])
         if pattern == Pattern.NOISE:
             return Noise(
@@ -259,6 +259,7 @@ class Stimulus:
                 delay=stimulus_entry["delay"],
                 duration=stimulus_entry["duration"],
                 spike_file=stimulus_entry["spike_file"],
+                config_dir=config_dir,
             )
         elif pattern == Pattern.SHOT_NOISE:
             return ShotNoise(
@@ -361,13 +362,7 @@ class RelativeLinear(Stimulus):
 @dataclass(frozen=True, config=dict(extra="forbid"))
 class SynapseReplay(Stimulus):
     spike_file: str
-
-    @field_validator("spike_file")
-    @classmethod
-    def spike_file_exists(cls, v):
-        if not Path(v).exists():
-            raise ValueError(f"spike_file {v} does not exist")
-        return v
+    config_dir: Optional[str] = None
 
 
 @dataclass(frozen=True, config=dict(extra="forbid"))
