@@ -934,7 +934,7 @@ class Cell(InjectableMixin, PlottableMixin):
         If the section name is a base name (e.g., 'dend'), return all matching sections like 'dend[0]', 'dend[1]', etc.
 
         Raises:
-            ValueError or TypeError if no valid sections are found.
+            ValueError if no valid sections are found.
         """
         # Try to interpret as fully qualified section name
         try:
