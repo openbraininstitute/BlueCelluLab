@@ -558,17 +558,29 @@ class TestCellV6:
         with pytest.raises(BluecellulabError, match="get_voltage_recording: Voltage recording .* was not added previously using add_voltage_recording"):
             self.cell.get_voltage_recording(self.cell.soma, segx=1.5)
 
-    def test_get_section_direct_match(self):
-        """Test get_section with a direct section name match."""
-        section = self.cell.get_section("soma[0]")
-        assert hasattr(section, "nseg")
-
-    def test_get_section_soma_fallback(self):
-        """Test get_section fallback from 'soma' to 'soma[0]'."""
-        section = self.cell.get_sections("soma")
+    def test_get_sections_direct_match(self):
+        """Test get_sections with a direct section name match."""
+        section = self.cell.get_sections("soma[0]")
         assert hasattr(section[0], "nseg")
 
-    def test_get_section_invalid_name(self):
+    def test_get_sections_soma_fallback(self):
+        """Test get_sections fallback from 'soma' to 'soma[0]'."""
+        section = self.cell.get_sections("soma")
+        assert hasattr(section[0], "nseg")
+        assert len(section) == 1
+
+    def test_get_sections_dend_direct_match(self):
+        """Test get_sections with a direct section name match."""
+        section = self.cell.get_sections("dend[0]")
+        assert hasattr(section[0], "nseg")
+        assert len(section) == 1
+
+    def test_get_sections_all_dend(self):
+        """Test get_sections with 'dend' to get all dendritic sections."""
+        section = self.cell.get_sections("dend")
+        assert len(section) == 24
+
+    def test_get_sections_invalid_name(self):
         """Test get_section with an invalid section name (not in cell.sections)."""
         with pytest.raises(ValueError, match=r"Section 'invalid' not found\. Available:"):
             self.cell.get_sections("invalid")
