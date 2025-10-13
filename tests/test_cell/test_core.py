@@ -812,7 +812,7 @@ def test_add_variable_recording_success_and_errors():
     # ---- error: missing mechanism var (no hh.m at that segment) --------------
     bad_sec_mech = MockSection("soma[0]", MockSegNoMechVar, density_mechs={})
     with pytest.raises(
-        ValueError,
+        AttributeError,
         match=r"'hh\.m' not recordable at soma\[0\]\(0\.5\)"
     ):
         Cell.add_variable_recording(cell, "hh.m", section=bad_sec_mech, segx=0.5)
@@ -820,7 +820,7 @@ def test_add_variable_recording_success_and_errors():
     # ---- error: missing top-level var (no _ref_gna) --------------------------
     bad_sec_top = MockSection("soma[0]", MockSegNoTopVar, density_mechs={"hh": {"m": 1}})
     with pytest.raises(
-        ValueError,
+        AttributeError,
         match=r"'gna' not recordable at soma\[0\]\(0\.5\)"
     ):
         Cell.add_variable_recording(cell, "gna", section=bad_sec_top, segx=0.5)

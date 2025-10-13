@@ -793,13 +793,13 @@ class Cell(InjectableMixin, PlottableMixin):
             mech, var = variable.split(".", 1)
             mobj = getattr(seg, mech, None)
             if mobj is None or not hasattr(mobj, f"_ref_{var}"):
-                raise ValueError(
+                raise AttributeError(
                     f"'{variable}' not recordable at {section.name()}({segx}). "
                     f"Mechanisms here: {list(section.psection()['density_mechs'].keys())}"
                 )
         else:
             if not hasattr(seg, f"_ref_{variable}"):
-                raise ValueError(
+                raise AttributeError(
                     f"'{variable}' not recordable at {section.name()}({segx}). "
                     f"(Top-level vars are typically v/ina/ik/ica)"
                 )
@@ -1045,7 +1045,7 @@ class Cell(InjectableMixin, PlottableMixin):
                 logger.info(
                     f"Recording '{variable_name}' at {sec_name}({seg}) on GID {node_id} for report '{report_name}'"
                 )
-            except ValueError:
+            except AttributeError:
                 logger.warning(
                     f"Recording for variable '{variable_name}' is not implemented in Cell."
                 )
