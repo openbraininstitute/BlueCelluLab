@@ -125,6 +125,7 @@ def make_trace(length, value):
     """Create a trace filled with a fixed value."""
     return (np.ones(length) * value).astype(np.float32)
 
+
 def test_compartment_set_trace_mode_multinode_merge(tmp_path):
     """Ensure trace-mode data from multiple nodes is merged correctly by node ID order."""
     tlen = 10
@@ -240,6 +241,7 @@ def test_compartment_set_trace_mode_multisegment_node(tmp_path):
         assert ptrs.tolist() == [0, 1, 2, 3, 4]
         assert np.allclose(data, 42.0)
 
+
 class TestSimCompartmentSet():
     """Test the graph.py module."""
     def setup_method(self):
@@ -272,4 +274,3 @@ class TestSimCompartmentSet():
 
             assert data1.shape == data2.shape, f"Shape mismatch: {data1.shape} != {data2.shape}"
             assert np.allclose(data1, data2), "Data mismatch in dataset content"
-
