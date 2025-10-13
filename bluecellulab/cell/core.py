@@ -1040,8 +1040,6 @@ class Cell(InjectableMixin, PlottableMixin):
         node_id = self.cell_id.id
 
         for sec, sec_name, seg in recording_sites:
-            print("section", sec_name, "seg", seg)
-            print("sec", sec)
             try:
                 self.add_variable_recording(variable=variable_name, section=sec, segx=seg)
                 logger.info(
