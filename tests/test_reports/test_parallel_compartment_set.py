@@ -54,11 +54,11 @@ def test_parallel_compartment_set_merge_order_and_alignment(tmp_path):
         "dt": 0.1,
         "_source_sets": {
             "NodeA": {
-                "population": "NodeA" ,
+                "population": "NodeA",
                 "compartment_set": [
-                [1, 0, 0.5],
-                [0, 0, 0.5],
-                [2, 0, 0.5]
+                    [1, 0, 0.5],
+                    [0, 0, 0.5],
+                    [2, 0, 0.5]
                 ]
             },
         }
