@@ -121,6 +121,125 @@ def test_write_compartment_set(mock_build_sites, mock_resolve_nodes, tmp_path, m
         assert f["/report/default/data"].shape[1] == 2
 
 
+def make_trace(length, value):
+    """Create a trace filled with a fixed value."""
+    return (np.ones(length) * value).astype(np.float32)
+
+def test_compartment_set_trace_mode_multinode_merge(tmp_path):
+    """Ensure trace-mode data from multiple nodes is merged correctly by node ID order."""
+    tlen = 10
+    time = np.linspace(0, 1, tlen).tolist()
+
+    traces = {
+        "NodeA_2": {"time": time, "voltage": make_trace(tlen, 30.0)},
+        "NodeA_0": {"time": time, "voltage": make_trace(tlen, 10.0)},
+        "NodeA_1": {"time": time, "voltage": make_trace(tlen, 20.0)},
+    }
+
+    report_cfg = {
+        "name": "trace_merge",
+        "type": "compartment_set",
+        "compartment_set": "NodeA",
+        "variable_name": "v",
+        "start_time": 0.0,
+        "end_time": 1.0,
+        "dt": 0.1,
+        "_source_sets": {
+            "NodeA": {
+                "population": "NodeA",
+                "compartment_set": [
+                    [2, 0, 0.5],
+                    [0, 0, 0.5],
+                    [1, 0, 0.5]
+                ]
+            }
+        }
+    }
+
+    with patch("bluecellulab.reports.utils.resolve_source_nodes") as mock_resolve, \
+         patch("bluecellulab.reports.utils.build_recording_sites") as mock_build:
+
+        mock_resolve.return_value = (
+            [0, 1, 2],
+            [[0, "soma[0]", 0.5], [1, "soma[0]", 0.5], [2, "soma[0]", 0.5]],
+        )
+
+        mock_build.return_value = {
+            0: [(None, "soma[0]", 0.5)],
+            1: [(None, "soma[0]", 0.5)],
+            2: [(None, "soma[0]", 0.5)],
+        }
+
+        writer = CompartmentReportWriter(
+            report_cfg=report_cfg,
+            output_path=tmp_path / "trace_merge.h5",
+            sim_dt=0.1
+        )
+        writer.write(cells=traces, tstart=0.0)
+
+    with h5py.File(tmp_path / "trace_merge.h5", "r") as f:
+        data = np.array(f["/report/NodeA/data"])
+        node_ids = np.array(f["/report/NodeA/mapping/node_ids"])
+
+        assert data.shape == (tlen, 3)
+        assert node_ids.tolist() == [0, 1, 2]
+        assert np.allclose(data[:, 0], 10.0)
+        assert np.allclose(data[:, 1], 20.0)
+        assert np.allclose(data[:, 2], 30.0)
+
+
+def test_compartment_set_trace_mode_multisegment_node(tmp_path):
+    """Test recording multiple segments from a single node in trace mode."""
+    tlen = 10
+    time = np.linspace(0, 1, tlen).tolist()
+
+    traces = {
+        "NodeA_0": {
+            "time": time,
+            "voltage": make_trace(tlen, 42.0)
+        }
+    }
+
+    report_cfg = {
+        "name": "trace_multisegment",
+        "type": "compartment_set",
+        "compartment_set": "NodeA",
+        "variable_name": "v",
+        "start_time": 0.0,
+        "end_time": 1.0,
+        "dt": 0.1,
+        "_source_sets": {
+            "NodeA": {
+                "population": "NodeA",
+                "compartment_set": [
+                    [0, "soma[0]", 0.5],
+                    [0, "dend[0]", 0.2],
+                    [0, "dend[0]", 0.3],
+                    [0, "axon[1]", 0.7]
+                ]
+            }
+        }
+    }
+
+    writer = CompartmentReportWriter(
+        report_cfg=report_cfg,
+        output_path=tmp_path / "trace_multisegment.h5",
+        sim_dt=0.1
+    )
+    writer.write(cells=traces, tstart=0.0)
+
+    with h5py.File(tmp_path / "trace_multisegment.h5", "r") as f:
+        data = np.array(f["/report/NodeA/data"])
+        node_ids = np.array(f["/report/NodeA/mapping/node_ids"])
+        elem_ids = np.array(f["/report/NodeA/mapping/element_ids"])
+        ptrs = np.array(f["/report/NodeA/mapping/index_pointers"])
+
+        assert data.shape == (tlen, 4)
+        assert node_ids.tolist() == [0, 0, 0, 0]
+        assert elem_ids.tolist() == [0, 1, 2, 3]
+        assert ptrs.tolist() == [0, 1, 2, 3, 4]
+        assert np.allclose(data, 42.0)
+
 class TestSimCompartmentSet():
     """Test the graph.py module."""
     def setup_method(self):
@@ -153,3 +272,4 @@ class TestSimCompartmentSet():
 
             assert data1.shape == data2.shape, f"Shape mismatch: {data1.shape} != {data2.shape}"
             assert np.allclose(data1, data2), "Data mismatch in dataset content"
+
