@@ -164,7 +164,8 @@ class CompartmentReportWriter(BaseReportWriter):
         if dt_report < sim_dt:
             logger.warning(
                 f"Requested report dt={dt_report} ms is finer than simulation dt={sim_dt} ms. "
-                f"Clamping report dt to {sim_dt} ms."
+                f"Clamping report dt to {sim_dt} ms. "
+                f"To achieve finer temporal resolution, reduce the simulation dt in your config."
             )
             dt_report = sim_dt
 

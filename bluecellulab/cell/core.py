@@ -15,11 +15,12 @@
 
 from __future__ import annotations
 
+from ast import Tuple
 import logging
 
 from pathlib import Path
 import queue
-from typing import Optional
+from typing import List, Optional
 from typing_extensions import deprecated
 
 import neuron
@@ -927,7 +928,7 @@ class Cell(InjectableMixin, PlottableMixin):
         available = ", ".join(self.sections.keys())
         raise ValueError(f"Section '{section_name}' not found. Available: [{available}]")
 
-    def get_sections(self, section_name: str):
+    def get_sections(self, section_name: str) -> List[NeuronSection]:
         """Return a list of NEURON sections.
 
         If the section name is a fully specified one (e.g., 'dend[3]'), return it as a list of one.
@@ -964,7 +965,7 @@ class Cell(InjectableMixin, PlottableMixin):
         except KeyError:
             raise IndexError(f"Section ID {section_id} is out of range for cell {self.cell_id.id}")
 
-    def resolve_segments_from_compartment_set(self, node_id, compartment_nodes):
+    def resolve_segments_from_compartment_set(self, node_id, compartment_nodes) -> List[Tuple[NeuronSection, str, float]]:
         """Resolve segments for a cell using a predefined compartment node
         list.
 
@@ -993,7 +994,7 @@ class Cell(InjectableMixin, PlottableMixin):
             result.append((section, sec_name, seg))
         return result
 
-    def resolve_segments_from_config(self, report_cfg):
+    def resolve_segments_from_config(self, report_cfg) -> List[Tuple[NeuronSection, str, float]]:
         """Resolve segments from NEURON sections based on config."""
         compartment = report_cfg.get("compartments", "center")
         if compartment not in {"center", "all"}:
