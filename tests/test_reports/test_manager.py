@@ -48,7 +48,7 @@ def test_invalid_keys_with_compartment_set(mock_config_base, key):
 
     manager = ReportManager(mock_config_base, sim_dt=0.1)
 
-    with pytest.raises(ValueError, match=f"'{key}' may not be set with 'compartment_set'"):
+    with pytest.raises(ValueError, match=f"'{key}' may not be set when using 'compartment_set' report type."):
         manager.write_all({})
 
 
