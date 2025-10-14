@@ -15,12 +15,11 @@
 
 from __future__ import annotations
 
-from ast import Tuple
 import logging
 
 from pathlib import Path
 import queue
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from typing_extensions import deprecated
 
 import neuron
