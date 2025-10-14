@@ -19,6 +19,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from bluecellulab.circuit.circuit_access.definition import CircuitAccess
 import neuron
 import pandas as pd
 from bluecellulab import circuit
@@ -42,7 +43,7 @@ if BLUEPY_AVAILABLE:
 logger = logging.getLogger(__name__)
 
 
-class BluepyCircuitAccess:
+class BluepyCircuitAccess(CircuitAccess):
     """Bluepy implementation of CircuitAccess protocol."""
 
     def __init__(self, simulation_config: str | Path | SimulationConfig) -> None:

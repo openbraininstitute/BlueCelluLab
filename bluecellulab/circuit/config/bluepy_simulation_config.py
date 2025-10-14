@@ -188,6 +188,16 @@ class BluepySimulationConfig:
         else:
             return None
 
+    @property
+    def tstart(self) -> Optional[float]:
+        return 0.0
+
+    @property
+    def tstop(self) -> Optional[float]:
+        if 'Duration' in self.impl.Run:
+            return float(self.impl.Run['Duration'])
+        return None
+
     def add_connection_override(
         self,
         connection_override: ConnectionOverrides

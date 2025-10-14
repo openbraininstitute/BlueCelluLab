@@ -125,7 +125,7 @@ class CircuitSimulation:
 
     def instantiate_gids(
         self,
-        cells: int | tuple[str, int] | list[int] | list[tuple[str, int]],
+        cells: int | tuple[str, int] | list[int | tuple[str, int]],
         add_replay: bool = False,
         add_stimuli: bool = False,
         add_synapses: bool = False,
@@ -223,7 +223,7 @@ class CircuitSimulation:
                                 will automatically set this option to
                                 True.
         """
-        if not isinstance(cells, Iterable) or isinstance(cells, tuple):
+        if not isinstance(cells, list):
             cells = [cells]
 
         # convert to CellId objects

@@ -31,6 +31,6 @@ def create_cell_id(cell_id: int | tuple[str, int] | CellId) -> CellId:
         return CellId("", cell_id)
 
 
-def create_cell_ids(cell_ids: list[int] | list[tuple[str, int] | CellId]) -> list[CellId]:
+def create_cell_ids(cell_ids: list[int | tuple[str, int] | CellId]) -> list[CellId]:
     """Make a list of CellId from a list of tuple or int."""
     return [create_cell_id(cell_id) for cell_id in cell_ids]
