@@ -19,7 +19,7 @@ import logging
 
 from pathlib import Path
 import queue
-from typing import Optional
+from typing import List, Optional, Tuple
 from typing_extensions import deprecated
 
 import neuron
@@ -793,13 +793,13 @@ class Cell(InjectableMixin, PlottableMixin):
             mech, var = variable.split(".", 1)
             mobj = getattr(seg, mech, None)
             if mobj is None or not hasattr(mobj, f"_ref_{var}"):
-                raise ValueError(
+                raise AttributeError(
                     f"'{variable}' not recordable at {section.name()}({segx}). "
                     f"Mechanisms here: {list(section.psection()['density_mechs'].keys())}"
                 )
         else:
             if not hasattr(seg, f"_ref_{variable}"):
-                raise ValueError(
+                raise AttributeError(
                     f"'{variable}' not recordable at {section.name()}({segx}). "
                     f"(Top-level vars are typically v/ina/ik/ica)"
                 )
@@ -910,6 +910,150 @@ class Cell(InjectableMixin, PlottableMixin):
 
     def __del__(self):
         self.delete()
+
+    def get_section(self, section_name: str) -> NeuronSection:
+        """Return a single, fully specified NEURON section (e.g., 'soma[0]',
+        'dend[3]').
+
+        Raises:
+            ValueError or TypeError if the section is not found or invalid.
+        """
+        if section_name in self.sections:
+            section = self.sections[section_name]
+            if hasattr(section, "nseg"):
+                return section
+            raise TypeError(f"'{section_name}' exists but is not a NEURON section.")
+
+        available = ", ".join(self.sections.keys())
+        raise ValueError(f"Section '{section_name}' not found. Available: [{available}]")
+
+    def get_sections(self, section_name: str) -> List[NeuronSection]:
+        """Return a list of NEURON sections.
+
+        If the section name is a fully specified one (e.g., 'dend[3]'), return it as a list of one.
+        If the section name is a base name (e.g., 'dend'), return all matching sections like 'dend[0]', 'dend[1]', etc.
+
+        Raises:
+            ValueError if no valid sections are found.
+        """
+        # Try to interpret as fully qualified section name
+        try:
+            return [self.get_section(section_name)]
+        except ValueError:
+            pass  # Not a precise match; try prefix match
+
+        # Fallback to prefix-based match (e.g., 'dend' → 'dend[0]', 'dend[1]', ...)
+        matched = [
+            section for name, section in self.sections.items()
+            if name.startswith(f"{section_name}[")
+        ]
+        if matched:
+            return matched
+
+        available = ", ".join(self.sections.keys())
+        raise ValueError(f"Section '{section_name}' not found. Available: [{available}]")
+
+    def get_section_by_id(self, section_id: int) -> NeuronSection:
+        """Return NEURON section by global section index (LibSONATA
+        ordering)."""
+        if not self.psections:
+            self._init_psections()
+
+        try:
+            return self.psections[int(section_id)].hsection
+        except KeyError:
+            raise IndexError(f"Section ID {section_id} is out of range for cell {self.cell_id.id}")
+
+    def resolve_segments_from_compartment_set(self, node_id, compartment_nodes) -> List[Tuple[NeuronSection, str, float]]:
+        """Resolve segments for a cell using a predefined compartment node
+        list.
+
+        Supports both LibSONATA format ([node_id, section_id, seg]) and
+        name-based format ([node_id, section_name, seg]).
+        """
+        result = []
+        for n_id, sec_ref, seg in compartment_nodes:
+            if n_id != node_id:
+                continue
+
+            if isinstance(sec_ref, str):
+                # Name-based: e.g., "dend[5]"
+                section = self.get_section(sec_ref)
+                sec_name = section.name().split(".")[-1]
+            elif isinstance(sec_ref, int):
+                # ID-based: resolve by section index
+                try:
+                    section = self.get_section_by_id(sec_ref)
+                    sec_name = section.name().split(".")[-1]
+                except AttributeError:
+                    raise ValueError(f"Cell object does not support section lookup by index: {sec_ref}")
+            else:
+                raise TypeError(f"Unsupported section reference type: {type(sec_ref)}")
+
+            result.append((section, sec_name, seg))
+        return result
+
+    def resolve_segments_from_config(self, report_cfg) -> List[Tuple[NeuronSection, str, float]]:
+        """Resolve segments from NEURON sections based on config."""
+        compartment = report_cfg.get("compartments", "center")
+        if compartment not in {"center", "all"}:
+            raise ValueError(
+                f"Unsupported 'compartments' value '{compartment}' — must be 'center' or 'all'."
+            )
+
+        section_name = report_cfg.get("sections", "soma")
+        sections = self.get_sections(section_name)
+
+        targets = []
+        for sec in sections:
+            sec_name = sec.name().split(".")[-1]
+            if compartment == "center":
+                targets.append((sec, sec_name, 0.5))
+            elif compartment == "all":
+                for seg in sec:
+                    targets.append((sec, sec_name, seg.x))
+        return targets
+
+    def configure_recording(self, recording_sites, variable_name, report_name):
+        """Configure recording of a variable on a single cell.
+
+        This function sets up the recording of the specified variable (e.g., membrane voltage)
+        in the target cell, for each resolved segment.
+
+        Parameters
+        ----------
+        cell : Any
+            The cell object on which to configure recordings.
+
+        recording_sites : list of tuples
+            List of tuples (section, section_name, segment) where:
+            - section is the section object in the cell.
+            - section_name is the name of the section.
+            - segment is the Neuron segment index (0-1).
+
+        variable_name : str
+            The name of the variable to record (e.g., "v" for membrane voltage).
+
+        report_name : str
+            The name of the report (used in logging).
+        """
+        node_id = self.cell_id.id
+
+        for sec, sec_name, seg in recording_sites:
+            try:
+                self.add_variable_recording(variable=variable_name, section=sec, segx=seg)
+                logger.info(
+                    f"Recording '{variable_name}' at {sec_name}({seg}) on GID {node_id} for report '{report_name}'"
+                )
+            except AttributeError:
+                logger.warning(
+                    f"Recording for variable '{variable_name}' is not implemented in Cell."
+                )
+                return
+            except Exception as e:
+                logger.warning(
+                    f"Failed to record '{variable_name}' at {sec_name}({seg}) on GID {node_id} for report '{report_name}': {e}"
+                )
 
     def add_currents_recordings(
         self,

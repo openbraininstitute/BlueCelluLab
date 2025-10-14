@@ -16,10 +16,11 @@ from pathlib import Path
 import numpy as np
 import h5py
 from typing import Dict, List
+
 from .base_writer import BaseReportWriter
 from bluecellulab.reports.utils import (
+    build_recording_sites,
     resolve_source_nodes,
-    resolve_segments,
 )
 import logging
 
@@ -31,52 +32,67 @@ class CompartmentReportWriter(BaseReportWriter):
 
     def write(self, cells: Dict, tstart=0):
         report_name = self.cfg.get("name", "unnamed")
-        # section     = self.cfg.get("sections")
         variable = self.cfg.get("variable_name", "v")
+        report_type = self.cfg.get("type", "compartment")
 
+        # Resolve source set
         source_sets = self.cfg["_source_sets"]
-        source_type = self.cfg["_source_type"]
-        src_name = self.cfg.get("cells") if source_type == "node_set" else self.cfg.get("compartments")
+        if report_type == "compartment":
+            src_name = self.cfg.get("cells")
+        elif report_type == "compartment_set":
+            src_name = self.cfg.get("compartment_set")
+        else:
+            raise NotImplementedError(
+                f"Unsupported report type '{report_type}' in configuration for report '{report_name}'"
+            )
+
         src = source_sets.get(src_name)
         if not src:
-            logger.warning(f"{source_type.title()} '{src_name}' not found – skipping '{report_name}'.")
+            logger.warning(f"{report_type} '{src_name}' not found – skipping '{report_name}'.")
             return
 
         population = src["population"]
-        node_ids, comp_nodes = resolve_source_nodes(src, source_type, cells, population)
+        node_ids, comp_nodes = resolve_source_nodes(src, report_type, cells, population)
+        recording_sites_per_cell = build_recording_sites(
+            cells, node_ids, population, report_type, self.cfg, comp_nodes
+        )
+
+        # Detect trace mode
+        sample_cell = next(iter(cells.values()))
+        is_trace_mode = isinstance(sample_cell, dict)
 
         data_matrix: List[np.ndarray] = []
         node_id_list: List[int] = []
         idx_ptr: List[int] = [0]
         elem_ids: List[int] = []
 
-        for nid in node_ids:
+        for nid in sorted(recording_sites_per_cell):
+            recording_sites = recording_sites_per_cell[nid]
             cell = cells.get((population, nid)) or cells.get(f"{population}_{nid}")
             if cell is None:
+                logger.warning(f"Cell or trace for ({population}, {nid}) not found – skipping.")
                 continue
 
-            if isinstance(cell, dict):
-                # No section/segment structure to resolve for traces
-                trace = np.asarray(cell["voltage"], dtype=np.float32)
-                data_matrix.append(trace)
-                node_id_list.append(nid)
-                elem_ids.append(len(elem_ids))
-                idx_ptr.append(idx_ptr[-1] + 1)
-                continue
-
-            targets = resolve_segments(cell, self.cfg, nid, comp_nodes, source_type)
-            for sec, sec_name, seg in targets:
-                try:
-                    if hasattr(cell, "get_variable_recording"):
-                        trace = cell.get_variable_recording(variable=variable, section=sec, segx=seg)
-                    else:
-                        trace = np.asarray(cell["voltage"], dtype=np.float32)
-                    data_matrix.append(trace)
+            if is_trace_mode:
+                voltage = np.asarray(cell["voltage"], dtype=np.float32)
+                for sec, sec_name, seg in recording_sites:
+                    data_matrix.append(voltage)
                     node_id_list.append(nid)
                     elem_ids.append(len(elem_ids))
                     idx_ptr.append(idx_ptr[-1] + 1)
-                except Exception as e:
-                    logger.warning(f"Failed recording {nid}:{sec_name}@{seg}: {e}")
+            else:
+                for sec, sec_name, seg in recording_sites:
+                    try:
+                        if hasattr(cell, "get_variable_recording"):
+                            trace = cell.get_variable_recording(variable=variable, section=sec, segx=seg)
+                        else:
+                            trace = np.asarray(cell["voltage"], dtype=np.float32)
+                        data_matrix.append(trace)
+                        node_id_list.append(nid)
+                        elem_ids.append(len(elem_ids))
+                        idx_ptr.append(idx_ptr[-1] + 1)
+                    except Exception as e:
+                        logger.warning(f"Failed recording {nid}:{sec_name}@{seg}: {e}")
 
         if not data_matrix:
             logger.warning(f"No data for report '{report_name}'.")
@@ -148,7 +164,8 @@ class CompartmentReportWriter(BaseReportWriter):
         if dt_report < sim_dt:
             logger.warning(
                 f"Requested report dt={dt_report} ms is finer than simulation dt={sim_dt} ms. "
-                f"Clamping report dt to {sim_dt} ms."
+                f"Clamping report dt to {sim_dt} ms. "
+                f"To achieve finer temporal resolution, reduce the simulation dt in your config."
             )
             dt_report = sim_dt
 
@@ -161,7 +178,7 @@ class CompartmentReportWriter(BaseReportWriter):
         # Downsample the data if needed
         # Compute start and end indices in the original data
         start_index = int(round((start_time - tstart) / sim_dt))
-        end_index = int(round((end_time - tstart) / sim_dt)) + 1  # inclusive
+        end_index = int(round((end_time - tstart) / sim_dt))
 
         # Now slice and downsample
         data_matrix_downsampled = [

@@ -14,7 +14,11 @@
 
 from typing import Optional, Dict
 from bluecellulab.reports.writers import get_writer
-from bluecellulab.reports.utils import extract_spikes_from_cells  # helper you already have / write
+from bluecellulab.reports.utils import SUPPORTED_REPORT_TYPES, extract_spikes_from_cells  # helper you already have / write
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ReportManager:
@@ -52,21 +56,30 @@ class ReportManager:
 
     def _write_voltage_reports(self, cells_or_traces):
         for name, rcfg in self.cfg.get_report_entries().items():
-            if rcfg.get("type") != "compartment":
+            if rcfg.get("type") not in SUPPORTED_REPORT_TYPES:
                 continue
 
-            section = rcfg.get("sections")
-            if section == "compartment_set":
+            report_type = rcfg.get("type")
+            if report_type == "compartment_set":
                 if rcfg.get("cells") is not None:
-                    raise ValueError("'cells' may not be set with 'compartment_set'")
-                src_sets, src_type = self.cfg.get_compartment_sets(), "compartment_set"
-            else:
-                if rcfg.get("compartments") not in ("center", "all"):
+                    raise ValueError("'cells' may not be set when using 'compartment_set' report type.")
+                if rcfg.get("sections") is not None:
+                    raise ValueError("'sections' may not be set when using 'compartment_set' report type.")
+                if rcfg.get("compartments") is not None:
+                    raise ValueError("'compartments' may not be set when using 'compartment_set' report type.")
+                src_sets = self.cfg.get_compartment_sets()
+            elif report_type == "compartment":
+                compartments = rcfg.get("compartments") or "center"
+                if compartments not in ("center", "all"):
                     raise ValueError("invalid 'compartments' value")
-                src_sets, src_type = self.cfg.get_node_sets(), "node_set"
+                if rcfg.get("cells") is None:
+                    raise ValueError("'cells' must be specified when using compartment reports")
+                src_sets = self.cfg.get_node_sets()
+            else:
+                logger.error(f"Unsupported report type '{report_type}' in configuration for report '{name}'")
 
             rcfg["_source_sets"] = src_sets
-            rcfg["_source_type"] = src_type
+            rcfg["name"] = name
 
             out_path = self.cfg.report_file_path(rcfg, name)
             writer = get_writer("compartment")(rcfg, out_path, self.dt)

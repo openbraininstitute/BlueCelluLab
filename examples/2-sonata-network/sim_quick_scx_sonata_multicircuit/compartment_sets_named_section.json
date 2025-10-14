@@ -1,0 +1,16 @@
+{
+  "Mosaic_A": {
+    "population": "NodeA" ,
+    "compartment_set": [
+      [0, "soma[0]", 0.5],
+      [1, "dend[10]", 0.3]
+    ]
+  },
+  "Mosaic_B": {
+    "population": "NodeB",
+    "compartment_set": [
+      [0, "soma[0]", 0.1],
+      [1, "dend[2]", 0.1]
+    ]
+  }
+}
