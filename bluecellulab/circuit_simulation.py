@@ -362,10 +362,7 @@ class CircuitSimulation:
                 gids_of_target = None
                 if population_name is not None:
                     try:
-                        gids_of_target = {
-                            cid for cid in self.cells
-                            if getattr(cid, "population_name", None) == population_name
-                        }
+                        gids_of_target = self.circuit_access.get_target_cell_ids(population_name)
                     except Exception:
                         gids_of_target = None
 
