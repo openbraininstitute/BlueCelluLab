@@ -97,7 +97,7 @@ def run_multirecordings_stimulus(
         cell.add_replay_hypamp(hyp_stim)
 
     for recording_section, recording_segment in recording_locations:
-        cell.add_voltage_recording(cell.sections[recording_section], recording_segment)
+        cell.add_variable_recording(cell.sections[recording_section], recording_segment)
 
     # Set up spike detection if enabled
     spikes: Optional[np.ndarray] = None
