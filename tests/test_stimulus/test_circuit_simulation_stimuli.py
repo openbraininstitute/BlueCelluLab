@@ -1,3 +1,17 @@
+# Copyright 2025 Open Brain Institute
+
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+
+#     http://www.apache.org/licenses/LICENSE-2.0
+
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import types
 
 import pytest
@@ -18,10 +32,10 @@ class FakeCell:
         self.persistent = []
         self.calls = []
 
-    def resolve_segments_from_compartment_set(self, node_id):
+    def resolve_segments_from_compartment_set(self, node_id, comp_nodes):
         return [(f"sec-{node_id}", "soma", 0.25)]
 
-    def add_replay_noise(self, stimulus, section=None, segx=0.5):
+    def add_replay_noise(self, stimulus, noise_seed=None, noisestim_count=0, section=None, segx=0.5):
         self.calls.append(("noise", section, segx, stimulus))
 
     def add_pulse(self, stimulus, section=None, segx=0.5):
