@@ -96,10 +96,13 @@ def test_compartment_set_targets_resolved_and_dispatched():
     }
 
     cfg = FakeConfig([noise], compartment_sets=comp_sets)
-    access = FakeCircuitAccess(cfg, target_map={"PopA": [1]})
+    access = FakeCircuitAccess(cfg)
 
     cell = FakeCell(1)
-    cells = {1: cell}
+    cell.population_name = "PopA"
+    cell.id = 1
+
+    cells = {cell: cell}
 
     sim = make_dummy_sim(access, cells)
 
@@ -401,3 +404,45 @@ def test_compartment_set_non_comparable_entries_raises(tmp_path):
 
     with pytest.raises(ValueError, match="contains non-comparable entries"):
         sim.get_all_stimuli_entries()
+
+def test_compartment_set_applied_only_to_matching_population():
+    """Compartment set should be restricted to its population, not all cells."""
+
+    noise = Noise(
+        target="Mosaic_A",
+        delay=0.0,
+        duration=1.0,
+        mean_percent=10.0,
+        variance=5.0,
+        compartment_set="Mosaic_A",
+    )
+
+    comp_sets = {
+        "Mosaic_A": {
+            "population": "NodeA",
+            "compartment_set": [[0, "soma[0]", 0.5]],
+        }
+    }
+
+    cfg = FakeConfig([noise], compartment_sets=comp_sets)
+    access = FakeCircuitAccess(cfg)
+
+    cell_a = FakeCell(gid=0)
+    cell_a.population_name = "NodeA"
+    cell_a.id = 0
+
+    cell_b = FakeCell(gid=1)
+    cell_b.population_name = "NodeB"
+    cell_b.id = 1
+
+    cells = {cell_a: cell_a, cell_b: cell_b}
+
+    sim = make_dummy_sim(access, cells)
+
+    CircuitSimulation._add_stimuli(sim, add_noise_stimuli=True)
+
+    # Stimulus should be applied only to NodeA, never to NodeB
+    assert len(cell_a.calls) == 1
+    assert cell_a.calls[0][0] == "noise"
+
+    assert cell_b.calls == []
