@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import types
 
+from bluecellulab.circuit.config.sonata_simulation_config import SonataSimulationConfig
 import pytest
 
 from bluecellulab.circuit_simulation import CircuitSimulation
@@ -197,3 +199,205 @@ def test_missing_target_fields_raises(monkeypatch):
 
     with pytest.raises(ValueError, match="neither node_set nor compartment_set"):
         CircuitSimulation._add_stimuli(sim, add_pulse_stimuli=True)
+
+
+def test_stimulus_with_both_node_and_compartment_set_raises(tmp_path):
+    sim = SonataSimulationConfig.__new__(SonataSimulationConfig)
+    sim.impl = type("impl", (), {
+        "config": {
+            "inputs": {
+                "stim_1": {
+                    "module": "linear",
+                    "node_set": "Mosaic_A",
+                    "compartment_set": "cs1",
+                    "delay": 0.0,
+                    "duration": 1.0,
+                    "amp_start": 0.1,
+                }
+            }
+        }
+    })()
+    sim._get_config_dir = lambda: str(tmp_path)
+
+    with pytest.raises(ValueError, match="must not include both 'node_set' and 'compartment_set'"):
+        sim.get_all_stimuli_entries()
+
+
+def test_stimulus_compartment_set_without_file_raises(tmp_path):
+    sim = SonataSimulationConfig.__new__(SonataSimulationConfig)
+    sim.impl = type("impl", (), {
+        "config": {
+            "inputs": {
+                "stim_1": {
+                    "module": "linear",
+                    "compartment_set": "cs1",
+                    "delay": 0.0,
+                    "duration": 1.0,
+                    "amp_start": 0.1,
+                }
+            }
+        }
+    })()
+    sim._get_config_dir = lambda: str(tmp_path)
+
+    msg = "SONATA simulation config references 'compartment_set' in inputs but no 'compartment_sets_file' is configured."
+    with pytest.raises(ValueError, match="compartment_set.*no 'compartment_sets_file'"):
+        sim.get_all_stimuli_entries()
+
+
+def _make_sim_with_inputs_and_comp_sets(tmp_path, inputs, comp_sets):
+    comp_file = tmp_path / "compartment_sets.json"
+    comp_file.write_text(json.dumps(comp_sets))
+    sim = SonataSimulationConfig.__new__(SonataSimulationConfig)
+    sim.impl = type("impl", (), {
+        "config": {
+            "inputs": inputs,
+            "compartment_sets_file": str(comp_file),
+        }
+    })()
+    sim._get_config_dir = lambda: str(tmp_path)
+    return sim
+
+
+def test_compartment_set_name_not_found_raises(tmp_path):
+    inputs = {
+        "stim_1": {
+            "module": "linear",
+            "compartment_set": "cs_missing",
+            "delay": 0.0,
+            "duration": 1.0,
+            "amp_start": 0.1,
+        }
+    }
+    comp_sets = {}  # no "cs_missing"
+
+    sim = _make_sim_with_inputs_and_comp_sets(tmp_path, inputs, comp_sets)
+
+    with pytest.raises(ValueError, match="Compartment set 'cs_missing' not found"):
+        sim.get_all_stimuli_entries()
+
+
+def test_compartment_set_without_compartment_list_key_raises(tmp_path):
+    inputs = {
+        "stim_1": {
+            "module": "linear",
+            "compartment_set": "cs1",
+            "delay": 0.0,
+            "duration": 1.0,
+            "amp_start": 0.1,
+        }
+    }
+    comp_sets = {
+        "cs1": {
+            "population": "Mosaic",
+            # no "compartment_set" key
+        }
+    }
+
+    sim = _make_sim_with_inputs_and_comp_sets(tmp_path, inputs, comp_sets)
+
+    with pytest.raises(ValueError, match="does not contain 'compartment_set' key"):
+        sim.get_all_stimuli_entries()
+
+
+def test_compartment_set_invalid_entry_raises(tmp_path):
+    inputs = {
+        "stim_1": {
+            "module": "linear",
+            "compartment_set": "cs1",
+            "delay": 0.0,
+            "duration": 1.0,
+            "amp_start": 0.1,
+        }
+    }
+    # entry is not a [node_id, section, seg] triple
+    comp_sets = {
+        "cs1": {
+            "population": "Mosaic",
+            "compartment_set": [["bad"]],
+        }
+    }
+
+    sim = _make_sim_with_inputs_and_comp_sets(tmp_path, inputs, comp_sets)
+
+    with pytest.raises(ValueError, match="Invalid compartment_set entry"):
+        sim.get_all_stimuli_entries()
+
+
+def test_compartment_set_unsorted_entries_raises(tmp_path):
+    inputs = {
+        "stim_1": {
+            "module": "linear",
+            "compartment_set": "cs1",
+            "delay": 0.0,
+            "duration": 1.0,
+            "amp_start": 0.1,
+        }
+    }
+    comp_sets = {
+        "cs1": {
+            "population": "Mosaic",
+            "compartment_set": [
+                [1, "soma", 0.5],
+                [0, "soma", 0.5],  # out of order
+            ],
+        }
+    }
+
+    sim = _make_sim_with_inputs_and_comp_sets(tmp_path, inputs, comp_sets)
+
+    with pytest.raises(ValueError, match="must be sorted ascending"):
+        sim.get_all_stimuli_entries()
+
+
+def test_compartment_set_duplicate_entry_raises(tmp_path):
+    inputs = {
+        "stim_1": {
+            "module": "linear",
+            "compartment_set": "cs1",
+            "delay": 0.0,
+            "duration": 1.0,
+            "amp_start": 0.1,
+        }
+    }
+    comp_sets = {
+        "cs1": {
+            "population": "Mosaic",
+            "compartment_set": [
+                [0, "soma", 0.5],
+                [0, "soma", 0.5],  # duplicate
+            ],
+        }
+    }
+
+    sim = _make_sim_with_inputs_and_comp_sets(tmp_path, inputs, comp_sets)
+
+    with pytest.raises(ValueError, match="contains duplicate entry"):
+        sim.get_all_stimuli_entries()
+
+
+def test_compartment_set_non_comparable_entries_raises(tmp_path):
+    inputs = {
+        "stim_1": {
+            "module": "linear",
+            "compartment_set": "cs1",
+            "delay": 0.0,
+            "duration": 1.0,
+            "amp_start": 0.1,
+        }
+    }
+    # Mixed types in node_id so tuple comparison raises TypeError internally
+    comp_sets = {
+        "cs1": {
+            "population": "Mosaic",
+            "compartment_set": [
+                [0, "soma", 0.5],
+                ["bad", "soma", 0.5],
+            ],
+        }
+    }
+
+    sim = _make_sim_with_inputs_and_comp_sets(tmp_path, inputs, comp_sets)
+
+    with pytest.raises(ValueError, match="contains non-comparable entries"):
+        sim.get_all_stimuli_entries()
