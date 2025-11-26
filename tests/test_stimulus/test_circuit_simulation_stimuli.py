@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import json
-import types
 
 from bluecellulab.circuit.config.sonata_simulation_config import SonataSimulationConfig
 import pytest

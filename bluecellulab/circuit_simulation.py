@@ -457,7 +457,8 @@ class CircuitSimulation:
         stimulus: circuit_stimulus_definitions.Stimulus,
         compartment_sets: dict[str, dict[str, Any]] | None,
     ) -> list[tuple]:
-        """Resolve a compartment_set stimulus into (cell_id, section, segx, sec_name) targets."""
+        """Resolve a compartment_set stimulus into (cell_id, section, segx,
+        sec_name) targets."""
         if compartment_sets is None:
             raise ValueError(
                 "Simulation config provides compartment_set stimuli but "
