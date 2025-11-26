@@ -321,7 +321,6 @@ class Cell(InjectableMixin, PlottableMixin):
         """Adds recording to AIS."""
         self.add_recording("self.axonal[1](0.5)._ref_v", dt=dt)
 
-    @deprecated("Use add_variable_recording('v', ...) instead.")
     def add_voltage_recording(
         self, section: Optional[NeuronSection] = None, segx: float = 0.5, dt: Optional[float] = None
     ) -> None:
@@ -340,7 +339,6 @@ class Cell(InjectableMixin, PlottableMixin):
         var_name = section_to_voltage_recording_str(section, segx)
         self.add_recording(var_name, dt)
 
-    @deprecated("Use get_variable_recording('v', ...) instead.")
     def get_voltage_recording(
         self, section: Optional[NeuronSection] = None, segx: float = 0.5
     ) -> np.ndarray:
