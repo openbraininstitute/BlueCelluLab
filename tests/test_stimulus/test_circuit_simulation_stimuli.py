@@ -405,6 +405,7 @@ def test_compartment_set_non_comparable_entries_raises(tmp_path):
     with pytest.raises(ValueError, match="contains non-comparable entries"):
         sim.get_all_stimuli_entries()
 
+
 def test_compartment_set_applied_only_to_matching_population():
     """Compartment set should be restricted to its population, not all cells."""
 
