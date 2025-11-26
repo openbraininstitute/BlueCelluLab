@@ -104,8 +104,8 @@ def spiking_test(template_params, rheobase, out_dir, spike_threshold_voltage=-40
     outpath = plot_trace(
         recording,
         out_dir,
-        fname="spiking_test.pdf",
-        title="Spiking Test - Step at 130% of Rheobase",
+        fname="spiking_validation.pdf",
+        title="Spiking Validation - Step at 130% of Rheobase",
     )
 
     notes = "Validation passed: Spikes detected." if passed else "Validation failed: No spikes detected."
@@ -145,8 +145,8 @@ def depolarization_block_test(template_params, rheobase, out_dir):
     outpath = plot_trace(
         recording,
         out_dir,
-        fname="depolarization_block_test.pdf",
-        title="Depolarization Block Test - Step at 200% of Rheobase",
+        fname="depolarization_block_validation.pdf",
+        title="Depolarization Block Validation - Step at 200% of Rheobase",
     )
 
     notes = "Validation passed: No depolarization block detected." if not depol_block else "Validation failed: Depolarization block detected."
@@ -187,14 +187,14 @@ def bpap_test(template_params, rheobase, out_dir="./"):
         show_figure=False,
         save_figure=True,
         output_dir=out_dir,
-        output_fname="bpap.pdf",
+        output_fname="back-propagating_action_potential.pdf",
         do_fit=False,
     )
     outpath_recordings = bpap.plot_recordings(
         show_figure=False,
         save_figure=True,
         output_dir=out_dir,
-        output_fname="bpap_recordings.pdf",
+        output_fname="back-propagating_action_potential_recordings.pdf",
     )
 
     return {
@@ -235,15 +235,15 @@ def ais_spiking_test(template_params, rheobase, out_dir, spike_threshold_voltage
     outpath1 = plot_traces(
         recordings,
         out_dir,
-        fname="ais_spiking_test.pdf",
-        title="AIS Spiking Test - Step at 200% of Rheobase",
+        fname="ais_spiking_validation.pdf",
+        title="AIS Spiking Validation - Step at 200% of Rheobase",
         labels=["axon[0]", "soma[0]"],
     )
     outpath2 = plot_traces(
         recordings,
         out_dir,
-        fname="ais_spiking_test_zoomed.pdf",
-        title="AIS Spiking Test - Step at 200% of Rheobase (zoomed)",
+        fname="ais_spiking_validation_zoomed.pdf",
+        title="AIS Spiking Validation - Step at 200% of Rheobase (zoomed)",
         labels=["axon[0]", "soma[0]"],
         xlim=(IDRestTimings.PRE_DELAY.value, IDRestTimings.PRE_DELAY.value + 100),
     )
@@ -306,8 +306,8 @@ def hyperpolarization_test(template_params, rheobase, out_dir):
     outpath = plot_trace(
         recording,
         out_dir,
-        fname="hyperpolarization_test.pdf",
-        title="Hyperpolarization Test - Step at -40% of Rheobase",
+        fname="hyperpolarization_validation.pdf",
+        title="Hyperpolarization Validation - Step at -40% of Rheobase",
     )
 
     # Check for hyperpolarization
