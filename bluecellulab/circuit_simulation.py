@@ -332,59 +332,18 @@ class CircuitSimulation:
 
         # Pre-fetch compartment sets (if available) to detect when a stimulus
         # target refers to a named compartment_set rather than a node_set.
-        compartment_sets: dict[str, dict[str, Any]] | None
+        compartment_sets: dict[str, dict[str, Any]] | None = None
         try:
             compartment_sets = self.circuit_access.config.get_compartment_sets()
-        except Exception:
-            compartment_sets = None
+        except ValueError:
+            pass
 
         for stimulus in stimuli_entries:
             # Build a unified list of (cell_id, section, segx, section_name) targets
             targets: list[tuple] = []
 
             if stimulus.compartment_set is not None:
-                if compartment_sets is None:
-                    raise ValueError(
-                        "Simulation config provides compartment_set stimuli but "
-                        "no 'compartment_sets_file' is configured."
-                    )
-
-                comp_name = stimulus.compartment_set
-                if comp_name not in compartment_sets:
-                    raise ValueError(f"Compartment set '{comp_name}' not found in compartment_sets file.")
-
-                comp_entry = compartment_sets[comp_name]
-                comp_nodes = comp_entry.get("compartment_set", [])
-
-                # Try to narrow target GIDs using the optional population name
-                population_name = comp_entry.get("population")
-
-                gids_of_target = None
-                if population_name is not None:
-                    try:
-                        gids_of_target = {
-                            cid for cid in self.cells
-                            if getattr(cid, "population_name", None) == population_name
-                        }
-                    except Exception:
-                        gids_of_target = None
-
-                # For each instantiated cell, resolve sections for the full comp_nodes
-                for cell_id in self.cells:
-                    if gids_of_target is not None and cell_id not in gids_of_target:
-                        continue
-                    try:
-                        resolved = self.cells[cell_id].resolve_segments_from_compartment_set(
-                            cell_id.id if hasattr(cell_id, "id") else cell_id,
-                            comp_nodes,
-                        )
-                    except Exception as e:
-                        logger.debug(f"Failed to resolve compartment_set for cell {cell_id}: {e}")
-                        continue
-
-                    for sec, sec_name, segx in resolved:
-                        targets.append((cell_id, sec, segx, sec_name))
-
+                targets = self._targets_from_compartment_set(stimulus, compartment_sets)
             elif stimulus.node_set is not None:
                 gids_of_target = self.circuit_access.get_target_cell_ids(stimulus.node_set)
                 for cell_id in self.cells:
@@ -393,7 +352,6 @@ class CircuitSimulation:
                     sec = self.cells[cell_id].soma
                     sec_name = sec.name().split(".")[-1]
                     targets.append((cell_id, sec, 0.5, sec_name))
-
             else:
                 raise ValueError(
                     f"Stimulus '{stimulus}' has neither node_set nor compartment_set; "
@@ -493,6 +451,45 @@ class CircuitSimulation:
             logger.info(f"Added {syn_descriptions} synapses for gid {cell_id}")
             if add_minis:
                 logger.info(f"Added minis for {cell_id=}")
+
+    def _targets_from_compartment_set(
+        self,
+        stimulus: circuit_stimulus_definitions.Stimulus,
+        compartment_sets: dict[str, dict[str, Any]] | None,
+    ) -> list[tuple]:
+        """Resolve a compartment_set stimulus into (cell_id, section, segx, sec_name) targets."""
+        if compartment_sets is None:
+            raise ValueError(
+                "Simulation config provides compartment_set stimuli but "
+                "no 'compartment_sets_file' is configured."
+            )
+
+        comp_name = stimulus.compartment_set
+        if comp_name not in compartment_sets:
+            raise ValueError(f"Compartment set '{comp_name}' not found in compartment_sets file.")
+
+        comp_entry = compartment_sets[comp_name]
+        comp_nodes = comp_entry.get("compartment_set", [])
+
+        population_name = comp_entry.get("population")
+
+        targets: list[tuple] = []
+        for cell_id in self.cells:
+            if population_name is not None and getattr(cell_id, "population_name", None) != population_name:
+                continue
+            try:
+                resolved = self.cells[cell_id].resolve_segments_from_compartment_set(
+                    cell_id.id if hasattr(cell_id, "id") else cell_id,
+                    comp_nodes,
+                )
+            except (ValueError, TypeError) as e:
+                logger.debug(f"Failed to resolve compartment_set for cell {cell_id}: {e}")
+                continue
+
+            for sec, sec_name, segx in resolved:
+                targets.append((cell_id, sec, segx, sec_name))
+
+        return targets
 
     @staticmethod
     def _intersect_pre_gids(syn_descriptions, pre_gids: list[CellId]) -> pd.DataFrame:

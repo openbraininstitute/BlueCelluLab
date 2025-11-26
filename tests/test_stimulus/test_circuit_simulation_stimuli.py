@@ -69,12 +69,12 @@ class FakeCircuitAccess:
 
 
 def make_dummy_sim(circuit_access, cells):
-    dummy = types.SimpleNamespace()
-    dummy.circuit_access = circuit_access
-    dummy.cells = cells
-    dummy.spike_threshold = -20.0
-    dummy.spike_location = "soma"
-    return dummy
+    sim = CircuitSimulation.__new__(CircuitSimulation)
+    sim.circuit_access = circuit_access
+    sim.cells = cells
+    sim.spike_threshold = -20.0
+    sim.spike_location = "soma"
+    return sim
 
 
 def test_compartment_set_targets_resolved_and_dispatched():

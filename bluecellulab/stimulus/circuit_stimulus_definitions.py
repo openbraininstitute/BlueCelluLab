@@ -233,13 +233,11 @@ class Stimulus:
     @classmethod
     def from_sonata(cls, stimulus_entry: dict, config_dir: Optional[str] = None) -> Optional[Stimulus]:
         pattern = Pattern.from_sonata(stimulus_entry["module"])
-        node_set = stimulus_entry.get("node_set")
+        node_set = stimulus_entry["node_set"]
         compartment_set = stimulus_entry.get("compartment_set")
         if node_set is not None and compartment_set is not None:
             raise ValueError("Stimulus entry must not contain both 'node_set' and 'compartment_set'.")
         target_name = compartment_set if compartment_set is not None else node_set
-        if target_name is None:
-            target_name = stimulus_entry["node_set"]
 
         if pattern == Pattern.NOISE:
             return Noise(

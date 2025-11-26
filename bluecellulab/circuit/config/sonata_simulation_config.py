@@ -60,8 +60,8 @@ class SonataSimulationConfig:
         compartment_sets = None
         try:
             compartment_sets = self.get_compartment_sets()
-        except Exception:
-            compartment_sets = None
+        except ValueError:
+            pass
 
         for value in inputs.values():
             # Validate mutual exclusivity and existence of compartment_set
