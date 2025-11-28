@@ -73,15 +73,15 @@ def test_init_with_invalid_type():
 
 def test_get_all_stimuli_entries():
     sim = SonataSimulationConfig(multi_input_conf_path)
-    noise_stim = Noise("Mosaic_A", 10.0, 20.0, 200.0, 0.001)
-    hyper_stim = Hyperpolarizing("Mosaic_A", 0.0, 50.0)
-    pulse_stim = Pulse("Mosaic_A", 10.0, 20.0, 0.1, 25, 10)
-    linear_stim = Linear("Mosaic_A", 10.0, 20.0, 0.1, 0.4)
-    relative_linear_stim = RelativeLinear("Mosaic_A", 10.0, 20.0, 50, 100)
-    shot_noise_stim = ShotNoise("Mosaic_A", 10.0, 20, 2, 5, 10, 0.1, 0.02, 0.25, 42)
-    relative_shot_noise_stim = RelativeShotNoise("Mosaic_A", 10.0, 20, 2, 5, 50, 10, 0.5, 0.25, 42)
-    ornstein_uhlenbeck_stim = OrnsteinUhlenbeck("Mosaic_A", 10.0, 20.0, 5, 0.1, 0, 0.25, 42)
-    relative_ornstein_uhlenbeck_stim = RelativeOrnsteinUhlenbeck("Mosaic_A", 10.0, 20.0, 5, 50, 10, 0.25, 42)
+    noise_stim = Noise("Mosaic_A", 10.0, 20.0, 200.0, 0.001, node_set="Mosaic_A")
+    hyper_stim = Hyperpolarizing("Mosaic_A", 0.0, 50.0, node_set="Mosaic_A")
+    pulse_stim = Pulse("Mosaic_A", 10.0, 20.0, 0.1, 25, 10, node_set="Mosaic_A")
+    linear_stim = Linear("Mosaic_A", 10.0, 20.0, 0.1, 0.4, node_set="Mosaic_A")
+    relative_linear_stim = RelativeLinear("Mosaic_A", 10.0, 20.0, 50, 100, node_set="Mosaic_A")
+    shot_noise_stim = ShotNoise("Mosaic_A", 10.0, 20, 2, 5, 10, 0.1, 0.02, 0.25, 42, node_set="Mosaic_A")
+    relative_shot_noise_stim = RelativeShotNoise("Mosaic_A", 10.0, 20, 2, 5, 50, 10, 0.5, 0.25, 42, node_set="Mosaic_A")
+    ornstein_uhlenbeck_stim = OrnsteinUhlenbeck("Mosaic_A", 10.0, 20.0, 5, 0.1, 0, 0.25, 42, node_set="Mosaic_A")
+    relative_ornstein_uhlenbeck_stim = RelativeOrnsteinUhlenbeck("Mosaic_A", 10.0, 20.0, 5, 50, 10, 0.25, 42, node_set="Mosaic_A")
     entries = sim.get_all_stimuli_entries()
     assert len(entries) == 9
     assert entries[0] == linear_stim

@@ -61,9 +61,11 @@ class InjectableMixin:
         else:  # Current
             return self.threshold  # type: ignore
 
-    def add_pulse(self, stimulus) -> TStim:
+    def add_pulse(self, stimulus, section=None, segx=0.5) -> TStim:
         """Inject pulse stimulus for replay."""
-        tstim = neuron.h.TStim(0.5, sec=self.soma)  # type: ignore
+        if section is None:
+            section = self.soma   # type: ignore
+        tstim = neuron.h.TStim(segx, sec=section)  # type: ignore
         tstim.train(stimulus.delay,
                     stimulus.duration,
                     stimulus.amp_start,
@@ -235,13 +237,17 @@ class InjectableMixin:
             self,
             stimulus: Noise,
             noise_seed=None,
-            noisestim_count=0):
+            noisestim_count=0,
+            section=None,
+            segx=0.5):
         """Add a replay noise stimulus."""
+        if section is None:
+            section = self.soma  # type: ignore
         mean = (stimulus.mean_percent * self.threshold) / 100.0  # type: ignore
         variance = (stimulus.variance * self.threshold) / 100.0  # type: ignore
         tstim = self.add_noise_step(
-            self.soma,  # type: ignore
-            0.5,
+            section,  # type: ignore
+            segx,
             mean,
             variance,
             stimulus.delay,
@@ -251,9 +257,11 @@ class InjectableMixin:
 
         return tstim
 
-    def add_replay_hypamp(self, stimulus: Hyperpolarizing):
+    def add_replay_hypamp(self, stimulus: Hyperpolarizing, section=None, segx=0.5):
         """Inject hypamp for the replay."""
-        tstim = neuron.h.TStim(0.5, sec=self.soma)  # type: ignore
+        if section is None:
+            section = self.soma  # type: ignore
+        tstim = neuron.h.TStim(segx, sec=section)  # type: ignore
         if self.hypamp is None:  # type: ignore
             raise BluecellulabError("Cell.hypamp must be set for hypamp stimulus")
         amp: float = self.hypamp  # type: ignore
@@ -261,19 +269,24 @@ class InjectableMixin:
         self.persistent.append(tstim)  # type: ignore
         return tstim
 
-    def add_replay_linear(self, stimulus: Linear):
+    def add_replay_linear(self, stimulus: Linear, section=None, segx=0.5):
         """Add a linear stimulus."""
-
+        if section is None:
+            section = self.soma  # type: ignore
         return self.add_ramp(
             stimulus.delay,
             stimulus.delay + stimulus.duration,
             stimulus.amp_start,
-            stimulus.amp_end
+            stimulus.amp_end,
+            section=section,
+            segx=segx,
         )
 
-    def add_replay_relativelinear(self, stimulus: RelativeLinear):
+    def add_replay_relativelinear(self, stimulus: RelativeLinear, section=None, segx=0.5):
         """Add a relative linear stimulus."""
-        tstim = neuron.h.TStim(0.5, sec=self.soma)  # type: ignore
+        if section is None:
+            section = self.soma  # type: ignore
+        tstim = neuron.h.TStim(segx, sec=section)  # type: ignore
         amp_start = stimulus.percent_start / 100.0 * self.threshold  # type: ignore
         amp_end = stimulus.percent_end / 100.0 * self.threshold  # type: ignore
 

@@ -36,6 +36,10 @@ class SimulationConfig(Protocol):
     def connection_entries(self) -> list[ConnectionOverrides]:
         raise NotImplementedError
 
+    def get_compartment_sets(self) -> dict[str, dict]:
+        """Return SONATA-style compartment_sets mapping."""
+        raise NotImplementedError
+
     @property
     def base_seed(self) -> int:
         raise NotImplementedError

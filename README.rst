@@ -66,7 +66,7 @@ We are providing support on `Gitter <https://gitter.im/openbraininstitute/BlueCe
 Main dependencies
 =================
 
-* `Python 3.9+ <https://www.python.org/downloads/release/python-390/>`_
+* `Python 3.10+ <https://www.python.org/downloads/release/python-390/>`_
 * `NEURON <=8.2.7 <https://pypi.org/project/NEURON/>`__
 
 Installation

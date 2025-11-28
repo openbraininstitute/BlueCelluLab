@@ -29,7 +29,7 @@
       "input_type": "current_clamp",
       "delay": 1000.0,
       "duration": 250.0,
-      "node_set": "Mosaic_A"
+      "compartment_set": "Mosaic_A"
     },
     "spikeReplay_ml_sensory": {
       "module": "synapse_replay",

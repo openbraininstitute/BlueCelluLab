@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from __future__ import annotations
-from typing import Optional
+from typing import Any, Optional
 from bluecellulab.exceptions import ExtraDependencyMissingError
 
 from bluecellulab import BLUEPY_AVAILABLE
@@ -203,3 +203,7 @@ class BluepySimulationConfig:
         connection_override: ConnectionOverrides
     ) -> None:
         self._connection_overrides.append(connection_override)
+
+    def get_compartment_sets(self) -> dict[str, dict[str, Any]]:
+        """Bluepy configs do not support compartment_sets."""
+        raise NotImplementedError("Compartment sets are only supported for SonataSimulationConfig.")

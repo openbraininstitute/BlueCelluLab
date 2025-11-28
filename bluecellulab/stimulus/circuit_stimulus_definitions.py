@@ -18,6 +18,7 @@ Run-time validates the data via Pydantic.
 """
 from __future__ import annotations
 
+from dataclasses import field
 from enum import Enum
 from typing import Optional
 import warnings
@@ -107,6 +108,9 @@ class Stimulus:
     delay: NonNegativeFloat
     duration: NonNegativeFloat
 
+    node_set: Optional[str] = field(default=None, kw_only=True)
+    compartment_set: Optional[str] = field(default=None, kw_only=True)
+
     @classmethod
     def from_blueconfig(cls, stimulus_entry: dict) -> Optional[Stimulus]:
         pattern = Pattern.from_blueconfig(stimulus_entry["Pattern"])
@@ -124,12 +128,16 @@ class Stimulus:
                 duration=stimulus_entry["Duration"],
                 mean_percent=stimulus_entry["MeanPercent"],
                 variance=stimulus_entry["Variance"],
+                node_set=stimulus_entry["Target"],
+                compartment_set=None,
             )
         elif pattern == Pattern.HYPERPOLARIZING:
             return Hyperpolarizing(
                 target=stimulus_entry["Target"],
                 delay=stimulus_entry["Delay"],
                 duration=stimulus_entry["Duration"],
+                node_set=stimulus_entry["Target"],
+                compartment_set=None,
             )
         elif pattern == Pattern.PULSE:
             return Pulse(
@@ -139,6 +147,8 @@ class Stimulus:
                 amp_start=stimulus_entry["AmpStart"],
                 width=stimulus_entry["Width"],
                 frequency=stimulus_entry["Frequency"],
+                node_set=stimulus_entry["Target"],
+                compartment_set=None,
             )
         elif pattern == Pattern.RELATIVE_LINEAR:
             return RelativeLinear(
@@ -147,6 +157,8 @@ class Stimulus:
                 duration=stimulus_entry["Duration"],
                 percent_start=stimulus_entry["PercentStart"],
                 percent_end=stimulus_entry["PercentEnd"],
+                node_set=stimulus_entry["Target"],
+                compartment_set=None,
             )
         elif pattern == Pattern.SYNAPSE_REPLAY:
             warnings.warn("Ignoring syanpse replay stimulus as it is not supported")
@@ -164,7 +176,9 @@ class Stimulus:
                 amp_var=stimulus_entry["AmpVar"],
                 seed=stimulus_entry.get("Seed", None),
                 mode=mode,
-                reversal=stimulus_entry.get("Reversal", 0.0)
+                reversal=stimulus_entry.get("Reversal", 0.0),
+                node_set=stimulus_entry["Target"],
+                compartment_set=None,
             )
         elif pattern == Pattern.RELATIVE_SHOT_NOISE:
             return RelativeShotNoise(
@@ -179,7 +193,9 @@ class Stimulus:
                 relative_skew=stimulus_entry.get("RelativeSkew", 0.5),
                 seed=stimulus_entry.get("Seed", None),
                 mode=mode,
-                reversal=stimulus_entry.get("Reversal", 0.0)
+                reversal=stimulus_entry.get("Reversal", 0.0),
+                node_set=stimulus_entry["Target"],
+                compartment_set=None,
             )
         elif pattern == Pattern.ORNSTEIN_UHLENBECK:
             return OrnsteinUhlenbeck(
@@ -192,7 +208,9 @@ class Stimulus:
                 mean=stimulus_entry["Mean"],
                 seed=stimulus_entry.get("Seed", None),
                 mode=mode,
-                reversal=stimulus_entry.get("Reversal", 0.0)
+                reversal=stimulus_entry.get("Reversal", 0.0),
+                node_set=stimulus_entry["Target"],
+                compartment_set=None,
             )
         elif pattern == Pattern.RELATIVE_ORNSTEIN_UHLENBECK:
             return RelativeOrnsteinUhlenbeck(
@@ -205,7 +223,9 @@ class Stimulus:
                 sd_percent=stimulus_entry["SDPercent"],
                 seed=stimulus_entry.get("Seed", None),
                 mode=mode,
-                reversal=stimulus_entry.get("Reversal", 0.0)
+                reversal=stimulus_entry.get("Reversal", 0.0),
+                node_set=stimulus_entry["Target"],
+                compartment_set=None,
             )
         else:
             raise ValueError(f"Unknown pattern {pattern}")
@@ -213,56 +233,76 @@ class Stimulus:
     @classmethod
     def from_sonata(cls, stimulus_entry: dict, config_dir: Optional[str] = None) -> Optional[Stimulus]:
         pattern = Pattern.from_sonata(stimulus_entry["module"])
+        node_set = stimulus_entry.get("node_set")
+        compartment_set = stimulus_entry.get("compartment_set")
+        if node_set is not None and compartment_set is not None:
+            raise ValueError("Stimulus entry must not contain both 'node_set' and 'compartment_set'.")
+        target_name: str | None = compartment_set if compartment_set is not None else node_set
+        if target_name is None:
+            raise ValueError("Stimulus entry must contain either 'node_set' or 'compartment_set'.")
+
         if pattern == Pattern.NOISE:
             return Noise(
-                target=stimulus_entry["node_set"],
+                target=target_name,
                 delay=stimulus_entry["delay"],
                 duration=stimulus_entry["duration"],
                 mean_percent=stimulus_entry["mean_percent"],
                 variance=stimulus_entry["variance"],
+                node_set=node_set,
+                compartment_set=compartment_set,
             )
         elif pattern == Pattern.HYPERPOLARIZING:
             return Hyperpolarizing(
-                target=stimulus_entry["node_set"],
+                target=target_name,
                 delay=stimulus_entry["delay"],
                 duration=stimulus_entry["duration"],
+                node_set=node_set,
+                compartment_set=compartment_set,
             )
         elif pattern == Pattern.PULSE:
             return Pulse(
-                target=stimulus_entry["node_set"],
+                target=target_name,
                 delay=stimulus_entry["delay"],
                 duration=stimulus_entry["duration"],
                 amp_start=stimulus_entry["amp_start"],
                 width=stimulus_entry["width"],
                 frequency=stimulus_entry["frequency"],
+                node_set=node_set,
+                compartment_set=compartment_set,
             )
         elif pattern == Pattern.LINEAR:
             return Linear(
-                target=stimulus_entry["node_set"],
+                target=target_name,
                 delay=stimulus_entry["delay"],
                 duration=stimulus_entry["duration"],
                 amp_start=stimulus_entry["amp_start"],
                 amp_end=stimulus_entry.get("amp_end", stimulus_entry["amp_start"]),
+                node_set=node_set,
+                compartment_set=compartment_set,
             )
         elif pattern == Pattern.RELATIVE_LINEAR:
             return RelativeLinear(
-                target=stimulus_entry["node_set"],
+                target=target_name,
                 delay=stimulus_entry["delay"],
                 duration=stimulus_entry["duration"],
                 percent_start=stimulus_entry["percent_start"],
                 percent_end=stimulus_entry.get("percent_end", stimulus_entry["percent_start"]),
+                node_set=node_set,
+                compartment_set=compartment_set,
             )
         elif pattern == Pattern.SYNAPSE_REPLAY:
             return SynapseReplay(
-                target=stimulus_entry["node_set"],
+                target=target_name,
                 delay=stimulus_entry["delay"],
                 duration=stimulus_entry["duration"],
                 spike_file=stimulus_entry["spike_file"],
                 config_dir=config_dir,
+                node_set=node_set,
+                compartment_set=compartment_set,
             )
         elif pattern == Pattern.SHOT_NOISE:
             return ShotNoise(
-                target=stimulus_entry["node_set"],
+                target=target_name,
                 delay=stimulus_entry["delay"],
                 duration=stimulus_entry["duration"],
                 dt=stimulus_entry.get("dt", 0.25),
@@ -273,11 +313,13 @@ class Stimulus:
                 amp_var=stimulus_entry["amp_var"],
                 seed=stimulus_entry.get("random_seed", None),
                 mode=ClampMode(stimulus_entry.get("input_type", "current_clamp").lower()),
-                reversal=stimulus_entry.get("reversal", 0.0)
+                reversal=stimulus_entry.get("reversal", 0.0),
+                node_set=node_set,
+                compartment_set=compartment_set,
             )
         elif pattern == Pattern.RELATIVE_SHOT_NOISE:
             return RelativeShotNoise(
-                target=stimulus_entry["node_set"],
+                target=target_name,
                 delay=stimulus_entry["delay"],
                 duration=stimulus_entry["duration"],
                 dt=stimulus_entry.get("dt", 0.25),
@@ -288,11 +330,13 @@ class Stimulus:
                 relative_skew=stimulus_entry.get("relative_skew", 0.5),
                 seed=stimulus_entry.get("random_seed", None),
                 mode=ClampMode(stimulus_entry.get("input_type", "current_clamp").lower()),
-                reversal=stimulus_entry.get("reversal", 0.0)
+                reversal=stimulus_entry.get("reversal", 0.0),
+                node_set=node_set,
+                compartment_set=compartment_set,
             )
         elif pattern == Pattern.ORNSTEIN_UHLENBECK:
             return OrnsteinUhlenbeck(
-                target=stimulus_entry["node_set"],
+                target=target_name,
                 delay=stimulus_entry["delay"],
                 duration=stimulus_entry["duration"],
                 dt=stimulus_entry.get("dt", 0.25),
@@ -301,11 +345,13 @@ class Stimulus:
                 mean=stimulus_entry["mean"],
                 seed=stimulus_entry.get("random_seed", None),
                 mode=ClampMode(stimulus_entry.get("input_type", "current_clamp").lower()),
-                reversal=stimulus_entry.get("reversal", 0.0)
+                reversal=stimulus_entry.get("reversal", 0.0),
+                node_set=node_set,
+                compartment_set=compartment_set,
             )
         elif pattern == Pattern.RELATIVE_ORNSTEIN_UHLENBECK:
             return RelativeOrnsteinUhlenbeck(
-                target=stimulus_entry["node_set"],
+                target=target_name,
                 delay=stimulus_entry["delay"],
                 duration=stimulus_entry["duration"],
                 dt=stimulus_entry.get("dt", 0.25),
@@ -314,15 +360,19 @@ class Stimulus:
                 sd_percent=stimulus_entry["sd_percent"],
                 seed=stimulus_entry.get("random_seed", None),
                 mode=ClampMode(stimulus_entry.get("input_type", "current_clamp").lower()),
-                reversal=stimulus_entry.get("reversal", 0.0)
+                reversal=stimulus_entry.get("reversal", 0.0),
+                node_set=node_set,
+                compartment_set=compartment_set,
             )
         elif pattern == Pattern.SINUSOIDAL:
             return Sinusoidal(
-                target=stimulus_entry["node_set"],
+                target=target_name,
                 delay=stimulus_entry["delay"],
                 duration=stimulus_entry["duration"],
                 amp_start=stimulus_entry["amp_start"],
                 frequency=stimulus_entry["frequency"],
+                node_set=node_set,
+                compartment_set=compartment_set,
             )
         else:
             raise ValueError(f"Unknown pattern {pattern}")

@@ -18,7 +18,7 @@ simulations."""
 from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 import logging
 
 from bluecellulab.reports.utils import configure_all_reports
@@ -320,7 +320,7 @@ class CircuitSimulation:
                      add_ornstein_uhlenbeck_stimuli=False,
                      add_sinusoidal_stimuli=False,
                      add_linear_stimuli=False
-                     ):
+                     ) -> None:
         """Instantiate all the stimuli."""
         stimuli_entries = self.circuit_access.config.get_all_stimuli_entries()
         # Also add the injections / stimulations as in the cortical model
@@ -330,49 +330,62 @@ class CircuitSimulation:
         shotnoise_stim_count = 0
         ornstein_uhlenbeck_stim_count = 0
 
-        for stimulus in stimuli_entries:
-            target = stimulus.target
-            gids_of_target = self.circuit_access.get_target_cell_ids(target)
+        # Pre-fetch compartment sets (if available) to detect when a stimulus
+        # target refers to a named compartment_set rather than a node_set.
+        compartment_sets: dict[str, dict[str, Any]] | None = None
+        try:
+            compartment_sets = self.circuit_access.config.get_compartment_sets()
+        except ValueError:
+            pass
 
-            for cell_id in self.cells:
-                if cell_id not in gids_of_target:
-                    continue
+        for stimulus in stimuli_entries:
+            # Build a unified list of (cell_id, section, segx, section_name) targets
+            targets: list[tuple] = []
+
+            if stimulus.compartment_set is not None:
+                targets = self._targets_from_compartment_set(stimulus, compartment_sets)
+            elif stimulus.node_set is not None:
+                gids_of_target = self.circuit_access.get_target_cell_ids(stimulus.node_set)
+                for cell_id in self.cells:
+                    if cell_id not in gids_of_target:
+                        continue
+                    sec = self.cells[cell_id].soma
+                    sec_name = sec.name().split(".")[-1]
+                    targets.append((cell_id, sec, 0.5, sec_name))
+            else:
+                raise ValueError(
+                    f"Stimulus '{stimulus}' has neither node_set nor compartment_set; "
+                    "cannot resolve target location."
+                )
+
+            for cell_id, sec, segx, sec_name in targets:
                 if isinstance(stimulus, circuit_stimulus_definitions.Noise):
                     if add_noise_stimuli:
-                        self.cells[cell_id].add_replay_noise(
-                            stimulus, noisestim_count=noisestim_count)
+                        self.cells[cell_id].add_replay_noise(stimulus, noise_seed=None, noisestim_count=noisestim_count, section=sec, segx=segx)
                 elif isinstance(stimulus, circuit_stimulus_definitions.Hyperpolarizing):
                     if add_hyperpolarizing_stimuli:
-                        self.cells[cell_id].add_replay_hypamp(stimulus)
+                        self.cells[cell_id].add_replay_hypamp(stimulus, section=sec, segx=segx)
                 elif isinstance(stimulus, circuit_stimulus_definitions.Pulse):
                     if add_pulse_stimuli:
-                        self.cells[cell_id].add_pulse(stimulus)
+                        self.cells[cell_id].add_pulse(stimulus, section=sec, segx=segx)
                 elif isinstance(stimulus, circuit_stimulus_definitions.Linear):
                     if add_linear_stimuli:
-                        self.cells[cell_id].add_replay_linear(stimulus)
+                        self.cells[cell_id].add_replay_linear(stimulus, section=sec, segx=segx)
                 elif isinstance(stimulus, circuit_stimulus_definitions.RelativeLinear):
                     if add_relativelinear_stimuli:
-                        self.cells[cell_id].add_replay_relativelinear(stimulus)
+                        self.cells[cell_id].add_replay_relativelinear(stimulus, section=sec, segx=segx)
                 elif isinstance(stimulus, circuit_stimulus_definitions.ShotNoise):
                     if add_shotnoise_stimuli:
-                        self.cells[cell_id].add_replay_shotnoise(
-                            self.cells[cell_id].soma, 0.5, stimulus,
-                            shotnoise_stim_count=shotnoise_stim_count)
+                        self.cells[cell_id].add_replay_shotnoise(sec, segx, stimulus, shotnoise_stim_count=shotnoise_stim_count)
                 elif isinstance(stimulus, circuit_stimulus_definitions.RelativeShotNoise):
                     if add_shotnoise_stimuli:
-                        self.cells[cell_id].add_replay_relative_shotnoise(
-                            self.cells[cell_id].soma, 0.5, stimulus,
-                            shotnoise_stim_count=shotnoise_stim_count)
+                        self.cells[cell_id].add_replay_relative_shotnoise(sec, segx, stimulus, shotnoise_stim_count=shotnoise_stim_count)
                 elif isinstance(stimulus, circuit_stimulus_definitions.OrnsteinUhlenbeck):
                     if add_ornstein_uhlenbeck_stimuli:
-                        self.cells[cell_id].add_ornstein_uhlenbeck(
-                            self.cells[cell_id].soma, 0.5, stimulus,
-                            stim_count=ornstein_uhlenbeck_stim_count)
+                        self.cells[cell_id].add_ornstein_uhlenbeck(sec, segx, stimulus, stim_count=ornstein_uhlenbeck_stim_count)
                 elif isinstance(stimulus, circuit_stimulus_definitions.RelativeOrnsteinUhlenbeck):
                     if add_ornstein_uhlenbeck_stimuli:
-                        self.cells[cell_id].add_relative_ornstein_uhlenbeck(
-                            self.cells[cell_id].soma, 0.5, stimulus,
-                            stim_count=ornstein_uhlenbeck_stim_count)
+                        self.cells[cell_id].add_relative_ornstein_uhlenbeck(sec, segx, stimulus, stim_count=ornstein_uhlenbeck_stim_count)
                 elif isinstance(stimulus, circuit_stimulus_definitions.Sinusoidal):
                     if add_sinusoidal_stimuli:
                         self.cells[cell_id].add_sinusoidal(stimulus)
@@ -384,9 +397,8 @@ class CircuitSimulation:
                             stimulus, self.spike_threshold, self.spike_location
                         )
                 else:
-                    raise ValueError("Found stimulus with pattern %s, "
-                                     "not supported" % stimulus)
-                logger.debug(f"Added {stimulus} to cell_id {cell_id}")
+                    raise ValueError("Found stimulus with pattern %s, not supported" % stimulus)
+                logger.debug(f"Added {stimulus} to cell_id {cell_id} at {sec_name}({segx})")
 
             if isinstance(stimulus, Noise):
                 noisestim_count += 1
@@ -439,6 +451,46 @@ class CircuitSimulation:
             logger.info(f"Added {syn_descriptions} synapses for gid {cell_id}")
             if add_minis:
                 logger.info(f"Added minis for {cell_id=}")
+
+    def _targets_from_compartment_set(
+        self,
+        stimulus: circuit_stimulus_definitions.Stimulus,
+        compartment_sets: dict[str, dict[str, Any]] | None,
+    ) -> list[tuple]:
+        """Resolve a compartment_set stimulus into (cell_id, section, segx,
+        sec_name) targets."""
+        if compartment_sets is None:
+            raise ValueError(
+                "Simulation config provides compartment_set stimuli but "
+                "no 'compartment_sets_file' is configured."
+            )
+
+        comp_name = stimulus.compartment_set
+        if comp_name not in compartment_sets:
+            raise ValueError(f"Compartment set '{comp_name}' not found in compartment_sets file.")
+
+        comp_entry = compartment_sets[comp_name]
+        comp_nodes = comp_entry.get("compartment_set", [])
+
+        population_name = comp_entry.get("population")
+
+        targets: list[tuple] = []
+        for cell_id in self.cells:
+            if population_name is not None and getattr(cell_id, "population_name", None) != population_name:
+                continue
+            try:
+                resolved = self.cells[cell_id].resolve_segments_from_compartment_set(
+                    cell_id.id if hasattr(cell_id, "id") else cell_id,
+                    comp_nodes,
+                )
+            except (ValueError, TypeError) as e:
+                logger.debug(f"Failed to resolve compartment_set for cell {cell_id}: {e}")
+                continue
+
+            for sec, sec_name, segx in resolved:
+                targets.append((cell_id, sec, segx, sec_name))
+
+        return targets
 
     @staticmethod
     def _intersect_pre_gids(syn_descriptions, pre_gids: list[CellId]) -> pd.DataFrame:

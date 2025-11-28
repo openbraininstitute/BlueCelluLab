@@ -56,7 +56,44 @@ class SonataSimulationConfig:
         if inputs is None:
             return result
         config_dir = self._get_config_dir()
+
+        compartment_sets = None
+        try:
+            compartment_sets = self.get_compartment_sets()
+        except ValueError:
+            pass
+
         for value in inputs.values():
+            # Validate mutual exclusivity and existence of compartment_set
+            if "compartment_set" in value and "node_set" in value:
+                raise ValueError("Stimulus entry must not include both 'node_set' and 'compartment_set'.")
+
+            if "compartment_set" in value:
+                if compartment_sets is None:
+                    raise ValueError("SONATA simulation config references 'compartment_set' in inputs but no 'compartment_sets_file' is configured.")
+                comp_name = value["compartment_set"]
+                if comp_name not in compartment_sets:
+                    raise ValueError(f"Compartment set '{comp_name}' not found in compartment_sets file.")
+                # Validate the list: must be list of triples, sorted and unique by (node_id, sec_ref, seg)
+                comp_entry = compartment_sets[comp_name]
+                comp_nodes = comp_entry.get("compartment_set")
+                if comp_nodes is None:
+                    raise ValueError(f"Compartment set '{comp_name}' does not contain 'compartment_set' key.")
+                # Validate duplicates and sorted order
+                try:
+                    last = None
+                    for trip in comp_nodes:
+                        if not (isinstance(trip, list) and len(trip) >= 3):
+                            raise ValueError(f"Invalid compartment_set entry '{trip}' in '{comp_name}'; expected [node_id, section, seg].")
+                        key = (trip[0], trip[1], trip[2])
+                        if last is not None and key < last:
+                            raise ValueError(f"Compartment list for '{comp_name}' must be sorted ascending.")
+                        if last == key:
+                            raise ValueError(f"Compartment list for '{comp_name}' contains duplicate entry {key}.")
+                        last = key
+                except TypeError:
+                    raise ValueError(f"Compartment list for '{comp_name}' contains non-comparable entries.")
+
             stimulus = Stimulus.from_sonata(value, config_dir=config_dir)
             if stimulus:
                 result.append(stimulus)
