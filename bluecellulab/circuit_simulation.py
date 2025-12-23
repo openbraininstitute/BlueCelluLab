@@ -20,6 +20,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 import logging
+import warnings
 
 from bluecellulab.reports.utils import configure_all_reports
 import neuron
@@ -69,7 +70,7 @@ class CircuitSimulation:
     def __init__(
         self,
         simulation_config: str | Path | SimulationConfig,
-        dt: float = 0.025,
+        dt: Optional[float] = None,
         record_dt: Optional[float] = None,
         base_seed: Optional[NonNegativeInt] = None,
         rng_mode: Optional[str] = None,
@@ -90,7 +91,6 @@ class CircuitSimulation:
         print_cellstate:
                     Flag to use NEURON prcellstate for simulation GIDs
         """
-        self.dt = dt
         self.record_dt = record_dt
 
         self.circuit_format = determine_circuit_format(simulation_config)
@@ -102,6 +102,7 @@ class CircuitSimulation:
             self.simulation_access = BluepySimulationAccess(simulation_config)
             SimulationValidator(self.circuit_access).validate()
 
+        self.dt = dt if dt is not None else (self.circuit_access.config.dt or 0.025)
         self.pc = neuron.h.ParallelContext() if print_cellstate else None
 
         self.rng_settings = RNGSettings.get_instance()
@@ -686,13 +687,27 @@ class CircuitSimulation:
                        Show a progress bar during simulations. When
                        enabled results from a large network simulation
                        will not be exactly reproduced.
+
+        Note
+        ----
+        Passing ``dt`` to ``run()`` is deprecated and will be removed in a
+        future release. The simulation timestep used is the one resolved at
+        :class:`CircuitSimulation` construction (either the explicit
+        ``dt`` passed to the constructor or the value from the
+        ``simulation_config``).
         """
         if t_stop is None:
             t_stop = self.circuit_access.config.tstop
             if t_stop is None:  # type narrowing
                 t_stop = 0.0
-        if dt is None:
-            dt = self.circuit_access.config.dt
+        if dt is not None and dt != self.dt:
+            warnings.warn(
+                "Passing `dt` to `run()` to change the simulation timestep is deprecated; "
+                "pass `dt` to the CircuitSimulation constructor instead. "
+                "This behavior will be removed in a future release.",
+                DeprecationWarning,
+            )
+        dt = self.dt
 
         config_forward_skip_value = self.circuit_access.config.forward_skip  # legacy
         config_tstart = self.circuit_access.config.tstart or 0.0             # SONATA

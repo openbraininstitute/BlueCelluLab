@@ -157,3 +157,24 @@ def test_merge_pre_spike_trains_edge_case():
                                  intersect_pre_gids=None)
     cell_info_dict = circuit_sim.cells[cell_id].info_dict
     assert cell_info_dict["connections"] != {}
+
+
+@pytest.mark.v6
+def test_run_dt_deprecated_noop_sonata():
+    sonata_sim_path = (
+        parent_dir
+        / "examples"
+        / "sim_quick_scx_sonata"
+        / "simulation_config_noinput.json"
+    )
+
+    sim = CircuitSimulation(sonata_sim_path)
+    cell_id = ("NodeA", 2)
+    sim.instantiate_gids(cell_id, add_stimuli=True)
+
+    original_dt = sim.dt
+
+    with pytest.warns(DeprecationWarning):
+        sim.run(10.0, dt=original_dt * 2)
+
+    assert sim.dt == pytest.approx(original_dt)

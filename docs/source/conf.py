@@ -16,7 +16,10 @@ exclude_patterns = []
 
 autosummary_mock_imports = [  # these modules are not publicly available
     'bluepy',
-    'bluepy_configfile'
+    'bluepy_configfile',
+    "efel",
+    "neo",
+    "quantities",
 ]
 
 suppress_warnings = [
