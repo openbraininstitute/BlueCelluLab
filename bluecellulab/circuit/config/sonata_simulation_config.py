@@ -43,12 +43,11 @@ class SonataSimulationConfig:
             raise TypeError("Invalid config type.")
 
     def get_all_projection_names(self) -> list[str]:
-        unique_names = {
-            n
-            for n in self.impl.circuit.nodes
-            if self.impl.circuit.nodes[n].type == "virtual"
-        }
-        return list(unique_names)
+        return [
+            edge_name
+            for edge_name, edge_pop in self.impl.circuit.edges.items()
+            if getattr(edge_pop.source, "type", None) == "virtual"
+        ]
 
     def get_all_stimuli_entries(self) -> list[Stimulus]:
         result: list[Stimulus] = []

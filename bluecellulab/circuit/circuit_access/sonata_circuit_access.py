@@ -105,6 +105,29 @@ class SonataCircuitAccess(CircuitAccess):
             source_population_name, target_population_name)
         return source_popid, target_popid
 
+    def _select_edge_pop_names(self, projections) -> list[str]:
+        edges = self._circuit.edges
+        all_names = list(edges.keys())
+
+        # - None  => all edges
+        # - []    => inner only
+        # - list  => inner + requested edge population names
+        if projections is None:
+            return all_names
+
+        requested = [projections] if isinstance(projections, str) else list(projections or [])
+
+        candidates = [n for n in all_names if n in self._inner_edge_pop_names]
+        candidates += requested
+
+        # de-dup, preserve order, keep only existing
+        out, seen = [], set()
+        for n in candidates:
+            if n in edges and n not in seen:
+                out.append(n)
+                seen.add(n)
+        return out
+
     def extract_synapses(
         self, cell_id: CellId, projections: Optional[list[str] | str]
     ) -> pd.DataFrame:
@@ -114,13 +137,8 @@ class SonataCircuitAccess(CircuitAccess):
         """
         snap_node_id = CircuitNodeId(cell_id.population_name, cell_id.id)
         edges = self._circuit.edges
-        # select edges that are in the projections, if there are projections
-        if projections is None or len(projections) == 0:
-            edge_population_names = [x for x in edges]
-        elif isinstance(projections, str):
-            edge_population_names = [x for x in edges if edges[x].source.name == projections]
-        else:
-            edge_population_names = [x for x in edges if edges[x].source.name in projections]
+
+        edge_population_names = self._select_edge_pop_names(projections)
 
         all_synapses_dfs: list[pd.DataFrame] = []
         for edge_population_name in edge_population_names:
