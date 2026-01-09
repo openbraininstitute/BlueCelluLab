@@ -119,7 +119,7 @@ class CircuitSimulation:
         self.spike_threshold = self.circuit_access.config.spike_threshold
         self.spike_location = self.circuit_access.config.spike_location
 
-        self.projections: list[str] = []
+        self.projections: list[str] | None = None
 
         condition_parameters = self.circuit_access.config.condition_parameters()
         set_global_condition_parameters(condition_parameters)
@@ -183,10 +183,12 @@ class CircuitSimulation:
                             Setting add_stimuli=True,
                             will automatically set this option to
                             True.
-        add_projections:
-                         If True, adds all of the projection blocks of the
-                         circuit config. If False, no projections are added.
-                         If list, adds only the projections in the list.
+        add_projections: Control whether projection edge populations are considered when adding synapses.
+                            - False (default): intrinsic connectivity only (no projection edge populations)
+                            - True: intrinsic connectivity + all projection edge populations
+                            - list[str]: intrinsic connectivity + the specified projection edge population names
+                            Note:
+                                Names refer to SONATA edge population names (SnapCircuit.edges keys).
         intersect_pre_gids : list of gids
                              Only add synapses to the cells if their
                              presynaptic gid is in this list
@@ -258,7 +260,7 @@ class CircuitSimulation:
         if add_projections is True:
             self.projections = self.circuit_access.config.get_all_projection_names()
         elif add_projections is False:
-            self.projections = []
+            self.projections = None
         else:
             self.projections = add_projections
 
