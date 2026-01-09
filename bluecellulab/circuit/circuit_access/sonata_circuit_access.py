@@ -116,40 +116,39 @@ class SonataCircuitAccess(CircuitAccess):
         inner = [n for n in all_names if n in self._inner_edge_pop_names]
         proj = [n for n in all_names if getattr(edges[n].source, "type", None) == "virtual"]
 
-        if projections is None or projections is False:
+        if projections is False:
             return inner
 
-        if projections is True:
+        elif projections is True:
             # intrinsic + all projections
             out, seen = [], set()
             for n in inner + proj:
                 if n not in seen:
                     out.append(n); seen.add(n)
             return out
+        else:  # str / list[str]: intrinsic + requested
+            requested = [projections] if isinstance(projections, str) else list(projections or [])
 
-        # str / list[str]: intrinsic + requested
-        requested = [projections] if isinstance(projections, str) else list(projections or [])
+            out, seen = [], set()
+            by_source = {}
+            for n in all_names:
+                by_source.setdefault(edges[n].source.name, []).append(n)
 
-        out, seen = [], set()
-        by_source = {}
-        for n in all_names:
-            by_source.setdefault(edges[n].source.name, []).append(n)
+            for n in inner:
+                if n not in seen:
+                    out.append(n); seen.add(n)
 
-        for n in inner:
-            if n not in seen:
-                out.append(n); seen.add(n)
+            for token in requested:
+                if token in edges:
+                    if token not in seen:
+                        out.append(token); seen.add(token)
+                else:
+                    # legacy support: token as source node population name
+                    for n in by_source.get(token, []):
+                        if n not in seen:
+                            out.append(n); seen.add(n)
 
-        for token in requested:
-            if token in edges:
-                if token not in seen:
-                    out.append(token); seen.add(token)
-            else:
-                # legacy support: token as source node population name
-                for n in by_source.get(token, []):
-                    if n not in seen:
-                        out.append(n); seen.add(n)
-
-        return out
+            return out
 
     def extract_synapses(
         self, cell_id: CellId, projections: Optional[list[str] | str]

@@ -257,6 +257,10 @@ class CircuitSimulation:
                                         "if you want to specify use add_replay or "
                                         "pre_spike_trains")
 
+        # legacy for backward compatibility
+        if add_projections is None:
+            add_projections = False
+
         if add_projections is True:
             self.projections = self.circuit_access.config.get_all_projection_names()
         elif add_projections is False:
