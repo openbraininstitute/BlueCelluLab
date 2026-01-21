@@ -584,7 +584,7 @@ class CircuitSimulation:
                             """Specifying prespike trains of real connections"""
                             """ is not allowed."""
                         )
-                    if self.pc is None: # serial only
+                    if self.pc is None:  # serial only
                         connection = bluecellulab.Connection(
                             self.cells[post_gid].synapses[syn_id],
                             pre_spiketrain=None,
@@ -594,7 +594,7 @@ class CircuitSimulation:
                             spike_threshold=self.spike_threshold,
                             spike_location=self.spike_location,
                         )
-                    else: # MPI cross-rank
+                    else:  # MPI cross-rank
                         pre_g = self.global_gid(pre_gid.population_name, pre_gid.id)
                         connection = bluecellulab.Connection(
                             self.cells[post_gid].synapses[syn_id],

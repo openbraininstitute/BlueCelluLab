@@ -82,6 +82,8 @@ class Connection:
                 )
             else:
                 # MPI gid-based (works across ranks)
+                if pre_gid is None:
+                    raise ValueError("pre_gid must be provided when using ParallelContext")
                 self.post_netcon = self.pc.gid_connect(int(pre_gid), self.post_synapse.hsynapse)
 
             self.post_netcon.weight[0] = self.post_netcon_weight
