@@ -279,6 +279,9 @@ class CircuitSimulation:
             if self.pc is not None:
                 self._init_pop_index_mpi()
                 self._register_gids_for_mpi()
+                self.pc.setup_transfer()
+                self.pc.barrier()
+                self.pc.set_maxstep(1.0)
                 self.pc.barrier()
             self._add_connections(add_replay=add_replay,
                                   interconnect_cells=interconnect_cells,
