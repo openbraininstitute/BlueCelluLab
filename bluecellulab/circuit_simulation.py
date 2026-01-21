@@ -75,6 +75,7 @@ class CircuitSimulation:
         base_seed: Optional[NonNegativeInt] = None,
         rng_mode: Optional[str] = None,
         print_cellstate: bool = False,
+        parallel_context=None,
     ):
         """
 
@@ -103,7 +104,8 @@ class CircuitSimulation:
             SimulationValidator(self.circuit_access).validate()
 
         self.dt = dt if dt is not None else (self.circuit_access.config.dt or 0.025)
-        self.pc = neuron.h.ParallelContext() if print_cellstate else None
+        pc = parallel_context if parallel_context is not None else neuron.h.ParallelContext()
+        self.pc = pc if int(pc.nhost()) > 1 or print_cellstate else None
 
         self.rng_settings = RNGSettings.get_instance()
         self.rng_settings.set_seeds(
@@ -123,6 +125,9 @@ class CircuitSimulation:
 
         condition_parameters = self.circuit_access.config.condition_parameters()
         set_global_condition_parameters(condition_parameters)
+
+        self._gid_stride = 1_000_000
+        self._pop_index: dict[str, int] = {"": 0}
 
     def instantiate_gids(
         self,
@@ -271,6 +276,10 @@ class CircuitSimulation:
             if add_replay and not add_synapses:
                 raise BluecellulabError("add_replay option can not be used if "
                                         "add_synapses is False")
+            if self.pc is not None:
+                self._init_pop_index_mpi()
+                self._register_gids_for_mpi()
+                self.pc.barrier()
             self._add_connections(add_replay=add_replay,
                                   interconnect_cells=interconnect_cells,
                                   user_pre_spike_trains=pre_spike_trains)  # type: ignore
@@ -561,7 +570,10 @@ class CircuitSimulation:
                 source_population = syn_description["source_population_name"]
                 pre_gid = CellId(source_population, int(syn_description[SynapseProperty.PRE_GID]))
 
-                real_synapse_connection = pre_gid in self.cells and interconnect_cells
+                if self.pc is None:
+                    real_synapse_connection = bool(interconnect_cells) and (pre_gid in self.cells)
+                else:
+                    real_synapse_connection = bool(interconnect_cells)
 
                 if real_synapse_connection:
                     if (
@@ -572,29 +584,42 @@ class CircuitSimulation:
                             """Specifying prespike trains of real connections"""
                             """ is not allowed."""
                         )
-                    connection = bluecellulab.Connection(
-                        self.cells[post_gid].synapses[syn_id],
-                        pre_spiketrain=None,
-                        pre_cell=self.cells[pre_gid],
-                        stim_dt=self.dt,
-                        parallel_context=self.pc,
-                        spike_threshold=self.spike_threshold,
-                        spike_location=self.spike_location)
+                    if self.pc is None: # serial only
+                        connection = bluecellulab.Connection(
+                            self.cells[post_gid].synapses[syn_id],
+                            pre_spiketrain=None,
+                            pre_cell=self.cells[pre_gid],
+                            stim_dt=self.dt,
+                            parallel_context=None,
+                            spike_threshold=self.spike_threshold,
+                            spike_location=self.spike_location,
+                        )
+                    else: # MPI cross-rank
+                        pre_g = self.global_gid(pre_gid.population_name, pre_gid.id)
+                        connection = bluecellulab.Connection(
+                            self.cells[post_gid].synapses[syn_id],
+                            pre_spiketrain=None,
+                            pre_gid=pre_g,
+                            pre_cell=None,
+                            stim_dt=self.dt,
+                            parallel_context=self.pc,
+                            spike_threshold=self.spike_threshold,
+                            spike_location=self.spike_location,
+                        )
 
                     logger.debug(f"Added real connection between {pre_gid} and {post_gid}, {syn_id}")
                 else:  # replay connection
-                    try:
-                        pre_spiketrain = pre_spike_trains[pre_gid]
-                    except KeyError:
-                        pre_spiketrain = None
-
+                    pre_spiketrain = pre_spike_trains.get(pre_gid, None)
                     connection = bluecellulab.Connection(
                         self.cells[post_gid].synapses[syn_id],
                         pre_spiketrain=pre_spiketrain,
                         pre_cell=None,
                         stim_dt=self.dt,
+                        parallel_context=None,
                         spike_threshold=self.spike_threshold,
-                        spike_location=self.spike_location)
+                        spike_location=self.spike_location
+                    )
+
                     logger.debug(f"Added replay connection from {pre_gid} to {post_gid}, {syn_id}")
 
                 self.cells[post_gid].connections[syn_id] = connection
@@ -614,17 +639,12 @@ class CircuitSimulation:
             self.cells[cell_id] = cell = self.create_cell_from_circuit(cell_id)
             if self.circuit_access.node_properties_available:
                 cell.connect_to_circuit(SonataProxy(cell_id, self.circuit_access))
-            if self.pc is not None:
-                self.pc.set_gid2node(cell_id.id, self.pc.id())  # register GID for this node
-                nc = self.cells[cell_id].create_netcon_spikedetector(
-                    None, location=self.spike_location, threshold=self.spike_threshold)
-                self.pc.cell(cell_id.id, nc)  # register cell spike detector
 
     def _instantiate_synapse(self, cell_id: CellId, syn_id: SynapseID, syn_description,
                              add_minis=False, popids=(0, 0)) -> None:
         """Instantiate one synapse for a given gid, syn_id and
         syn_description."""
-        pre_cell_id = CellId(cell_id.population_name, int(syn_description[SynapseProperty.PRE_GID]))
+        pre_cell_id = CellId(syn_description["source_population_name"], int(syn_description[SynapseProperty.PRE_GID]))
         syn_connection_parameters = get_synapse_connection_parameters(
             circuit_access=self.circuit_access,
             pre_cell=pre_cell_id,
@@ -894,3 +914,49 @@ class CircuitSimulation:
                                  record_dt=cell_kwargs['record_dt'],
                                  template_format=cell_kwargs['template_format'],
                                  emodel_properties=cell_kwargs['emodel_properties'])
+
+    def global_gid(self, pop: str, gid: int) -> int:
+        if pop not in self._pop_index:
+            raise KeyError(f"Population '{pop}' missing from pop index. Known pops: {sorted(self._pop_index.keys())}")
+        return self._pop_index[pop] * self._gid_stride + int(gid)
+
+    def _init_pop_index_mpi(self) -> None:
+        """Build a consistent pop->index mapping across ranks."""
+        assert self.pc is not None
+
+        local_pops = set()
+        for post_gid in self.cells:
+            local_pops.add(post_gid.population_name)
+            synapses = getattr(self.cells[post_gid], "synapses", None)
+            if synapses:
+                for syn_id in synapses:
+                    sd = synapses[syn_id].syn_description
+                    local_pops.add(sd["source_population_name"])
+
+        gathered = self.pc.py_gather(sorted(local_pops), 0)
+
+        if int(self.pc.id()) == 0:
+            all_pops = set([""])
+            for lst in gathered:
+                all_pops.update(lst)
+            pops_sorted = sorted(all_pops)
+            pop_index = {p: i for i, p in enumerate(pops_sorted)}
+        else:
+            pop_index = None
+
+        pop_index = self.pc.py_broadcast(pop_index, 0)
+        self._pop_index = pop_index
+
+    def _register_gids_for_mpi(self) -> None:
+        assert self.pc is not None
+
+        for cell_id, cell in self.cells.items():
+            g = self.global_gid(cell_id.population_name, cell_id.id)
+
+            self.pc.set_gid2node(g, int(self.pc.id()))
+            nc = cell.create_netcon_spikedetector(
+                None,
+                location=self.spike_location,
+                threshold=self.spike_threshold
+            )
+            self.pc.cell(g, nc)
