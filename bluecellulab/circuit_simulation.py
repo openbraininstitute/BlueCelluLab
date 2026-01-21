@@ -91,6 +91,12 @@ class CircuitSimulation:
                     and UpdatedMCell.
         print_cellstate:
                     Flag to use NEURON prcellstate for simulation GIDs
+        parallel_context:
+                    Optional NEURON ParallelContext to use for MPI runs.
+                    If provided, CircuitSimulation will reuse this object
+                    instead of creating a new ParallelContext internally.
+                    This is useful when the caller already initialized MPI
+                    and manages rank/nhost externally.
         """
         self.record_dt = record_dt
 
@@ -919,6 +925,25 @@ class CircuitSimulation:
                                  emodel_properties=cell_kwargs['emodel_properties'])
 
     def global_gid(self, pop: str, gid: int) -> int:
+        """Return a unique NEURON GID for a (population, node_id) pair.
+
+        In multi-population circuits, the same numeric node_id can exist in multiple
+        populations. NEURON's ParallelContext requires a single global integer GID,
+        so we map (population_name, id) -> global int using a per-population index
+        and a fixed stride.
+
+        Parameters
+        ----------
+        pop : str
+            SONATA population name (e.g. "S1nonbarrel_neurons", "POm", ...).
+        gid : int
+            Node id within that population.
+
+        Returns
+        -------
+        int
+            Globally unique integer GID used with ParallelContext
+        """
         if pop not in self._pop_index:
             raise KeyError(f"Population '{pop}' missing from pop index. Known pops: {sorted(self._pop_index.keys())}")
         return self._pop_index[pop] * self._gid_stride + int(gid)
@@ -932,8 +957,8 @@ class CircuitSimulation:
             local_pops.add(post_gid.population_name)
             synapses = getattr(self.cells[post_gid], "synapses", None)
             if synapses:
-                for syn_id in synapses:
-                    sd = synapses[syn_id].syn_description
+                for syn in synapses.values():
+                    sd = syn.syn_description
                     local_pops.add(sd["source_population_name"])
 
         gathered = self.pc.py_gather(sorted(local_pops), 0)
