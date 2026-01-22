@@ -112,6 +112,7 @@ class CircuitSimulation:
         self.dt = dt if dt is not None else (self.circuit_access.config.dt or 0.025)
         pc = parallel_context if parallel_context is not None else neuron.h.ParallelContext()
         self.pc = pc if int(pc.nhost()) > 1 or print_cellstate else None
+        self.print_cellstate = print_cellstate
 
         self.rng_settings = RNGSettings.get_instance()
         self.rng_settings.set_seeds(
@@ -132,7 +133,7 @@ class CircuitSimulation:
         condition_parameters = self.circuit_access.config.condition_parameters()
         set_global_condition_parameters(condition_parameters)
 
-        self._gid_stride = 1_000_000
+        self._gid_stride = 1_000_000  # must exceed the max node_id in any population
         self._pop_index: dict[str, int] = {"": 0}
 
     def instantiate_gids(
@@ -768,6 +769,17 @@ class CircuitSimulation:
         for cell_id in self.cells:
             sim.add_cell(self.cells[cell_id])
 
+        self.fih_prcellstate = None
+        if self.pc is not None and self.print_cellstate:
+            def _dump_prcellstate():
+                for cell in self.cells:
+                    pop = cell.population_name
+                    gid = cell.id
+                    g = self.global_gid(pop, gid)
+                    self.pc.prcellstate(g, f"bluecellulab_t={neuron.h.t}")
+
+            self.fih_prcellstate = neuron.h.FInitializeHandler(1, _dump_prcellstate)
+
         if show_progress:
             logger.warning("show_progress enabled, this will very likely"
                            "break the exact reproducibility of large network"
@@ -780,6 +792,7 @@ class CircuitSimulation:
             forward_skip=effective_skip,
             forward_skip_value=effective_skip_value,
             show_progress=show_progress)
+
 
     def get_mainsim_voltage_trace(
             self, cell_id: int | tuple[str, int], t_start=None, t_stop=None, t_step=None
@@ -924,12 +937,19 @@ class CircuitSimulation:
                                  emodel_properties=cell_kwargs['emodel_properties'])
 
     def global_gid(self, pop: str, gid: int) -> int:
-        """Return a unique NEURON GID for a (population, node_id) pair.
+        """Return a globally unique NEURON GID for a (population, node_id) pair.
 
-        In multi-population circuits, the same numeric node_id can exist in multiple
-        populations. NEURON's ParallelContext requires a single global integer GID,
-        so we map (population_name, id) -> global int using a per-population index
-        and a fixed stride.
+        NEURON's ParallelContext requires presynaptic sources to be identified by a
+        single integer GID across all ranks. In SONATA circuits, node ids are only
+        unique *within* a population, so we combine (population_name, node_id) into a
+        single integer:
+
+            global_gid = pop_index[population] * STRIDE + node_id
+
+        Notes
+        -----
+        STRIDE must be larger than the maximum node_id in any population to avoid GID
+        collisions.
 
         Parameters
         ----------
@@ -941,10 +961,13 @@ class CircuitSimulation:
         Returns
         -------
         int
-            Globally unique integer GID used with ParallelContext
+            Globally unique integer GID used with ParallelContext.
         """
         if pop not in self._pop_index:
-            raise KeyError(f"Population '{pop}' missing from pop index. Known pops: {sorted(self._pop_index.keys())}")
+            raise KeyError(
+                f"Population '{pop}' missing from pop index. "
+                f"Known pops: {sorted(self._pop_index.keys())}"
+            )
         return self._pop_index[pop] * self._gid_stride + int(gid)
 
     def _init_pop_index_mpi(self) -> None:

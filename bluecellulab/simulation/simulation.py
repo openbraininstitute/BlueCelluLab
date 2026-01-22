@@ -153,10 +153,6 @@ class Simulation:
                 neuron.h.dt = save_dt
                 neuron.h.t = forward_skip_value
 
-        if self.pc is not None:
-            for cell in self.cells:
-                self.pc.prcellstate(cell.cell_id.id, f"bluecellulab_t={neuron.h.t}")
-
         try:
             neuron.h.continuerun(neuron.h.tstop)
         except Exception as exception:
