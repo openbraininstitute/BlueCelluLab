@@ -29,6 +29,7 @@ class Connection:
             self,
             post_synapse,
             pre_spiketrain: Optional[np.ndarray] = None,
+            pre_gid: Optional[int] = None,
             pre_cell: Optional[Cell] = None,
             stim_dt=None,
             parallel_context=None,
@@ -73,11 +74,18 @@ class Connection:
                 self.post_netcon.weight[nc_type_param] = 2  # NC_REPLAY
             self.persistent.append(t_vec)
             self.persistent.append(vecstim)
-        elif self.pre_cell is not None:
-            self.post_netcon = self.pre_cell.create_netcon_spikedetector(
-                self.post_synapse.hsynapse, location=spike_location,
-                threshold=spike_threshold) if self.pc is None else \
-                self.pc.gid_connect(self.pre_cell.cell_id.id, self.post_synapse.hsynapse)
+        elif self.pre_cell is not None or (self.pc is not None and pre_gid is not None):
+            if self.pre_cell is not None and self.pc is None:
+                # serial/local
+                self.post_netcon = self.pre_cell.create_netcon_spikedetector(
+                    self.post_synapse.hsynapse, location=spike_location, threshold=spike_threshold
+                )
+            else:
+                # MPI gid-based (works across ranks)
+                if pre_gid is None:
+                    raise ValueError("pre_gid must be provided when using ParallelContext")
+                self.post_netcon = self.pc.gid_connect(int(pre_gid), self.post_synapse.hsynapse)
+
             self.post_netcon.weight[0] = self.post_netcon_weight
             self.post_netcon.delay = self.post_netcon_delay
             self.post_netcon.threshold = spike_threshold
