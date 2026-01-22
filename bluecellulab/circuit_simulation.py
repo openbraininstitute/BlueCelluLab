@@ -793,7 +793,6 @@ class CircuitSimulation:
             forward_skip_value=effective_skip_value,
             show_progress=show_progress)
 
-
     def get_mainsim_voltage_trace(
             self, cell_id: int | tuple[str, int], t_start=None, t_stop=None, t_step=None
     ) -> np.ndarray:
@@ -937,7 +936,8 @@ class CircuitSimulation:
                                  emodel_properties=cell_kwargs['emodel_properties'])
 
     def global_gid(self, pop: str, gid: int) -> int:
-        """Return a globally unique NEURON GID for a (population, node_id) pair.
+        """Return a globally unique NEURON GID for a (population, node_id)
+        pair.
 
         NEURON's ParallelContext requires presynaptic sources to be identified by a
         single integer GID across all ranks. In SONATA circuits, node ids are only
