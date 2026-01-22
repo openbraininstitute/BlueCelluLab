@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 class CompartmentReportWriter(BaseReportWriter):
     """Writes SONATA compartment (voltage) reports."""
 
-    def write(self, cells: Dict, tstart=0):
+    def write(self, cells: Dict, tstart=0, tstop=None):
         report_name = self.cfg.get("name", "unnamed")
         variable = self.cfg.get("variable_name", "v")
         report_type = self.cfg.get("type", "compartment")
@@ -107,7 +107,8 @@ class CompartmentReportWriter(BaseReportWriter):
             elem_ids,
             self.cfg,
             self.sim_dt,
-            tstart
+            tstart,
+            tstop,
         )
 
     def _write_sonata_report_file(
@@ -120,7 +121,8 @@ class CompartmentReportWriter(BaseReportWriter):
         element_ids,
         report_cfg,
         sim_dt,
-        tstart
+        tstart,
+        tstop
     ):
         """Write a SONATA HDF5 report file containing time series data.
 
@@ -155,10 +157,16 @@ class CompartmentReportWriter(BaseReportWriter):
 
         tstart : float
             Simulation start time (ms).
+
+        tstop : float
+            Simulation end time (ms).
         """
         start_time = float(report_cfg.get("start_time", 0.0))
         end_time = float(report_cfg.get("end_time", 0.0))
         dt_report = float(report_cfg.get("dt", sim_dt))
+
+        if tstop is not None and end_time > tstop:
+            end_time = tstop
 
         # Clamp dt_report if finer than simuldation dt
         if dt_report < sim_dt:

@@ -83,7 +83,7 @@ class ReportManager:
 
             out_path = self.cfg.report_file_path(rcfg, name)
             writer = get_writer("compartment")(rcfg, out_path, self.dt)
-            writer.write(cells_or_traces, self.cfg.tstart)
+            writer.write(cells_or_traces, self.cfg.tstart, self.cfg.tstop)
 
     def _write_spike_report(self, spikes_by_pop):
         out_path = self.cfg.spikes_file_path
