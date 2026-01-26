@@ -142,6 +142,7 @@ class CircuitSimulation:
         add_ornstein_uhlenbeck_stimuli: bool = False,
         add_sinusoidal_stimuli: bool = False,
         add_linear_stimuli: bool = False,
+        add_seclamp_stimuli: bool = False,
     ):
         """Instantiate a list of cells.
 
@@ -222,6 +223,11 @@ class CircuitSimulation:
                                 Setting add_stimuli=True,
                                 will automatically set this option to
                                 True.
+        add_seclamp_stimuli : Process the 'seclamp' stimuli
+                                blocks of the simulation config.
+                                Setting add_stimuli=True,
+                                will automatically set this option to
+                                True.
         """
         if not isinstance(cells, list):
             cells = [cells]
@@ -282,6 +288,7 @@ class CircuitSimulation:
             add_shotnoise_stimuli = True
             add_ornstein_uhlenbeck_stimuli = True
             add_linear_stimuli = True
+            add_seclamp_stimuli = True
 
         if add_noise_stimuli or \
                 add_hyperpolarizing_stimuli or \
@@ -290,7 +297,8 @@ class CircuitSimulation:
                 add_shotnoise_stimuli or \
                 add_ornstein_uhlenbeck_stimuli or \
                 add_sinusoidal_stimuli or \
-                add_linear_stimuli:
+                add_linear_stimuli or \
+                add_seclamp_stimuli:
             self._add_stimuli(
                 add_noise_stimuli=add_noise_stimuli,
                 add_hyperpolarizing_stimuli=add_hyperpolarizing_stimuli,
@@ -299,7 +307,8 @@ class CircuitSimulation:
                 add_shotnoise_stimuli=add_shotnoise_stimuli,
                 add_ornstein_uhlenbeck_stimuli=add_ornstein_uhlenbeck_stimuli,
                 add_sinusoidal_stimuli=add_sinusoidal_stimuli,
-                add_linear_stimuli=add_linear_stimuli
+                add_linear_stimuli=add_linear_stimuli,
+                add_seclamp_stimuli=add_seclamp_stimuli,
             )
 
         configure_all_reports(
@@ -319,7 +328,8 @@ class CircuitSimulation:
                      add_shotnoise_stimuli=False,
                      add_ornstein_uhlenbeck_stimuli=False,
                      add_sinusoidal_stimuli=False,
-                     add_linear_stimuli=False
+                     add_linear_stimuli=False,
+                     add_seclamp_stimuli=False,
                      ) -> None:
         """Instantiate all the stimuli."""
         stimuli_entries = self.circuit_access.config.get_all_stimuli_entries()
@@ -389,6 +399,9 @@ class CircuitSimulation:
                 elif isinstance(stimulus, circuit_stimulus_definitions.Sinusoidal):
                     if add_sinusoidal_stimuli:
                         self.cells[cell_id].add_sinusoidal(stimulus)
+                elif isinstance(stimulus, circuit_stimulus_definitions.SEClamp):  # sonata only
+                    if add_seclamp_stimuli:
+                        self.cells[cell_id].add_seclamp(stimulus, section=sec, segx=segx)
                 elif isinstance(stimulus, circuit_stimulus_definitions.SynapseReplay):  # sonata only
                     if self.circuit_access.target_contains_cell(
                         stimulus.target, cell_id

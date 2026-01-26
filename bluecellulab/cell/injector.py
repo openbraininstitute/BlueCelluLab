@@ -142,7 +142,7 @@ class InjectableMixin:
         return tstim
 
     def add_voltage_clamp(
-            self, stop_time, level, rs=None, section=None, segx=0.5,
+            self, delay, duration, level, rs=None, section=None, segx=0.5,
             current_record_name=None, current_record_dt=None):
         """Add a voltage clamp.
 
@@ -177,8 +177,15 @@ class InjectableMixin:
         vclamp = neuron.h.SEClamp(segx, sec=section)
         self.persistent.append(vclamp)
 
-        vclamp.amp1 = level
-        vclamp.dur1 = stop_time
+        # vclamp.dur1 = 200.0
+        # vclamp.amp1 = -65
+        # vclamp.amp2 = 0.0
+        # vclamp.dur2 = 200.0
+        # vclamp.amp3 = -65
+        # vclamp.dur3 = 200.0
+        vclamp.dur1 = delay
+        vclamp.amp2 = level
+        vclamp.dur2 = duration
 
         if rs is not None:
             vclamp.rs = rs
@@ -536,4 +543,15 @@ class InjectableMixin:
             stimulus.delay,
             stimulus.duration,
             stimulus.frequency,
+        )
+    
+    def add_seclamp(self, stimulus, section=None, segx=0.5):
+        """Add a SEClamp stimulus."""
+        return self.add_voltage_clamp(
+            stimulus.delay,
+            stimulus.duration,
+            stimulus.voltage,
+            rs=stimulus.series_resistance,
+            section=section,
+            segx=segx,
         )
