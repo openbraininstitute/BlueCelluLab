@@ -53,7 +53,7 @@ class Connection:
         self.post_netcon_weight = self.weight * self.weight_scalar
 
         if self.pre_spiketrain is not None:
-            if any(self.pre_spiketrain < 0):
+            if np.any(self.pre_spiketrain < 0):
                 raise ValueError("bluecellulab Connection: a spiketrain contains "
                                  "a negative time, this is not supported by "
                                  "NEURON's Vecstim: %s" %
@@ -86,8 +86,8 @@ class Connection:
                     raise ValueError("pre_gid must be provided when using ParallelContext")
                 self.post_netcon = self.pc.gid_connect(int(pre_gid), self.post_synapse.hsynapse)
 
-            self.post_netcon.weight[0] = self.post_netcon_weight
-            self.post_netcon.delay = self.post_netcon_delay
+            self.set_netcon_weight(self.post_netcon_weight)
+            self.set_netcon_delay(self.post_netcon_delay)
             self.post_netcon.threshold = spike_threshold
             # set netcon type
             nc_param_name = 'nc_type_param_{}'.format(
@@ -95,6 +95,21 @@ class Connection:
             if hasattr(neuron.h, nc_param_name):
                 nc_type_param = int(getattr(neuron.h, nc_param_name))
                 self.post_netcon.weight[nc_type_param] = 0  # NC_PRESYN
+
+    def set_netcon_weight(self, w: float) -> None:
+        self.post_netcon_weight = float(w)
+        if self.post_netcon is not None:
+            self.post_netcon.weight[0] = self.post_netcon_weight
+
+    def set_weight_scalar(self, scalar: float) -> None:
+        self.weight_scalar = float(scalar)
+        self.set_netcon_weight(self.weight * self.weight_scalar)
+
+    def set_netcon_delay(self, d: float) -> None:
+        self.post_netcon_delay = float(d)
+        if self.post_netcon is not None:
+            self.post_netcon.delay = self.post_netcon_delay
+
 
     @property
     def info_dict(self):

@@ -29,7 +29,6 @@ logger = logging.getLogger(__name__)
 
 class SonataSimulationConfig:
     """Sonata implementation of SimulationConfig protocol."""
-    _connection_overrides: list[ConnectionOverrides] = []
 
     def __init__(self, config: str | Path | SnapSimulation) -> None:
         if isinstance(config, (str, Path)):
@@ -41,6 +40,8 @@ class SonataSimulationConfig:
             self.impl = config
         else:
             raise TypeError("Invalid config type.")
+
+        self._connection_overrides: list[ConnectionOverrides] = []
 
     def get_all_projection_names(self) -> list[str]:
         unique_names = {

@@ -566,6 +566,15 @@ class CircuitSimulation:
 
         return result
 
+    def _find_matching_override(self, overrides, pre: CellId, post: CellId):
+        matched = None
+        for ov in overrides:
+            # ov.source and ov.target are nodeset names
+            if self.circuit_access.target_contains_cell(ov.source, pre) and \
+            self.circuit_access.target_contains_cell(ov.target, post):
+                matched = ov   # "last match wins" like Neurodamus ordering
+        return matched
+
     def _add_connections(
             self,
             add_replay=None,
@@ -577,6 +586,7 @@ class CircuitSimulation:
             pre_spike_trains,
             user_pre_spike_trains)
 
+        connections_overrides = self.circuit_access.config.connection_entries()
         for post_gid in self.cells:
             for syn_id in self.cells[post_gid].synapses:
                 synapse = self.cells[post_gid].synapses[syn_id]
@@ -584,6 +594,15 @@ class CircuitSimulation:
                 delay_weights = synapse.delay_weights
                 source_population = syn_description["source_population_name"]
                 pre_gid = CellId(source_population, int(syn_description[SynapseProperty.PRE_GID]))
+
+                ov = self._find_matching_override(connections_overrides, pre_gid, post_gid)
+
+                if ov is not None and ov.weight == 0.0:
+                    logger.debug(
+                        "Skipping connection due to zero weight override: %s -> %s | syn_id=%s",
+                        pre_gid, post_gid, syn_id
+                    )
+                    continue
 
                 if self.pc is None:
                     real_synapse_connection = bool(interconnect_cells) and (pre_gid in self.cells)
@@ -636,6 +655,25 @@ class CircuitSimulation:
                     )
 
                     logger.debug(f"Added replay connection from {pre_gid} to {post_gid}, {syn_id}")
+
+                if ov is not None:
+                    logger.debug(
+                        "Override matched: %s -> %s | syn_id=%s | weight=%s delay=%s",
+                        pre_gid, post_gid, syn_id, ov.weight, ov.delay
+                    )
+                    if ov.delay is not None:
+                        connection.set_netcon_delay(float(ov.delay))
+                        logger.debug(
+                            "Applied delay override %.4g ms to %s -> %s | syn_id=%s",
+                            ov.delay, pre_gid, post_gid, syn_id
+                        )
+
+                    if ov.weight is not None:
+                        connection.set_weight_scalar(float(ov.weight))
+                        logger.debug(
+                            "Applied weight override factor %.4g to %s -> %s | syn_id=%s | final_weight=%.4g",
+                            ov.weight, pre_gid, post_gid, syn_id, connection.post_netcon_weight
+                        )
 
                 self.cells[post_gid].connections[syn_id] = connection
                 for delay, weight_scale in delay_weights:
