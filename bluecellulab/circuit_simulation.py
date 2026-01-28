@@ -76,6 +76,7 @@ class CircuitSimulation:
         rng_mode: Optional[str] = None,
         print_cellstate: bool = False,
         parallel_context=None,
+        save_time: Optional[float] = None,
     ):
         """
 
@@ -97,6 +98,10 @@ class CircuitSimulation:
                     instead of creating a new ParallelContext internally.
                     This is useful when the caller already initialized MPI
                     and manages rank/nhost externally.
+        save_time:
+            Time (ms) when `prcellstate` is dumped. If None (default), dump at
+            the end of the simulation (tstop). Use 0 to dump immediately after
+            initialization.
         """
         self.record_dt = record_dt
 
@@ -113,6 +118,7 @@ class CircuitSimulation:
         pc = parallel_context if parallel_context is not None else neuron.h.ParallelContext()
         self.pc = pc if int(pc.nhost()) > 1 or print_cellstate else None
         self.print_cellstate = print_cellstate
+        self.save_time = save_time
 
         self.rng_settings = RNGSettings.get_instance()
         self.rng_settings.set_seeds(
@@ -771,14 +777,19 @@ class CircuitSimulation:
 
         self.fih_prcellstate = None
         if self.pc is not None and self.print_cellstate:
-            def _dump_prcellstate():
+            def dump():
                 for cell in self.cells:
                     pop = cell.population_name
                     gid = cell.id
                     g = self.global_gid(pop, gid)
                     self.pc.prcellstate(g, f"bluecellulab_t={neuron.h.t}")
 
-            self.fih_prcellstate = neuron.h.FInitializeHandler(1, _dump_prcellstate)
+            def schedule_dump():
+                t_dump = self.save_time if self.save_time is not None else self.circuit_access.config.tstop
+                neuron.h.cvode.event(t_dump, dump)
+
+            self.fih_prcellstate = neuron.h.FInitializeHandler(1, schedule_dump)
+
 
         if show_progress:
             logger.warning("show_progress enabled, this will very likely"
@@ -936,8 +947,7 @@ class CircuitSimulation:
                                  emodel_properties=cell_kwargs['emodel_properties'])
 
     def global_gid(self, pop: str, gid: int) -> int:
-        """Return a globally unique NEURON GID for a (population, node_id)
-        pair.
+        """Return a globally unique NEURON GID for a (population, node_id) pair.
 
         NEURON's ParallelContext requires presynaptic sources to be identified by a
         single integer GID across all ranks. In SONATA circuits, node ids are only
