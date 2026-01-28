@@ -243,8 +243,14 @@ class InjectableMixin:
         """Add a replay noise stimulus."""
         if section is None:
             section = self.soma  # type: ignore
-        mean = (stimulus.mean_percent * self.threshold) / 100.0  # type: ignore
-        variance = (stimulus.variance * self.threshold) / 100.0  # type: ignore
+
+        if stimulus.mean is not None:
+            mean = stimulus.mean  # already nA
+            variance = stimulus.variance  # interpret as std in nA
+        else:
+            mean = (stimulus.mean_percent * self.threshold) / 100.0
+            variance = (stimulus.variance * self.threshold) / 100.0
+
         tstim = self.add_noise_step(
             section,  # type: ignore
             segx,
