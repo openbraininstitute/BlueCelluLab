@@ -160,6 +160,7 @@ def test_ais_spiking_test(
     # passed case
     cell = MagicMock()
     cell.axonal = [1]
+    cell.sections = {"axon[0]": MagicMock()}
     mock_Cell.from_template_parameters.return_value = cell
     rec1 = MagicMock(spike=[1])
     rec2 = MagicMock(spike=[2])
