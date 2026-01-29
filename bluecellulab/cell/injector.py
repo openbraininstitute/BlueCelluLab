@@ -184,8 +184,10 @@ class InjectableMixin:
         # vclamp.amp3 = -65
         # vclamp.dur3 = 200.0
         vclamp.dur1 = delay
+        vclamp.amp1 = 0.0
         vclamp.amp2 = level
         vclamp.dur2 = duration
+        vclamp.amp3 = 0.0
 
         if rs is not None:
             vclamp.rs = rs
