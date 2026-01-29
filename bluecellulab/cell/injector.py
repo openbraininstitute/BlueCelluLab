@@ -248,8 +248,8 @@ class InjectableMixin:
             mean = stimulus.mean  # already nA
             variance = stimulus.variance  # interpret as std in nA
         else:
-            mean = (stimulus.mean_percent * self.threshold) / 100.0
-            variance = (stimulus.variance * self.threshold) / 100.0
+            mean = (stimulus.mean_percent * self.threshold) / 100.0  # type: ignore
+            variance = (stimulus.variance * self.threshold) / 100.0  # type: ignore
 
         tstim = self.add_noise_step(
             section,  # type: ignore

@@ -73,7 +73,7 @@ def test_init_with_invalid_type():
 
 def test_get_all_stimuli_entries():
     sim = SonataSimulationConfig(multi_input_conf_path)
-    noise_stim = Noise(target="Mosaic_A",delay=10.0,duration=20.0,mean_percent=200.0,variance=0.001,node_set="Mosaic_A",)
+    noise_stim = Noise(target="Mosaic_A", delay=10.0, duration=20.0, mean_percent=200.0, variance=0.001, node_set="Mosaic_A",)
     hyper_stim = Hyperpolarizing("Mosaic_A", 0.0, 50.0, node_set="Mosaic_A")
     pulse_stim = Pulse("Mosaic_A", 10.0, 20.0, 0.1, 25, 10, node_set="Mosaic_A")
     linear_stim = Linear("Mosaic_A", 10.0, 20.0, 0.1, 0.4, node_set="Mosaic_A")
