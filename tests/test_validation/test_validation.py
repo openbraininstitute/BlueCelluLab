@@ -151,12 +151,11 @@ def test_bpap_test(mock_Cell, mock_Bpap, dummy_template_params, dummy_out_dir):
 
 
 @patch("bluecellulab.validation.validation.efel.get_feature_values")
-@patch("bluecellulab.validation.validation.section_exists", return_value=True)
 @patch("bluecellulab.validation.validation.plot_traces")
 @patch("bluecellulab.validation.validation.run_multirecordings_stimulus")
 @patch("bluecellulab.validation.validation.Cell")
 def test_ais_spiking_test(
-    mock_Cell, mock_run_multi, mock_plot_traces, mock_section_exists, mock_efel, dummy_template_params, dummy_out_dir
+    mock_Cell, mock_run_multi, mock_plot_traces, mock_efel, dummy_template_params, dummy_out_dir
 ):
     # passed case
     cell = MagicMock()
