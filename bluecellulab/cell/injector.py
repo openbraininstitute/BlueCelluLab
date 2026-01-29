@@ -245,8 +245,8 @@ class InjectableMixin:
             section = self.soma  # type: ignore
 
         if stimulus.mean is not None:
-            mean = stimulus.mean  # already nA
-            variance = stimulus.variance  # interpret as std in nA
+            mean = stimulus.mean
+            variance = stimulus.variance
         else:
             mean = (stimulus.mean_percent * self.threshold) / 100.0  # type: ignore
             variance = (stimulus.variance * self.threshold) / 100.0  # type: ignore
