@@ -40,7 +40,6 @@ class Pattern(Enum):
     Has blueconfig overload.
     """
     NOISE = "noise"
-    RELATIVE_NOISE = "relative_noise"
     HYPERPOLARIZING = "hyperpolarizing"
     PULSE = "pulse"
     LINEAR = "linear"
