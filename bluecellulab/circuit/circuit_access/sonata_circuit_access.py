@@ -124,7 +124,8 @@ class SonataCircuitAccess(CircuitAccess):
             out, seen = [], set()
             for n in inner + proj:
                 if n not in seen:
-                    out.append(n); seen.add(n)
+                    out.append(n)
+                    seen.add(n)
             return out
         else:  # str / list[str]: intrinsic + requested
             requested = [projections] if isinstance(projections, str) else list(projections or [])
@@ -136,17 +137,20 @@ class SonataCircuitAccess(CircuitAccess):
 
             for n in inner:
                 if n not in seen:
-                    out.append(n); seen.add(n)
+                    out.append(n)
+                    seen.add(n)
 
             for token in requested:
                 if token in edges:
                     if token not in seen:
-                        out.append(token); seen.add(token)
+                        out.append(token)
+                        seen.add(token)
                 else:
                     # legacy support: token as source node population name
                     for n in by_source.get(token, []):
                         if n not in seen:
-                            out.append(n); seen.add(n)
+                            out.append(n)
+                            seen.add(n)
 
             return out
 
