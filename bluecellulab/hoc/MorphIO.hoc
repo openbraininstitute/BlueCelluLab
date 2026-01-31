@@ -1,0 +1,35 @@
+/**
+ * @file MorphIO.hoc
+ * @brief MorphIO wrapper handler for morphology-loading.
+ * @author BlueCelluLab Team
+ * @date 2026
+ * @remark Morphology loading for H5 files using MorphIO
+ * Adapted from neurodamus/data/hoc/MorphIO.hoc
+ */
+
+objref pyobj
+pyobj = new PythonObject()
+
+/**
+ *  Execute hoc commands in the cell's context.
+ * @param $o1 Cell object to execute commands in
+ * @param $o2 python List holding commands
+ */
+proc execute_commands_from_pylist () { localobj cmds
+    cmds = $o2
+    for i = 0, pyobj.len(cmds) - 1 {
+        execute(cmds._[i], $o1)
+    }
+}
+
+/**
+ *  Load hoc-based morphology.
+ * @param $o1 Cell object to load morphology into
+ * @param $s2 Morphology file path
+ */
+proc morphio_read() { 
+    if( nrnpython("from bluecellulab.cell.morphio_wrapper import MorphIOWrapper") == 0 ) {
+        terminate( "Cannot load 'MorphIOWrapper' from bluecellulab" )
+    }
+    execute_commands_from_pylist($o1, pyobj.MorphIOWrapper($s2).morph_as_hoc())
+}
