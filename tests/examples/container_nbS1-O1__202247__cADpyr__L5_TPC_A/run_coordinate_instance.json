@@ -1,0 +1,51 @@
+{
+    "obi_one_version": "2025.10.8",
+    "type": "CircuitExtractionSingleConfig",
+    "idx": 0,
+    "coordinate_output_root": "obi-output/extracted_synaptome_nbS1-O1/nbS1-O1__202247__cADpyr__L5_TPC:A",
+    "scan_output_root": "obi-output/extracted_synaptome_nbS1-O1",
+    "single_coordinate_scan_params": {
+        "scan_params": [
+            {
+                "location_list": [
+                    "initialize",
+                    "circuit"
+                ],
+                "type": "SingleValueScanParam",
+                "value": {
+                    "name": "nbS1-O1__202247__cADpyr__L5_TPC:A",
+                    "path": "/Volumes/T7/nbS1/nbS1-O1/circuit_config_postfix2.json",
+                    "matrix_path": null,
+                    "type": "Circuit"
+                }
+            }
+        ],
+        "nested_coordinate_subpath_str": "nbS1-O1__202247__cADpyr__L5_TPC:A/",
+        "type": "SingleCoordinateScanParams"
+    },
+    "initialize": {
+        "type": "CircuitExtractionScanConfig.Initialize",
+        "circuit": {
+            "name": "nbS1-O1__202247__cADpyr__L5_TPC:A",
+            "path": "/Volumes/T7/nbS1/nbS1-O1/circuit_config_postfix2.json",
+            "matrix_path": null,
+            "type": "Circuit"
+        },
+        "run_validation": false,
+        "do_virtual": true,
+        "create_external": true,
+        "virtual_sources_to_ignore": []
+    },
+    "neuron_set": {
+        "type": "IDNeuronSet",
+        "sample_percentage": 100.0,
+        "sample_seed": 1,
+        "neuron_ids": {
+            "name": "nbS1-O1__202247__cADpyr__L5_TPC:A",
+            "elements": [
+                202247
+            ],
+            "type": "NamedTuple"
+        }
+    }
+}

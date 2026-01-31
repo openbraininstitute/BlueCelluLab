@@ -1,0 +1,65 @@
+{
+  "version": 2.4,
+  "target_simulator": "NEURON",
+  "run": {
+    "dt": 0.025,
+    "random_seed": 1,
+    "tstop": 2000
+  },
+  "conditions": {
+    "extracellular_calcium": 1.1,
+    "v_init": -80,
+    "spike_location": "soma",
+    "mechanisms": {
+      "ProbAMPANMDA_EMS": {
+        "init_depleted": true,
+        "minis_single_vesicle": true
+      },
+      "ProbGABAAB_EMS": {
+        "init_depleted": true,
+        "minis_single_vesicle": true
+      }
+    }
+  },
+  "output": {
+    "output_dir": "output_swc",
+    "spikes_file": "spikes.h5"
+  },
+  "network": "../../../tests/examples/container_nbS1-O1__202247__cADpyr__L5_TPC_A/circuit_config_swc.json",
+  "node_set": "Default_All_Biophysical_Neurons",
+  "inputs": {
+    "Stimulus_0_0": {
+      "delay": 0,
+      "duration": 2000,
+      "node_set": "Default_All_Biophysical_Neurons",
+      "module": "hyperpolarizing",
+      "input_type": "current_clamp",
+      "represents_physical_electrode": false
+    },
+    "Stimulus_1_0": {
+      "delay": 0,
+      "duration": 2000,
+      "node_set": "Default_All_Biophysical_Neurons",
+      "module": "relative_linear",
+      "input_type": "current_clamp",
+      "percent_start": 150,
+      "represents_physical_electrode": false
+    }
+  },
+  "reports": {
+    "soma_report": {
+      "cells": "Default_All_Biophysical_Neurons",
+      "sections": "soma",
+      "type": "compartment",
+      "variable_name": "v",
+      "unit": "mV",
+      "dt": 0.1,
+      "start_time" : 0,
+      "end_time" : 2000,
+      "file_name": "soma_report",
+      "enabled" : true
+    }
+  },
+  "node_sets_file": "node_sets.json"
+}
+
