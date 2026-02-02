@@ -14,6 +14,43 @@ from bluecellulab.cell.morphio_wrapper import MorphIOWrapper, split_morphology_p
 class TestH5MorphologyIntegration:
     """Test H5 morphology integration with Cell constructor."""
 
+    def test_is_valid_morphology_path_direct(self):
+        """Test _is_valid_morphology_path method directly."""
+        # Import the method directly to test it without constructor
+        from bluecellulab.cell.template import NeuronTemplate
+        import tempfile
+        import os
+        
+        # Create a temporary file for testing
+        with tempfile.NamedTemporaryFile(suffix=".hoc", delete=False) as tmp:
+            tmp.write(b"begintemplate Dummy_Template\npublic init()\nproc init() {\n}\nendtemplate Dummy_Template")
+            tmp_path = tmp.name
+        
+        try:
+            # Create a template instance
+            template = NeuronTemplate(tmp_path, tmp_path, "v5", None)
+            
+            # Test with existing regular file
+            assert template._is_valid_morphology_path(tmp_path)
+            
+            # Test with non-existent file
+            assert not template._is_valid_morphology_path("nonexistent_file.h5")
+            
+            # Test with non-existent H5 container path
+            assert not template._is_valid_morphology_path("nonexistent_container.h5/cell_name")
+            
+            # Test with existing H5 container
+            container_file = Path(__file__).parent.parent / "examples" / "container_nbS1-O1__202247__cADpyr__L5_TPC_A" / "morphologies" / "merged-morphologies.h5"
+            
+            if container_file.exists():
+                # Test with valid H5 container path (should return True since container exists)
+                valid_path = f"{container_file}/some_cell"
+                assert template._is_valid_morphology_path(valid_path)
+            
+        finally:
+            # Clean up temporary file
+            os.unlink(tmp_path)
+
     @classmethod
     def setup_class(cls):
         """Load compiled mechanisms once for all tests."""

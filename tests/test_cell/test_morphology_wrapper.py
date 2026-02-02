@@ -287,3 +287,34 @@ class TestCellH5Integration:
 
         for path in test_paths:
             assert '.h5' in str(path).lower(), f"Should detect H5 in {path}"
+
+    def test_type2name_method(self):
+        """Test type2name class method."""
+        # Test known types
+        assert MorphIOWrapper.type2name(1) == "soma"
+        assert MorphIOWrapper.type2name(2) == "axon"
+        assert MorphIOWrapper.type2name(3) == "dend"
+        assert MorphIOWrapper.type2name(4) == "apic"
+        
+        # Test unknown types
+        assert MorphIOWrapper.type2name(5) == "dend_5"
+        assert MorphIOWrapper.type2name(10) == "dend_10"
+        
+        # Test negative types
+        assert MorphIOWrapper.type2name(-1) == "minus_1"
+        assert MorphIOWrapper.type2name(-5) == "minus_5"
+
+    def test_mksubset_method(self):
+        """Test mksubset class method."""
+        # Test known types
+        assert MorphIOWrapper.mksubset(1, "soma") == 'forsec "soma" somatic.append'
+        assert MorphIOWrapper.mksubset(2, "axon") == 'forsec "axon" axonal.append'
+        assert MorphIOWrapper.mksubset(3, "dend") == 'forsec "dend" basal.append'
+        assert MorphIOWrapper.mksubset(4, "apic") == 'forsec "apic" apical.append'
+        
+        # Test unknown types
+        assert MorphIOWrapper.mksubset(5, "unknown") == 'forsec "unknown" dendritic_5.append'
+        assert MorphIOWrapper.mksubset(10, "custom") == 'forsec "custom" dendritic_10.append'
+        
+        # Test negative types
+        assert MorphIOWrapper.mksubset(-1, "negative") == 'forsec "negative" minus_1set.append'
