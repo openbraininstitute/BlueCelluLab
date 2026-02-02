@@ -356,3 +356,69 @@ class TestCellH5Integration:
             hoc_commands = wrapper.morph_as_hoc()
             assert len(hoc_commands) > 0
             assert any('soma' in cmd for cmd in hoc_commands)
+
+    def test_make_convex_edge_cases(self):
+        """Test make_convex function with edge cases."""
+        from bluecellulab.cell.morphio_wrapper import make_convex
+        import numpy as np
+        
+        # Test case where convex_idx returns False for some indices (line 97)
+        # Create non-convex data where some points need to be filtered
+        sides = [
+            np.array([1.0, 3.0, 2.0, 4.0]),  # Non-monotonic - will trigger line 97
+            np.array([1.0, 2.0, 3.0, 4.0])   # Monotonic
+        ]
+        rads = [
+            np.array([0.5, 0.6, 0.7, 0.8]),
+            np.array([0.5, 0.6, 0.7, 0.8])
+        ]
+        
+        result_sides, result_rads = make_convex(sides, rads)
+        
+        # Verify the function returns filtered arrays
+        assert len(result_sides) == 2
+        assert len(result_rads) == 2
+        # First side should be filtered to remove non-convex point
+        assert len(result_sides[0]) <= len(sides[0])
+
+    def test_to_sphere_and_single_point_conversion(self):
+        """Test _to_sphere and single_point_sphere_to_circular_contour functions."""
+        import numpy as np
+        try:
+            import morphio
+            from morphio import SomaType
+        except ImportError:
+            pytest.skip("morphio not available")
+        
+        # Test the _to_sphere function directly
+        from bluecellulab.cell.morphio_wrapper import _to_sphere, single_point_sphere_to_circular_contour
+        
+        # Create a mock neuron object with single point soma
+        class MockSoma:
+            def __init__(self):
+                self.points = np.array([[0.0, 0.0, 0.0]])
+                self.diameters = np.array([10.0])  # Diameter of 10, radius 5
+        
+        class MockNeuron:
+            def __init__(self):
+                self.soma = MockSoma()
+        
+        neuron = MockNeuron()
+        
+        # Call _to_sphere - this should convert single point to circular contour
+        _to_sphere(neuron)
+        
+        # Verify the soma has been converted to 20 points in a circle
+        assert len(neuron.soma.points) == 20
+        assert len(neuron.soma.diameters) == 20
+        
+        # Verify points form a circle with radius 5.0
+        radius = neuron.soma.diameters[0]
+        assert radius == 5.0
+        
+        # Test single_point_sphere_to_circular_contour wrapper function
+        neuron2 = MockNeuron()
+        single_point_sphere_to_circular_contour(neuron2)
+        
+        # Should also have 20 points after conversion
+        assert len(neuron2.soma.points) == 20
