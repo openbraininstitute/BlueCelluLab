@@ -318,3 +318,21 @@ class TestCellH5Integration:
 
         # Test negative types
         assert MorphIOWrapper.mksubset(-1, "negative") == 'forsec "negative" minus_1set.append'
+
+    def test_section_name_dataclass(self):
+        """Test SectionName dataclass functionality."""
+        # Test SectionName creation and attributes
+        section_name = SectionName(name="soma", id=0)
+        assert section_name.name == "soma"
+        assert section_name.id == 0
+
+        # Test string representation
+        assert str(section_name) == "soma[0]"
+
+        # Test equality
+        section_name2 = SectionName(name="soma", id=0)
+        assert section_name == section_name2
+
+        # Test inequality
+        section_name3 = SectionName(name="dend", id=1)
+        assert section_name != section_name3

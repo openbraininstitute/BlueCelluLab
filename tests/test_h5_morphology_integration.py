@@ -51,6 +51,32 @@ class TestH5MorphologyIntegration:
             # Clean up temporary file
             os.unlink(tmp_path)
 
+    def test_is_valid_morphology_path_invalid_h5_container(self):
+        """Test _is_valid_morphology_path with corrupted H5 container."""
+        from bluecellulab.cell.template import NeuronTemplate
+        import tempfile
+        import os
+
+        # Create a temporary file for testing
+        with tempfile.NamedTemporaryFile(suffix=".hoc", delete=False) as tmp:
+            tmp.write(b"begintemplate Dummy_Template\npublic init()\nproc init() {\n}\nendtemplate Dummy_Template")
+            tmp_path = tmp.name
+
+        # Create a corrupted H5 file
+        with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as h5_tmp:
+            h5_tmp.write(b"corrupted data")
+            h5_path = h5_tmp.name
+
+        try:
+            template = NeuronTemplate(tmp_path, tmp_path, "v5", None)
+
+            # Test with corrupted H5 container - should return False due to exception
+            assert not template._is_valid_morphology_path(f"{h5_path}/cell_name")
+
+        finally:
+            os.unlink(tmp_path)
+            os.unlink(h5_path)
+
     @classmethod
     def setup_class(cls):
         """Load compiled mechanisms once for all tests."""
