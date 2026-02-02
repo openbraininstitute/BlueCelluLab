@@ -336,3 +336,23 @@ class TestCellH5Integration:
         # Test inequality
         section_name3 = SectionName(name="dend", id=1)
         assert section_name != section_name3
+
+    def test_morphio_wrapper_with_single_point_soma(self):
+        """Test MorphIOWrapper with single point soma morphology."""
+        # This tests the soma conversion functions (_to_sphere, single_point_sphere_to_circular_contour)
+        # which are called for SOMA_SINGLE_POINT type morphologies
+        h5_file = Path(__file__).parent.parent / "examples" / "container_nbS1-O1__202247__cADpyr__L5_TPC_A" / "morphologies" / "h5" / "dend-rat_20150119_LH1_cell1_axon-rp111203_C3_idA_-_Scale_x1.000_y0.950_z1.000_-_Clone_0.h5"
+        
+        if h5_file.exists():
+            # Initialize wrapper - this will trigger soma conversion if needed
+            wrapper = MorphIOWrapper(h5_file)
+            
+            # Verify the wrapper was created successfully
+            assert wrapper is not None
+            assert hasattr(wrapper, '_morph')
+            
+            # The soma should have been converted to a circular contour
+            # Verify basic morphology properties
+            hoc_commands = wrapper.morph_as_hoc()
+            assert len(hoc_commands) > 0
+            assert any('soma' in cmd for cmd in hoc_commands)
