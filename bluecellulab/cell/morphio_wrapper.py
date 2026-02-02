@@ -379,9 +379,10 @@ class MorphIOWrapper:
     def type2name(cls, type_id):
         """:param type_id: id of section type
         :return: name representation of the section type.
-                 If not found in _type2name_dict, then default is:
-                    if (type < 0): "minus_{}".format(-type)
-                    else: "dend_{}".format(type)
+        
+        If not found in _type2name_dict, then default is:
+        if (type < 0): "minus_{}".format(-type)
+        else: "dend_{}".format(type)
         """
         return cls._type2name_dict.get(type_id) or (
             f"minus_{-type_id}" if type_id < 0 else f"dend_{type_id}"
