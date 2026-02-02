@@ -342,15 +342,15 @@ class TestCellH5Integration:
         # This tests the soma conversion functions (_to_sphere, single_point_sphere_to_circular_contour)
         # which are called for SOMA_SINGLE_POINT type morphologies
         h5_file = Path(__file__).parent.parent / "examples" / "container_nbS1-O1__202247__cADpyr__L5_TPC_A" / "morphologies" / "h5" / "dend-rat_20150119_LH1_cell1_axon-rp111203_C3_idA_-_Scale_x1.000_y0.950_z1.000_-_Clone_0.h5"
-        
+
         if h5_file.exists():
             # Initialize wrapper - this will trigger soma conversion if needed
             wrapper = MorphIOWrapper(h5_file)
-            
+
             # Verify the wrapper was created successfully
             assert wrapper is not None
             assert hasattr(wrapper, '_morph')
-            
+
             # The soma should have been converted to a circular contour
             # Verify basic morphology properties
             hoc_commands = wrapper.morph_as_hoc()
@@ -361,7 +361,7 @@ class TestCellH5Integration:
         """Test make_convex function with edge cases."""
         from bluecellulab.cell.morphio_wrapper import make_convex
         import numpy as np
-        
+
         # Test case where convex_idx returns False for some indices (line 97)
         # Create non-convex data where some points need to be filtered
         sides = [
@@ -372,9 +372,9 @@ class TestCellH5Integration:
             np.array([0.5, 0.6, 0.7, 0.8]),
             np.array([0.5, 0.6, 0.7, 0.8])
         ]
-        
+
         result_sides, result_rads = make_convex(sides, rads)
-        
+
         # Verify the function returns filtered arrays
         assert len(result_sides) == 2
         assert len(result_rads) == 2
@@ -385,40 +385,39 @@ class TestCellH5Integration:
         """Test _to_sphere and single_point_sphere_to_circular_contour functions."""
         import numpy as np
         try:
-            import morphio
-            from morphio import SomaType
+            import morphio  # noqa: F401
         except ImportError:
             pytest.skip("morphio not available")
-        
+
         # Test the _to_sphere function directly
         from bluecellulab.cell.morphio_wrapper import _to_sphere, single_point_sphere_to_circular_contour
-        
+
         # Create a mock neuron object with single point soma
         class MockSoma:
             def __init__(self):
                 self.points = np.array([[0.0, 0.0, 0.0]])
                 self.diameters = np.array([10.0])  # Diameter of 10, radius 5
-        
+
         class MockNeuron:
             def __init__(self):
                 self.soma = MockSoma()
-        
+
         neuron = MockNeuron()
-        
+
         # Call _to_sphere - this should convert single point to circular contour
         _to_sphere(neuron)
-        
+
         # Verify the soma has been converted to 20 points in a circle
         assert len(neuron.soma.points) == 20
         assert len(neuron.soma.diameters) == 20
-        
+
         # Verify points form a circle with radius 5.0
         radius = neuron.soma.diameters[0]
         assert radius == 5.0
-        
+
         # Test single_point_sphere_to_circular_contour wrapper function
         neuron2 = MockNeuron()
         single_point_sphere_to_circular_contour(neuron2)
-        
+
         # Should also have 20 points after conversion
         assert len(neuron2.soma.points) == 20
