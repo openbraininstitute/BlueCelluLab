@@ -115,8 +115,8 @@ class TestSonataCircuitAccess:
         assert SynapseProperty.U_HILL_COEFFICIENT not in res.columns
         assert SynapseProperty.CONDUCTANCE_RATIO not in res.columns
 
-        # specific projection selection (by edge pop name or legacy alias)
-        projection = "hippocampus_projections"
+        # specific projection selection
+        projection = "hippocampus_projections__hippocampus_neurons__chemical"
         res = self.circuit_access.extract_synapses(cell_id, projection)
         assert res.shape == (1742, 16)
 
