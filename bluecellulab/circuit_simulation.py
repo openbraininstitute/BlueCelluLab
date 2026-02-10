@@ -588,7 +588,12 @@ class CircuitSimulation:
             pre_spike_trains,
             user_pre_spike_trains)
 
-        connections_overrides = self.circuit_access.config.connection_entries()
+        connections_overrides = (
+            self.circuit_access.config.connection_entries()
+            if hasattr(self, "circuit_access")
+            else []
+        )
+
         for post_gid in self.cells:
             for syn_id in self.cells[post_gid].synapses:
                 synapse = self.cells[post_gid].synapses[syn_id]
