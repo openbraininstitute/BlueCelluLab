@@ -184,11 +184,12 @@ class CircuitSimulation:
                             will automatically set this option to
                             True.
         add_projections: Control whether projection edge populations are considered when adding synapses.
-                            - False (default): intrinsic connectivity only (no projection edge populations)
-                            - True: intrinsic connectivity + all projection edge populations
-                            - list[str]: intrinsic connectivity + the specified projection edge population names
+                            * ``False`` (default): intrinsic connectivity only (no projection edge populations)
+                            * ``True``: intrinsic connectivity + all projection edge populations
+                            * ``list[str]``: intrinsic connectivity + the specified projection edge population names
+
                             Note:
-                                Names refer to SONATA edge population names (SnapCircuit.edges keys).
+                                Names refer to SONATA edge population names (``SnapCircuit.edges`` keys).
         intersect_pre_gids : list of gids
                              Only add synapses to the cells if their
                              presynaptic gid is in this list
