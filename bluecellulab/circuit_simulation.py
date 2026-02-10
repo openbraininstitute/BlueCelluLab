@@ -986,7 +986,8 @@ class CircuitSimulation:
                                  emodel_properties=cell_kwargs['emodel_properties'])
 
     def global_gid(self, pop: str, gid: int) -> int:
-        """Return a globally unique NEURON GID for a (population, node_id) pair.
+        """Return a globally unique NEURON GID for a (population, node_id)
+        pair.
 
         NEURON's ParallelContext requires presynaptic sources to be identified by a
         single integer GID across all ranks. In SONATA circuits, node ids are only
