@@ -570,8 +570,10 @@ class CircuitSimulation:
         matched = None
         for ov in overrides:
             # ov.source and ov.target are nodeset names
-            if self.circuit_access.target_contains_cell(ov.source, pre) and \
-            self.circuit_access.target_contains_cell(ov.target, post):
+            if (
+                self.circuit_access.target_contains_cell(ov.source, pre)
+                and self.circuit_access.target_contains_cell(ov.target, post)
+            ):
                 matched = ov   # "last match wins" like Neurodamus ordering
         return matched
 
@@ -827,7 +829,6 @@ class CircuitSimulation:
                 neuron.h.cvode.event(t_dump, dump)
 
             self.fih_prcellstate = neuron.h.FInitializeHandler(1, schedule_dump)
-
 
         if show_progress:
             logger.warning("show_progress enabled, this will very likely"

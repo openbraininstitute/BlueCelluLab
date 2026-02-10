@@ -110,7 +110,6 @@ class Connection:
         if self.post_netcon is not None:
             self.post_netcon.delay = self.post_netcon_delay
 
-
     @property
     def info_dict(self):
         """Return dict that contains information that can restore this conn."""
