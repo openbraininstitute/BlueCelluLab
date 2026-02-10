@@ -141,16 +141,14 @@ class SonataCircuitAccess(CircuitAccess):
                     seen.add(n)
 
             for token in requested:
-                if token in edges:
-                    if token not in seen:
-                        out.append(token)
-                        seen.add(token)
-                else:
-                    # legacy support: token as source node population name
-                    for n in by_source.get(token, []):
-                        if n not in seen:
-                            out.append(n)
-                            seen.add(n)
+                if token not in edges:
+                    raise ValueError(
+                        f"Unknown projection '{token}'. Expected an edge population name. "
+                        f"Available edge populations: {sorted(all_names)}"
+                    )
+                if token not in seen:
+                    out.append(token)
+                    seen.add(token)
 
             return out
 
