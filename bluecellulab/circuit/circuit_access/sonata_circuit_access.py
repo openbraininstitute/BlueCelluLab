@@ -131,7 +131,7 @@ class SonataCircuitAccess(CircuitAccess):
             requested = [projections] if isinstance(projections, str) else list(projections or [])
 
             out, seen = [], set()
-            by_source = {}
+            by_source: dict[str, list[str]] = {}
             for n in all_names:
                 by_source.setdefault(edges[n].source.name, []).append(n)
 
