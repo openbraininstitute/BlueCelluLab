@@ -207,11 +207,11 @@ def test_add_connections_applies_last_matching_override(monkeypatch):
 
     overrides = [
         ConnectionOverrides(
-            source="any", target="any", delay=1.5, weight=2.0,
+            source="any", target="any", synapse_delay_override=1.5, delay=None, weight=2.0,
             spont_minis=None, synapse_configure=None, mod_override=None,
         ),
         ConnectionOverrides(
-            source="any", target="any", delay=4.0, weight=3.0,
+            source="any", target="any", synapse_delay_override=4.0, delay=None, weight=3.0,
             spont_minis=None, synapse_configure=None, mod_override=None,
         ),
     ]
