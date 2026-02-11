@@ -668,11 +668,20 @@ class CircuitSimulation:
                         "Override matched: %s -> %s | syn_id=%s | weight=%s delay=%s",
                         pre_gid, post_gid, syn_id, ov.weight, ov.delay
                     )
-                    if ov.delay is not None:
-                        connection.set_netcon_delay(float(ov.delay))
+
+                    syn_delay = getattr(ov, "synapse_delay_override", None)
+                    if syn_delay is not None:
+                        connection.set_netcon_delay(float(syn_delay))
                         logger.debug(
-                            "Applied delay override %.4g ms to %s -> %s | syn_id=%s",
-                            ov.delay, pre_gid, post_gid, syn_id
+                            "Applied synapse_delay_override %.4g ms to %s -> %s | syn_id=%s",
+                            syn_delay, pre_gid, post_gid, syn_id
+                        )
+
+                    if ov.delay is not None:
+                        logger.warning(
+                            "SONATA override 'delay' (delayed weight activation) is not supported yet; "
+                            "applying weight immediately. %s -> %s | syn_id=%s | delay=%s",
+                            pre_gid, post_gid, syn_id, ov.delay
                         )
 
                     if ov.weight is not None:
