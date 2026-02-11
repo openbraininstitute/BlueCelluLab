@@ -110,10 +110,34 @@ class SonataCircuitAccess(CircuitAccess):
         return source_popid, target_popid
 
     def _select_edge_pop_names(self, projections) -> list[str]:
+        """
+        Select the SONATA edge populations to use for synapse extraction.
+
+        Intrinsic connectivity is always included. The ``projections`` argument only controls whether
+        edges originating from SONATA *virtual* node populations are added.
+
+        Args:
+            projections:
+                * ``False`` – intrinsic edges only.
+                * ``True`` – intrinsic edges plus all projection edges.
+                * ``str`` or ``list[str]`` – intrinsic edges plus the specified
+                projection edge population name(s).
+
+                Names must be valid edge population names (``SnapCircuit.edges`` keys).
+
+        Returns:
+            list[str]: Ordered edge population names, intrinsic first and without duplicates.
+
+        Raises:
+            ValueError: If a requested projection name is unknown.
+        """
         edges = self._circuit.edges
         all_names = list(edges.keys())
 
+        # intrinsic connectivity within the simulated circuit
         inner = [n for n in all_names if n in self._inner_edge_pop_names]
+
+        # edges whose source is a SONATA virtual node population
         proj = [n for n in all_names if getattr(edges[n].source, "type", None) == "virtual"]
 
         if projections is False:
@@ -130,7 +154,11 @@ class SonataCircuitAccess(CircuitAccess):
         else:  # str / list[str]: intrinsic + requested
             requested = [projections] if isinstance(projections, str) else list(projections or [])
 
-            out, seen = [], set()
+            # ordered list of edge population names to return (intrinsic first, then projections)
+            out: list[str] = []
+            # helper set to avoid adding the same edge population more than once
+            seen: set[str] = set()
+
             by_source: dict[str, list[str]] = {}
             for n in all_names:
                 by_source.setdefault(edges[n].source.name, []).append(n)
