@@ -128,7 +128,7 @@ class CircuitSimulation:
         self.spike_threshold = self.circuit_access.config.spike_threshold
         self.spike_location = self.circuit_access.config.spike_location
 
-        self.projections: list[str] = []
+        self.projections: list[str] | str | None = None
 
         condition_parameters = self.circuit_access.config.condition_parameters()
         set_global_condition_parameters(condition_parameters)
@@ -147,7 +147,7 @@ class CircuitSimulation:
         add_hyperpolarizing_stimuli: bool = False,
         add_relativelinear_stimuli: bool = False,
         add_pulse_stimuli: bool = False,
-        add_projections: bool | list[str] = False,
+        add_projections: bool | list[str] | str = False,
         intersect_pre_gids: Optional[list] = None,
         interconnect_cells: bool = True,
         pre_spike_trains: None | dict[tuple[str, int], Iterable] | dict[int, Iterable] = None,
@@ -195,10 +195,13 @@ class CircuitSimulation:
                             Setting add_stimuli=True,
                             will automatically set this option to
                             True.
-        add_projections:
-                         If True, adds all of the projection blocks of the
-                         circuit config. If False, no projections are added.
-                         If list, adds only the projections in the list.
+        add_projections: Control whether projection edge populations are considered when adding synapses.
+                            * ``False`` (default): intrinsic connectivity only (no projection edge populations)
+                            * ``True``: intrinsic connectivity + all projection edge populations
+                            * ``list[str] | str``: Intrinsic connectivity plus the specified projection edge population name(s).
+
+                            Note:
+                                Names refer to SONATA edge population names (``SnapCircuit.edges`` keys).
         intersect_pre_gids : list of gids
                              Only add synapses to the cells if their
                              presynaptic gid is in this list
@@ -267,10 +270,14 @@ class CircuitSimulation:
                                         "if you want to specify use add_replay or "
                                         "pre_spike_trains")
 
+        # legacy for backward compatibility
+        if add_projections is None:
+            add_projections = False
+
         if add_projections is True:
             self.projections = self.circuit_access.config.get_all_projection_names()
         elif add_projections is False:
-            self.projections = []
+            self.projections = None
         else:
             self.projections = add_projections
 

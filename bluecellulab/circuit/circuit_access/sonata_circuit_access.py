@@ -52,6 +52,10 @@ class SonataCircuitAccess(CircuitAccess):
             self.config = SonataSimulationConfig(simulation_config)
         circuit_config = self.config.impl.config["network"]
         self._circuit = SnapCircuit(circuit_config)
+        self._inner_edge_pop_names = {
+            name for name, epop in self._circuit.edges.items()
+            if getattr(epop.source, "type", None) != "virtual"
+        }
 
     @property
     def available_cell_properties(self) -> set:
@@ -105,6 +109,74 @@ class SonataCircuitAccess(CircuitAccess):
             source_population_name, target_population_name)
         return source_popid, target_popid
 
+    def _select_edge_pop_names(self, projections) -> list[str]:
+        """Select the SONATA edge populations to use for synapse extraction.
+
+        Intrinsic connectivity is always included. The ``projections`` argument only controls whether
+        edges originating from SONATA *virtual* node populations are added.
+
+        Args:
+            projections:
+                * ``False`` – intrinsic edges only.
+                * ``True`` – intrinsic edges plus all projection edges.
+                * ``str`` or ``list[str]`` – intrinsic edges plus the specified
+                projection edge population name(s).
+
+                Names must be valid edge population names (``SnapCircuit.edges`` keys).
+
+        Returns:
+            list[str]: Ordered edge population names, intrinsic first and without duplicates.
+
+        Raises:
+            ValueError: If a requested projection name is unknown.
+        """
+        edges = self._circuit.edges
+        all_names = list(edges.keys())
+
+        # intrinsic connectivity within the simulated circuit
+        inner = [n for n in all_names if n in self._inner_edge_pop_names]
+
+        # edges whose source is a SONATA virtual node population
+        proj = [n for n in all_names if getattr(edges[n].source, "type", None) == "virtual"]
+
+        if projections is False:
+            return inner
+
+        elif projections is True:
+            # intrinsic + all projections
+            # out: ordered list of edge population names to return (intrinsic first, then projections)
+            # seen: helper set to avoid adding the same population more than once
+            out, seen = [], set()
+            for n in inner + proj:
+                if n not in seen:
+                    out.append(n)
+                    seen.add(n)
+            return out
+        else:  # str / list[str]: intrinsic + requested
+            requested = [projections] if isinstance(projections, str) else list(projections or [])
+
+            out, seen = [], set()
+            by_source: dict[str, list[str]] = {}
+            for n in all_names:
+                by_source.setdefault(edges[n].source.name, []).append(n)
+
+            for n in inner:
+                if n not in seen:
+                    out.append(n)
+                    seen.add(n)
+
+            for token in requested:
+                if token not in edges:
+                    raise ValueError(
+                        f"Unknown projection '{token}'. Expected an edge population name. "
+                        f"Available edge populations: {sorted(all_names)}"
+                    )
+                if token not in seen:
+                    out.append(token)
+                    seen.add(token)
+
+            return out
+
     def extract_synapses(
         self, cell_id: CellId, projections: Optional[list[str] | str]
     ) -> pd.DataFrame:
@@ -114,13 +186,8 @@ class SonataCircuitAccess(CircuitAccess):
         """
         snap_node_id = CircuitNodeId(cell_id.population_name, cell_id.id)
         edges = self._circuit.edges
-        # select edges that are in the projections, if there are projections
-        if projections is None or len(projections) == 0:
-            edge_population_names = [x for x in edges]
-        elif isinstance(projections, str):
-            edge_population_names = [x for x in edges if edges[x].source.name == projections]
-        else:
-            edge_population_names = [x for x in edges if edges[x].source.name in projections]
+
+        edge_population_names = self._select_edge_pop_names(projections)
 
         all_synapses_dfs: list[pd.DataFrame] = []
         for edge_population_name in edge_population_names:
