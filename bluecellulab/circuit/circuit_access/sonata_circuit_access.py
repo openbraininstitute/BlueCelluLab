@@ -110,8 +110,7 @@ class SonataCircuitAccess(CircuitAccess):
         return source_popid, target_popid
 
     def _select_edge_pop_names(self, projections) -> list[str]:
-        """
-        Select the SONATA edge populations to use for synapse extraction.
+        """Select the SONATA edge populations to use for synapse extraction.
 
         Intrinsic connectivity is always included. The ``projections`` argument only controls whether
         edges originating from SONATA *virtual* node populations are added.
@@ -145,6 +144,8 @@ class SonataCircuitAccess(CircuitAccess):
 
         elif projections is True:
             # intrinsic + all projections
+            # out: ordered list of edge population names to return (intrinsic first, then projections)
+            # seen: helper set to avoid adding the same population more than once
             out, seen = [], set()
             for n in inner + proj:
                 if n not in seen:
@@ -154,11 +155,7 @@ class SonataCircuitAccess(CircuitAccess):
         else:  # str / list[str]: intrinsic + requested
             requested = [projections] if isinstance(projections, str) else list(projections or [])
 
-            # ordered list of edge population names to return (intrinsic first, then projections)
-            out: list[str] = []
-            # helper set to avoid adding the same edge population more than once
-            seen: set[str] = set()
-
+            out, seen = [], set()
             by_source: dict[str, list[str]] = {}
             for n in all_names:
                 by_source.setdefault(edges[n].source.name, []).append(n)
