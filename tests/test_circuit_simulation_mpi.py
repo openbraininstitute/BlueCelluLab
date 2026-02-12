@@ -16,6 +16,7 @@ import pytest
 import bluecellulab.circuit_simulation as circuit_simulation
 from bluecellulab.circuit_simulation import CircuitSimulation
 from bluecellulab.circuit import CellId, SynapseProperty
+from bluecellulab.circuit.config.sections import ConnectionOverrides
 
 
 class FakePC:
@@ -161,3 +162,88 @@ def test_global_gid_raises_for_unknown_population():
     sim._pop_index = {"": 0}
     with pytest.raises(KeyError):
         sim.global_gid("UnknownPop", 1)
+
+
+def test_add_connections_skips_zero_weight_override(monkeypatch):
+    sim = make_sim(pc=None)
+
+    post_id = CellId("PostPop", 5)
+    syn = DummySynapse(source_pop="PrePop", pre_gid=3)
+    post_cell = DummyCell(synapses={"syn1": syn})
+    sim.cells = {post_id: post_cell}
+
+    overrides = [
+        ConnectionOverrides(
+            source="src", target="dst", delay=None, weight=0.0,
+            spont_minis=None, synapse_configure=None, mod_override=None,
+        )
+    ]
+
+    class FakeCircuitAccess:
+        def __init__(self, ov):
+            self._ov = ov
+            self.config = type("cfg", (), {"connection_entries": lambda _self: self._ov})()
+
+        def target_contains_cell(self, *_):
+            return True
+
+    sim.circuit_access = FakeCircuitAccess(overrides)
+
+    # Monkeypatch Connection so it would raise if invoked
+    monkeypatch.setattr(circuit_simulation.bluecellulab, "Connection", lambda *a, **k: (_ for _ in ()).throw(AssertionError("Connection should not be created")))
+
+    sim._add_connections(interconnect_cells=False)
+
+    assert post_cell.connections == {}
+
+
+def test_add_connections_applies_last_matching_override(monkeypatch):
+    sim = make_sim(pc=None)
+
+    post_id = CellId("PostPop", 1)
+    syn = DummySynapse(source_pop="PrePop", pre_gid=2)
+    post_cell = DummyCell(synapses={"synX": syn})
+    sim.cells = {post_id: post_cell}
+
+    overrides = [
+        ConnectionOverrides(
+            source="any", target="any", synapse_delay_override=1.5, delay=None, weight=2.0,
+            spont_minis=None, synapse_configure=None, mod_override=None,
+        ),
+        ConnectionOverrides(
+            source="any", target="any", synapse_delay_override=4.0, delay=None, weight=3.0,
+            spont_minis=None, synapse_configure=None, mod_override=None,
+        ),
+    ]
+
+    class FakeCircuitAccess:
+        def __init__(self, ov):
+            self._ov = ov
+            self.config = type("cfg", (), {"connection_entries": lambda _self: self._ov})()
+
+        def target_contains_cell(self, *_):
+            return True  # everything matches for simplicity
+
+    sim.circuit_access = FakeCircuitAccess(overrides)
+
+    class FakeConnection:
+        def __init__(self, *_, **__):
+            self.weight = 1.0
+            self.weight_scalar = 1.0
+            self.post_netcon_weight = self.weight
+            self.post_netcon_delay = 0.0
+
+        def set_weight_scalar(self, scalar: float):
+            self.weight_scalar = scalar
+            self.post_netcon_weight = self.weight * self.weight_scalar
+
+        def set_netcon_delay(self, delay: float):
+            self.post_netcon_delay = delay
+
+    monkeypatch.setattr(circuit_simulation.bluecellulab, "Connection", FakeConnection)
+
+    sim._add_connections(interconnect_cells=False)
+
+    conn = post_cell.connections["synX"]
+    assert conn.post_netcon_delay == pytest.approx(4.0)
+    assert conn.post_netcon_weight == pytest.approx(3.0)

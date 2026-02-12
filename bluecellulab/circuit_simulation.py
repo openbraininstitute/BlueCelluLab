@@ -76,6 +76,7 @@ class CircuitSimulation:
         rng_mode: Optional[str] = None,
         print_cellstate: bool = False,
         parallel_context=None,
+        save_time: Optional[float] = None,
     ):
         """
 
@@ -97,6 +98,10 @@ class CircuitSimulation:
                     instead of creating a new ParallelContext internally.
                     This is useful when the caller already initialized MPI
                     and manages rank/nhost externally.
+        save_time:
+            Time (ms) when `prcellstate` is dumped. If None (default), dump at
+            the end of the simulation (tstop). Use 0 to dump immediately after
+            initialization.
         """
         self.record_dt = record_dt
 
@@ -113,6 +118,7 @@ class CircuitSimulation:
         pc = parallel_context if parallel_context is not None else neuron.h.ParallelContext()
         self.pc = pc if int(pc.nhost()) > 1 or print_cellstate else None
         self.print_cellstate = print_cellstate
+        self.save_time = save_time
 
         self.rng_settings = RNGSettings.get_instance()
         self.rng_settings.set_seeds(
@@ -567,6 +573,17 @@ class CircuitSimulation:
 
         return result
 
+    def _find_matching_override(self, overrides, pre: CellId, post: CellId):
+        matched = None
+        for ov in overrides:
+            # ov.source and ov.target are nodeset names
+            if (
+                self.circuit_access.target_contains_cell(ov.source, pre)
+                and self.circuit_access.target_contains_cell(ov.target, post)
+            ):
+                matched = ov   # "last match wins" like Neurodamus ordering
+        return matched
+
     def _add_connections(
             self,
             add_replay=None,
@@ -578,6 +595,12 @@ class CircuitSimulation:
             pre_spike_trains,
             user_pre_spike_trains)
 
+        connections_overrides = (
+            self.circuit_access.config.connection_entries()
+            if hasattr(self, "circuit_access")
+            else []
+        )
+
         for post_gid in self.cells:
             for syn_id in self.cells[post_gid].synapses:
                 synapse = self.cells[post_gid].synapses[syn_id]
@@ -585,6 +608,15 @@ class CircuitSimulation:
                 delay_weights = synapse.delay_weights
                 source_population = syn_description["source_population_name"]
                 pre_gid = CellId(source_population, int(syn_description[SynapseProperty.PRE_GID]))
+
+                ov = self._find_matching_override(connections_overrides, pre_gid, post_gid)
+
+                if ov is not None and ov.weight == 0.0:
+                    logger.debug(
+                        "Skipping connection due to zero weight override: %s -> %s | syn_id=%s",
+                        pre_gid, post_gid, syn_id
+                    )
+                    continue
 
                 if self.pc is None:
                     real_synapse_connection = bool(interconnect_cells) and (pre_gid in self.cells)
@@ -637,6 +669,34 @@ class CircuitSimulation:
                     )
 
                     logger.debug(f"Added replay connection from {pre_gid} to {post_gid}, {syn_id}")
+
+                if ov is not None:
+                    logger.debug(
+                        "Override matched: %s -> %s | syn_id=%s | weight=%s delay=%s",
+                        pre_gid, post_gid, syn_id, ov.weight, ov.delay
+                    )
+
+                    syn_delay = getattr(ov, "synapse_delay_override", None)
+                    if syn_delay is not None:
+                        connection.set_netcon_delay(float(syn_delay))
+                        logger.debug(
+                            "Applied synapse_delay_override %.4g ms to %s -> %s | syn_id=%s",
+                            syn_delay, pre_gid, post_gid, syn_id
+                        )
+
+                    if ov.delay is not None:
+                        logger.warning(
+                            "SONATA override 'delay' (delayed weight activation) is not supported yet; "
+                            "applying weight immediately. %s -> %s | syn_id=%s | delay=%s",
+                            pre_gid, post_gid, syn_id, ov.delay
+                        )
+
+                    if ov.weight is not None:
+                        connection.set_weight_scalar(float(ov.weight))
+                        logger.debug(
+                            "Applied weight override factor %.4g to %s -> %s | syn_id=%s | final_weight=%.4g",
+                            ov.weight, pre_gid, post_gid, syn_id, connection.post_netcon_weight
+                        )
 
                 self.cells[post_gid].connections[syn_id] = connection
                 for delay, weight_scale in delay_weights:
@@ -778,14 +838,18 @@ class CircuitSimulation:
 
         self.fih_prcellstate = None
         if self.pc is not None and self.print_cellstate:
-            def _dump_prcellstate():
+            def dump():
                 for cell in self.cells:
                     pop = cell.population_name
                     gid = cell.id
                     g = self.global_gid(pop, gid)
                     self.pc.prcellstate(g, f"bluecellulab_t={neuron.h.t}")
 
-            self.fih_prcellstate = neuron.h.FInitializeHandler(1, _dump_prcellstate)
+            def schedule_dump():
+                t_dump = self.save_time if self.save_time is not None else self.circuit_access.config.tstop
+                neuron.h.cvode.event(t_dump, dump)
+
+            self.fih_prcellstate = neuron.h.FInitializeHandler(1, schedule_dump)
 
         if show_progress:
             logger.warning("show_progress enabled, this will very likely"

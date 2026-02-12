@@ -163,6 +163,26 @@ def test_connection_override():
     assert len(entries) == 5
 
 
+def test_connection_overrides_are_instance_scoped():
+    sim_a = SonataSimulationConfig(cond_params_conf_path)
+    sim_b = SonataSimulationConfig(cond_params_conf_path)
+
+    override = ConnectionOverrides(
+        source="A",
+        target="B",
+        delay=1.0,
+        weight=0.5,
+        spont_minis=None,
+        synapse_configure=None,
+        mod_override=None,
+    )
+
+    sim_a.add_connection_override(override)
+
+    assert sim_a.connection_entries()[-1] == override
+    assert override not in sim_b.connection_entries()
+
+
 def test_get_all_projection_names():
     sim_dir = cond_params_conf_path.parent
     sim_config = cond_params_conf_path.name
