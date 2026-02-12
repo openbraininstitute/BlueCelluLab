@@ -55,6 +55,8 @@ from bluecellulab.simulation import (
 )
 from bluecellulab.synapse.synapse_types import SynapseID
 
+from bluecellulab.cell.point_process import BasePointProcessCell, HocPointProcessCell, mechanism_name_from_model_template
+
 logger = logging.getLogger(__name__)
 
 
@@ -370,7 +372,32 @@ class CircuitSimulation:
         except ValueError:
             pass
 
+        all_point_processes = all(
+            isinstance(cell, BasePointProcessCell) for cell in self.cells.values()
+        )
+
         for stimulus in stimuli_entries:
+
+            # 1) SynapseReplay: works for both morpho cells and point processes
+            if isinstance(stimulus, circuit_stimulus_definitions.SynapseReplay):
+                for cell_id, cell in self.cells.items():
+                    if self.circuit_access.target_contains_cell(stimulus.target, cell_id):
+                        if hasattr(cell, "add_synapse_replay"):
+                            print("Adding SynapseReplay to cell", cell_id)
+                            cell.add_synapse_replay(
+                                stimulus, self.spike_threshold, self.spike_location
+                            )
+                            logger.debug(
+                                f"Added SynapseReplay {stimulus} to point/morpho cell {cell_id}"
+                            )
+                # No section/compartment logic needed for SynapseReplay
+                continue
+
+            # 2) Other stimuli: require morphology
+            # If all cells are point processes, skip these stimuli entirely.
+            if all_point_processes:
+                continue
+
             # Build a unified list of (cell_id, section, segx, section_name) targets
             targets: list[tuple] = []
 
@@ -379,6 +406,9 @@ class CircuitSimulation:
             elif stimulus.node_set is not None:
                 gids_of_target = self.circuit_access.get_target_cell_ids(stimulus.node_set)
                 for cell_id in self.cells:
+                    # Skip point processes: they have no soma
+                    if isinstance(self.cells[cell_id], BasePointProcessCell):
+                        continue
                     if cell_id not in gids_of_target:
                         continue
                     sec = self.cells[cell_id].soma
@@ -421,13 +451,6 @@ class CircuitSimulation:
                 elif isinstance(stimulus, circuit_stimulus_definitions.Sinusoidal):
                     if add_sinusoidal_stimuli:
                         self.cells[cell_id].add_sinusoidal(stimulus)
-                elif isinstance(stimulus, circuit_stimulus_definitions.SynapseReplay):  # sonata only
-                    if self.circuit_access.target_contains_cell(
-                        stimulus.target, cell_id
-                    ):
-                        self.cells[cell_id].add_synapse_replay(
-                            stimulus, self.spike_threshold, self.spike_location
-                        )
                 else:
                     raise ValueError("Found stimulus with pattern %s, not supported" % stimulus)
                 logger.debug(f"Added {stimulus} to cell_id {cell_id} at {sec_name}({segx})")
@@ -998,6 +1021,26 @@ class CircuitSimulation:
 
     def create_cell_from_circuit(self, cell_id: CellId) -> bluecellulab.Cell:
         """Create a Cell object from the circuit."""
+        if self.circuit_format == CircuitFormat.SONATA:
+            try:
+                info = self.circuit_access.fetch_cell_info(cell_id)  # type: ignore[attr-defined]
+            except AttributeError:
+                info = pd.Series()
+
+            model_type = str(info.get("model_type", "")).lower()
+            model_template = str(info.get("model_template", ""))
+
+            if model_type == "point_process":
+                mech_name = mechanism_name_from_model_template(model_template)
+
+                # TODO (later): parse dynamics_params and feed param_overrides
+                return HocPointProcessCell(
+                    cell_id=cell_id,
+                    mechanism_name=mech_name,
+                    param_overrides=None,
+                    spike_threshold=self.spike_threshold,
+                )
+
         cell_kwargs = self.fetch_cell_kwargs(cell_id)
         return bluecellulab.Cell(template_path=cell_kwargs['template_path'],
                                  morphology_path=cell_kwargs['morphology_path'],
