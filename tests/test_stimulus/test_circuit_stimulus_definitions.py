@@ -14,7 +14,7 @@
 # limitations under the License.
 
 import pytest
-from bluecellulab.stimulus.circuit_stimulus_definitions import Pattern
+from bluecellulab.stimulus.circuit_stimulus_definitions import Noise, Pattern, Stimulus
 
 
 def test_pattern_from_sonata_valid():
@@ -40,3 +40,35 @@ def test_pattern_from_sonata_invalid():
     """Test that an invalid pattern raises a ValueError."""
     with pytest.raises(ValueError, match="Unknown pattern unknown_pattern"):
         Pattern.from_sonata("unknown_pattern")
+
+
+def test_noise_requires_exactly_one_mean_field():
+    """Noise dataclass should validate exactly one of mean/mean_percent."""
+    with pytest.raises(ValueError, match="Noise stimulus must define exactly one of 'mean' or 'mean_percent'."):
+        Noise(target="T", delay=0.0, duration=1.0, variance=0.1)
+
+    with pytest.raises(ValueError, match="Noise stimulus must define exactly one of 'mean' or 'mean_percent'."):
+        Noise(target="T", delay=0.0, duration=1.0, variance=0.1, mean=0.01, mean_percent=5.0)
+
+
+def test_noise_negative_variance_raises():
+    """Noise variance must be non-negative."""
+    with pytest.raises(ValueError, match="'variance' must be >= 0."):
+        Noise(target="T", delay=0.0, duration=1.0, variance=-0.1, mean=0.01)
+
+
+def test_from_sonata_noise_requires_one_mean_field():
+    """Parsing SONATA noise stimulus enforces exactly one mean field."""
+    base = {
+        "module": "noise",
+        "delay": 0.0,
+        "duration": 1.0,
+        "variance": 0.1,
+        "node_set": "T",
+    }
+
+    with pytest.raises(ValueError, match="Noise input must contain exactly one of 'mean' or 'mean_percent'."):
+        Stimulus.from_sonata(dict(base))
+
+    with pytest.raises(ValueError, match="Noise input must contain exactly one of 'mean' or 'mean_percent'."):
+        Stimulus.from_sonata({**base, "mean": 0.01, "mean_percent": 5.0})

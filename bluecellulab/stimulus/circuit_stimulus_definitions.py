@@ -242,11 +242,17 @@ class Stimulus:
             raise ValueError("Stimulus entry must contain either 'node_set' or 'compartment_set'.")
 
         if pattern == Pattern.NOISE:
+            has_mean = "mean" in stimulus_entry
+            has_mean_percent = "mean_percent" in stimulus_entry
+            if has_mean == has_mean_percent:
+                raise ValueError("Noise input must contain exactly one of 'mean' or 'mean_percent'.")
+
             return Noise(
                 target=target_name,
                 delay=stimulus_entry["delay"],
                 duration=stimulus_entry["duration"],
-                mean_percent=stimulus_entry["mean_percent"],
+                mean=stimulus_entry.get("mean"),
+                mean_percent=stimulus_entry.get("mean_percent"),
                 variance=stimulus_entry["variance"],
                 node_set=node_set,
                 compartment_set=compartment_set,
@@ -380,8 +386,16 @@ class Stimulus:
 
 @dataclass(frozen=True, config=dict(extra="forbid"))
 class Noise(Stimulus):
-    mean_percent: float
     variance: float
+    mean: Optional[float] = None          # nA
+    mean_percent: Optional[float] = None  # % of threshold
+
+    def __post_init__(self):
+        # exactly one of mean / mean_percent must be provided
+        if (self.mean is None) == (self.mean_percent is None):
+            raise ValueError("Noise stimulus must define exactly one of 'mean' or 'mean_percent'.")
+        if self.variance < 0:
+            raise ValueError("'variance' must be >= 0.")
 
 
 @dataclass(frozen=True, config=dict(extra="forbid"))
