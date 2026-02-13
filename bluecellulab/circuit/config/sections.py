@@ -14,7 +14,7 @@
 """Classes to represent config sections."""
 
 from __future__ import annotations
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import field_validator, Field
 from pydantic.dataclasses import dataclass
@@ -29,6 +29,7 @@ try:
     from libsonata._libsonata import Conditions as LibSonataConditions
 except ImportError:
     from libsonata._libsonata import SimulationConfig
+
     LibSonataConditions = SimulationConfig.Conditions
 
 
@@ -44,6 +45,7 @@ def string_to_bool(value: str) -> bool:
 @dataclass(frozen=True, config=dict(extra="forbid"))
 class ConditionEntry:
     """For mechanism specific conditions."""
+
     minis_single_vesicle: Optional[int] = Field(None, ge=0, le=1)
     init_depleted: Optional[int] = Field(None, ge=0, le=1)
 
@@ -51,6 +53,7 @@ class ConditionEntry:
 @dataclass(frozen=True, config=dict(extra="forbid"))
 class MechanismConditions:
     """For mechanism specific conditions."""
+
     ampanmda: Optional[ConditionEntry] = None
     gabaab: Optional[ConditionEntry] = None
     glusynapse: Optional[ConditionEntry] = None
@@ -59,6 +62,7 @@ class MechanismConditions:
 @dataclass(frozen=True, config=dict(extra="forbid"))
 class Conditions:
     mech_conditions: Optional[MechanismConditions] = None
+    mechanisms: Optional[dict[str, dict[str, Any]]] = None
     celsius: Optional[float] = None
     v_init: Optional[float] = None
     extracellular_calcium: Optional[float] = None
@@ -80,6 +84,7 @@ class Conditions:
         )
         return cls(
             mech_conditions=mech_conditions,
+            mechanisms=None,
             extracellular_calcium=condition_entries.get("cao_CR_GluSynapse", None),
             randomize_gaba_rise_time=randomize_gaba_risetime,
         )
@@ -111,8 +116,14 @@ class Conditions:
             glusynapse=ConditionEntry(msv_glusynapse, init_dep_glusynapse),
         )
 
+        # Store the full generic mechanisms dict from libsonata
+        generic_mechanisms = None
+        if mech_dict is not None:
+            generic_mechanisms = dict(mech_dict)
+
         return cls(
             mech_conditions=mech_conditions,
+            mechanisms=generic_mechanisms,
             celsius=condition_entries.celsius,
             v_init=condition_entries.v_init,
             extracellular_calcium=condition_entries.extracellular_calcium,
@@ -125,11 +136,100 @@ class Conditions:
         specified."""
         return cls(
             mech_conditions=None,
+            mechanisms=None,
             celsius=None,
             v_init=None,
             extracellular_calcium=None,
             randomize_gaba_rise_time=None,
         )
+
+
+@dataclass(frozen=True, config=dict(extra="forbid"))
+class ModificationBase:
+    """Base class for all modification types."""
+
+    name: str
+    type: str
+
+
+@dataclass(frozen=True, config=dict(extra="forbid"))
+class ModificationNodeSet(ModificationBase):
+    """Modification that targets a node_set."""
+
+    node_set: str
+
+
+@dataclass(frozen=True, config=dict(extra="forbid"))
+class ModificationTTX(ModificationNodeSet):
+    """TTX modification — blocks Na channels on all sections of target cells."""
+
+    pass
+
+
+@dataclass(frozen=True, config=dict(extra="forbid"))
+class ModificationConfigureAllSections(ModificationNodeSet):
+    """Applies section_configure to all sections of target cells."""
+
+    section_configure: str
+
+
+@dataclass(frozen=True, config=dict(extra="forbid"))
+class ModificationSectionList(ModificationNodeSet):
+    """Applies section_configure to a named section list of target cells."""
+
+    section_configure: str
+
+
+@dataclass(frozen=True, config=dict(extra="forbid"))
+class ModificationSection(ModificationNodeSet):
+    """Applies section_configure to specific named sections of target cells."""
+
+    section_configure: str
+
+
+@dataclass(frozen=True, config=dict(extra="forbid"))
+class ModificationCompartmentSet(ModificationBase):
+    """Applies section_configure to segments in a compartment set."""
+
+    compartment_set: str
+    section_configure: str
+
+
+def modification_from_libsonata(mod) -> ModificationBase:
+    """Convert a libsonata modification object to a BlueCelluLab dataclass."""
+    type_name = mod.type.name  # e.g. "ttx", "configure_all_sections", etc.
+    if type_name == "ttx":
+        return ModificationTTX(name=mod.name, type=type_name, node_set=mod.node_set)
+    elif type_name == "configure_all_sections":
+        return ModificationConfigureAllSections(
+            name=mod.name,
+            type=type_name,
+            node_set=mod.node_set,
+            section_configure=mod.section_configure,
+        )
+    elif type_name == "section_list":
+        return ModificationSectionList(
+            name=mod.name,
+            type=type_name,
+            node_set=mod.node_set,
+            section_configure=mod.section_configure,
+        )
+    elif type_name == "section":
+        return ModificationSection(
+            name=mod.name,
+            type=type_name,
+            node_set=mod.node_set,
+            section_configure=mod.section_configure,
+        )
+    elif type_name == "compartment_set":
+        return ModificationCompartmentSet(
+            name=mod.name,
+            type=type_name,
+            compartment_set=mod.compartment_set,
+            section_configure=mod.section_configure,
+        )
+    else:
+        raise ValueError(f"Unknown modification type: {type_name}")
 
 
 @dataclass(frozen=True, config=dict(extra="forbid"))
@@ -148,8 +248,7 @@ class ConnectionOverrides:
     def validate_mod_override(cls, value):
         """Make sure the mod file to override is present."""
         if isinstance(value, str) and not hasattr(neuron.h, value):
-            raise bluecellulab.ConfigError(
-                f"Mod file for {value} is not found.")
+            raise bluecellulab.ConfigError(f"Mod file for {value} is not found.")
         return value
 
     @classmethod
