@@ -50,6 +50,7 @@ class Pattern(Enum):
     ORNSTEIN_UHLENBECK = "ornstein_uhlenbeck"
     RELATIVE_ORNSTEIN_UHLENBECK = "relative_ornstein_uhlenbeck"
     SINUSOIDAL = "sinusoidal"
+    SECLAMP = "seclamp"
 
     @classmethod
     def from_blueconfig(cls, pattern: str) -> Pattern:
@@ -98,6 +99,8 @@ class Pattern(Enum):
             return Pattern.RELATIVE_ORNSTEIN_UHLENBECK
         elif pattern == "sinusoidal":
             return Pattern.SINUSOIDAL
+        elif pattern == "seclamp":
+            return Pattern.SECLAMP
         else:
             raise ValueError(f"Unknown pattern {pattern}")
 
@@ -380,6 +383,18 @@ class Stimulus:
                 node_set=node_set,
                 compartment_set=compartment_set,
             )
+        elif pattern == Pattern.SECLAMP:
+            return SEClamp(
+                target=target_name,
+                delay=stimulus_entry["delay"],
+                duration=stimulus_entry["duration"],
+                voltage=stimulus_entry["voltage"],
+                durations=stimulus_entry.get("duration_levels", None),
+                voltages=stimulus_entry.get("voltage_levels", None),
+                series_resistance=stimulus_entry.get("series_resistance", 0.01),
+                node_set=node_set,
+                compartment_set=compartment_set,
+            )
         else:
             raise ValueError(f"Unknown pattern {pattern}")
 
@@ -511,3 +526,11 @@ class RelativeOrnsteinUhlenbeck(Stimulus):
 class Sinusoidal(Stimulus):
     amp_start: float
     frequency: float
+
+
+@dataclass(frozen=True, config=dict(extra="forbid"))
+class SEClamp(Stimulus):
+    voltage: float
+    durations: Optional[list[float]]
+    voltages: Optional[list[float]]
+    series_resistance: float
