@@ -142,17 +142,21 @@ class InjectableMixin:
         return tstim
 
     def add_voltage_clamp(
-            self, delay, duration, level, rs=None, section=None, segx=0.5,
+            self, duration, voltage, durations, levels, rs=None, section=None, segx=0.5,
             current_record_name=None, current_record_dt=None):
         """Add a voltage clamp.
 
         Parameters
         ----------
 
-        stop_time : float
-            Time at which voltage clamp should stop
-        level : float
-            Voltage level of the vc (in mV)
+        duration: float
+            Total duration of the voltage clamp (in ms)
+        voltage: float
+            Initial voltage level of the vc (in mV)
+        durations: list of float
+            Durations of each step of the vc (in ms)
+        levels : list of float
+            Voltage levels of the vc (in mV)
         rs: float
             Series resistance of the vc (in MOhm)
         section: NEURON object
@@ -169,6 +173,7 @@ class InjectableMixin:
 
         SEClamp (NEURON) object of the created vc
         """
+        from neuron import h  # noqa: PLC0415
 
         if section is None:
             section = self.soma
@@ -177,20 +182,24 @@ class InjectableMixin:
         vclamp = neuron.h.SEClamp(segx, sec=section)
         self.persistent.append(vclamp)
 
-        # vclamp.dur1 = 200.0
-        # vclamp.amp1 = -65
-        # vclamp.amp2 = 0.0
-        # vclamp.dur2 = 200.0
-        # vclamp.amp3 = -65
-        # vclamp.dur3 = 200.0
-        vclamp.dur1 = delay
-        vclamp.amp1 = 0.0
-        vclamp.amp2 = level
-        vclamp.dur2 = duration
-        vclamp.amp3 = 0.0
-
         if rs is not None:
             vclamp.rs = rs
+
+        vclamp.dur1 = duration
+        vclamp.amp1 = voltage
+
+        voltage_vec = h.Vector(levels)
+        time_vec = h.Vector(np.cumsum(durations))
+
+        self.persistent.append(time_vec)
+        self.persistent.append(voltage_vec)
+
+        voltage_vec.play(
+            vclamp._ref_amp1,  # noqa: SLF001
+            time_vec,
+            0,
+            sec=section,
+        )
 
         current = neuron.h.Vector()
         if current_record_dt is None:
@@ -550,9 +559,10 @@ class InjectableMixin:
     def add_seclamp(self, stimulus, section=None, segx=0.5):
         """Add a SEClamp stimulus."""
         return self.add_voltage_clamp(
-            stimulus.delay,
             stimulus.duration,
             stimulus.voltage,
+            stimulus.durations,
+            stimulus.voltages,
             rs=stimulus.series_resistance,
             section=section,
             segx=segx,

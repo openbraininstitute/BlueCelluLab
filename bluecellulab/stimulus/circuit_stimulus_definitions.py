@@ -383,6 +383,8 @@ class Stimulus:
                 delay=stimulus_entry["delay"],
                 duration=stimulus_entry["duration"],
                 voltage=stimulus_entry["voltage"],
+                durations=stimulus_entry["durations"],
+                voltages=stimulus_entry["voltages"],
                 series_resistance=stimulus_entry.get("series_resistance", 0.01),
                 node_set=node_set,
                 compartment_set=compartment_set,
@@ -515,4 +517,6 @@ class Sinusoidal(Stimulus):
 @dataclass(frozen=True, config=dict(extra="forbid"))
 class SEClamp(Stimulus):
     voltage: float
+    durations: list[float]
+    voltages: list[float]
     series_resistance: float
