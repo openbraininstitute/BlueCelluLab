@@ -142,7 +142,7 @@ class InjectableMixin:
         return tstim
 
     def add_voltage_clamp(
-            self, stop_time, level, durations, levels, rs=None, section=None, segx=0.5,
+            self, stop_time, level, durations=None, levels=None, rs=None, section=None, segx=0.5,
             current_record_name=None, current_record_dt=None):
         """Add a voltage clamp.
 
@@ -188,18 +188,19 @@ class InjectableMixin:
         vclamp.dur1 = stop_time
         vclamp.amp1 = level
 
-        voltage_vec = h.Vector(levels)
-        time_vec = h.Vector(np.cumsum(durations))
+        if durations is not None and levels is not None:
+            voltage_vec = h.Vector(levels)
+            time_vec = h.Vector(np.cumsum(durations))
 
-        self.persistent.append(time_vec)
-        self.persistent.append(voltage_vec)
+            self.persistent.append(time_vec)
+            self.persistent.append(voltage_vec)
 
-        voltage_vec.play(
-            vclamp._ref_amp1,  # noqa: SLF001
-            time_vec,
-            0,
-            sec=section,
-        )
+            voltage_vec.play(
+                vclamp._ref_amp1,  # noqa: SLF001
+                time_vec,
+                0,
+                sec=section,
+            )
 
         current = neuron.h.Vector()
         if current_record_dt is None:
