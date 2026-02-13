@@ -555,7 +555,7 @@ class InjectableMixin:
             stimulus.duration,
             stimulus.frequency,
         )
-    
+
     def add_seclamp(self, stimulus, section=None, segx=0.5):
         """Add a SEClamp stimulus."""
         return self.add_voltage_clamp(

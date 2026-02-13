@@ -137,7 +137,7 @@ class TestInjector:
         current = self.cell.get_recording(n_recording)
         assert current == approx(np.array(
             [66.5, -10.76796553, 17.8876999, 13.47384441, 12.09052411]), abs=1e-3)
-    
+
     def test_multilevel_voltage_clamp(self):
         """Test voltage clamp with multiple voltages."""
         amp = 10
