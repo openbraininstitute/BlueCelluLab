@@ -142,17 +142,17 @@ class InjectableMixin:
         return tstim
 
     def add_voltage_clamp(
-            self, duration, voltage, durations, levels, rs=None, section=None, segx=0.5,
+            self, stop_time, level, durations, levels, rs=None, section=None, segx=0.5,
             current_record_name=None, current_record_dt=None):
         """Add a voltage clamp.
 
         Parameters
         ----------
 
-        duration: float
-            Total duration of the voltage clamp (in ms)
-        voltage: float
-            Initial voltage level of the vc (in mV)
+        stop_time : float
+            Time at which voltage clamp should stop
+        level : float
+            Voltage level of the vc (in mV)
         durations: list of float
             Durations of each step of the vc (in ms)
         levels : list of float
@@ -185,8 +185,8 @@ class InjectableMixin:
         if rs is not None:
             vclamp.rs = rs
 
-        vclamp.dur1 = duration
-        vclamp.amp1 = voltage
+        vclamp.dur1 = stop_time
+        vclamp.amp1 = level
 
         voltage_vec = h.Vector(levels)
         time_vec = h.Vector(np.cumsum(durations))

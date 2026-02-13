@@ -30,6 +30,7 @@ def test_pattern_from_sonata_valid():
         "relative_shot_noise": Pattern.RELATIVE_SHOT_NOISE,
         "ornstein_uhlenbeck": Pattern.ORNSTEIN_UHLENBECK,
         "relative_ornstein_uhlenbeck": Pattern.RELATIVE_ORNSTEIN_UHLENBECK,
+        "seclamp": Pattern.SECLAMP,
     }
 
     for sonata_pattern, expected_enum in valid_patterns.items():
