@@ -719,12 +719,12 @@ modifications_conf_path = (
 
 
 def test_get_modifications_from_config():
-    """Test that SonataSimulationConfig.get_modifications() parses correctly."""
+    """Test that SonataSimulationConfig.get_modifications() parses all 5 types."""
     from bluecellulab.circuit.config import SonataSimulationConfig
 
     sim = SonataSimulationConfig(modifications_conf_path)
     mods = sim.get_modifications()
-    assert len(mods) == 2
+    assert len(mods) == 5
 
     assert isinstance(mods[0], ModificationTTX)
     assert mods[0].name == "TTX_block"
@@ -734,3 +734,16 @@ def test_get_modifications_from_config():
     assert isinstance(mods[1], ModificationConfigureAllSections)
     assert mods[1].name == "configure_all"
     assert mods[1].section_configure == "%s.cm = 2.0"
+
+    assert isinstance(mods[2], ModificationSectionList)
+    assert mods[2].name == "scale_soma"
+    assert mods[2].section_configure == "somatic.cm *= 1.5"
+
+    assert isinstance(mods[3], ModificationSection)
+    assert mods[3].name == "set_dend0"
+    assert mods[3].section_configure == "dend[0].cm = 5.0"
+
+    assert isinstance(mods[4], ModificationCompartmentSet)
+    assert mods[4].name == "set_compartment"
+    assert mods[4].compartment_set == "Mosaic_A"
+    assert mods[4].section_configure == "cm = 10.0"

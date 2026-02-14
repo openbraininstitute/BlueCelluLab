@@ -29,12 +29,25 @@
           "type": "section_list",
           "node_set": "Mosaic_A",
           "section_configure": "somatic.cm *= 1.5"
+        },
+        {
+          "name": "set_apic0_cm",
+          "type": "section",
+          "node_set": "Mosaic_A",
+          "section_configure": "apic[0].cm = 5.0"
+        },
+        {
+          "name": "set_compartment_cm",
+          "type": "compartment_set",
+          "compartment_set": "Mosaic_A",
+          "section_configure": "cm = 10.0"
         }
       ]
     },
     "target_simulator": "NEURON",
     "network": "circuit_sonata.json",
     "node_set": "Mosaic_A",
+    "compartment_sets_file": "compartment_sets.json",
     "output": {
       "output_dir": "$OUTPUT_DIR",
       "spikes_file": "out.h5",

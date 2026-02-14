@@ -138,7 +138,9 @@ class CircuitSimulation:
 
         self.rng_settings = RNGSettings.get_instance()
         self.rng_settings.set_seeds(
-            rng_mode, self.circuit_access.config, base_seed=base_seed
+            rng_mode,
+            self.circuit_access.config,
+            base_seed=base_seed,
         )
 
         self.cells: CellDict = CellDict()
@@ -309,7 +311,10 @@ class CircuitSimulation:
         self._add_cells(cell_ids)
         self._apply_modifications()
         if add_synapses:
-            self._add_synapses(pre_gids=pre_gids, add_minis=add_minis)
+            self._add_synapses(
+                pre_gids=pre_gids,
+                add_minis=add_minis,
+            )
         if add_replay or interconnect_cells or pre_spike_trains:
             if add_replay and not add_synapses:
                 raise BluecellulabError(
@@ -358,7 +363,8 @@ class CircuitSimulation:
             )
 
         configure_all_reports(
-            cells=self.cells, simulation_config=self.circuit_access.config
+            cells=self.cells,
+            simulation_config=self.circuit_access.config,
         )
 
         # add spike recordings
@@ -516,7 +522,11 @@ class CircuitSimulation:
     def _add_synapses(self, pre_gids=None, add_minis=False):
         """Instantiate all the synapses."""
         for cell_id in self.cells:
-            self._add_cell_synapses(cell_id, pre_gids=pre_gids, add_minis=add_minis)
+            self._add_cell_synapses(
+                cell_id,
+                pre_gids=pre_gids,
+                add_minis=add_minis,
+            )
 
     def _add_cell_synapses(
         self, cell_id: CellId, pre_gids=None, add_minis=False
@@ -677,7 +687,8 @@ class CircuitSimulation:
         """Instantiate the (replay and real) connections in the network."""
         pre_spike_trains = self.simulation_access.get_spikes() if add_replay else {}
         pre_spike_trains = self.merge_pre_spike_trains(
-            pre_spike_trains, user_pre_spike_trains
+            pre_spike_trains,
+            user_pre_spike_trains,
         )
 
         connections_overrides = (
@@ -851,7 +862,9 @@ class CircuitSimulation:
             int(syn_description[SynapseProperty.PRE_GID]),
         )
         syn_connection_parameters = get_synapse_connection_parameters(
-            circuit_access=self.circuit_access, pre_cell=pre_cell_id, post_cell=cell_id
+            circuit_access=self.circuit_access,
+            pre_cell=pre_cell_id,
+            post_cell=cell_id,
         )
         if syn_connection_parameters["add_synapse"]:
             condition_parameters = self.circuit_access.config.condition_parameters()
@@ -1221,6 +1234,8 @@ class CircuitSimulation:
 
             self.pc.set_gid2node(g, int(self.pc.id()))
             nc = cell.create_netcon_spikedetector(
-                None, location=self.spike_location, threshold=self.spike_threshold
+                None,
+                location=self.spike_location,
+                threshold=self.spike_threshold,
             )
             self.pc.cell(g, nc)

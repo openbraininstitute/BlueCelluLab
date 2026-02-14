@@ -21,6 +21,24 @@
           "type": "configure_all_sections",
           "node_set": "Mosaic_A",
           "section_configure": "%s.cm = 2.0"
+        },
+        {
+          "name": "scale_soma",
+          "type": "section_list",
+          "node_set": "Mosaic_A",
+          "section_configure": "somatic.cm *= 1.5"
+        },
+        {
+          "name": "set_dend0",
+          "type": "section",
+          "node_set": "Mosaic_A",
+          "section_configure": "dend[0].cm = 5.0"
+        },
+        {
+          "name": "set_compartment",
+          "type": "compartment_set",
+          "compartment_set": "Mosaic_A",
+          "section_configure": "cm = 10.0"
         }
       ]
     },

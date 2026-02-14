@@ -1,4 +1,5 @@
 # Copyright 2023-2024 Blue Brain Project / EPFL
+# Copyright 2025-2026 Open Brain Institute
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 """Module for applying SONATA condition modifications to cells.
 
 Implements all five SONATA modification types:
@@ -80,8 +82,6 @@ def parse_section_configure(
     config_str: str, placeholder: str = "%s"
 ) -> tuple[str, set[str]]:
     """Parse a section_configure string, returning sanitized code and referenced attrs.
-
-    Follows neurodamus's ConfigureAllSections.parse_section_config() pattern.
 
     Args:
         config_str: The raw section_configure string (e.g. "%s.gbar = 0").
