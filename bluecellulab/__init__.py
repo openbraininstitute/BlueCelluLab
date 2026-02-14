@@ -9,7 +9,7 @@ except ImportError:
 
 from bluecellulab.importer import import_hoc
 from .verbosity import *
-from .cell import Cell, create_ball_stick  # NOQA
+from .cell import Cell, create_ball_stick, MorphIOWrapper  # NOQA
 from .circuit import EmodelProperties
 from .connection import Connection  # NOQA
 from .plotwindow import PlotWindow  # NOQA
