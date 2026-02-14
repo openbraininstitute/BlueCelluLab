@@ -263,6 +263,45 @@ class TestH5MorphologyIntegration:
 
         print("Cell initialization with H5 container morphology passed")
 
+    def test_is_valid_morphology_path_with_nested_h5(self):
+        """Test _is_valid_morphology_path with nested H5 paths."""
+        from bluecellulab.cell.template import NeuronTemplate
+        import tempfile
+        import os
+
+        with tempfile.NamedTemporaryFile(suffix=".hoc", delete=False) as tmp:
+            tmp.write(b"begintemplate Dummy_Template\npublic init()\nproc init() {\n}\nendtemplate Dummy_Template")
+            tmp_path = tmp.name
+
+        try:
+            template = NeuronTemplate(tmp_path, tmp_path, "v5", None)
+
+            container_file = Path(__file__).parent / "examples" / "container_nbS1-O1__202247__cADpyr__L5_TPC_A" / "morphologies" / "merged-morphologies.h5"
+
+            if container_file.exists():
+                nested_path = f"{container_file}/dend-rat_20150119_LH1_cell1_axon-rp111203_C3_idA_-_Scale_x1.000_y0.950_z1.000_-_Clone_0"
+                assert template._is_valid_morphology_path(nested_path)
+
+        finally:
+            os.unlink(tmp_path)
+
+    def test_split_morphology_path_with_nested_directories(self):
+        """Test split_morphology_path with deeply nested directory structure."""
+        from bluecellulab.cell.morphio_wrapper import split_morphology_path
+
+        container_file = (
+            Path(__file__).parent / "examples" /
+            "container_nbS1-O1__202247__cADpyr__L5_TPC_A" / "morphologies" /
+            "merged-morphologies.h5"
+        )
+
+        if container_file.exists():
+            cell_path = f"{container_file}/dend-rat_20150119_LH1_cell1_axon-rp111203_C3_idA_-_Scale_x1.000_y0.950_z1.000_-_Clone_0"
+            collection_dir, morph_name, morph_ext = split_morphology_path(cell_path)
+
+            assert str(container_file) == collection_dir
+            assert "dend-rat_20150119_LH1_cell1_axon-rp111203_C3_idA" in morph_name
+
 
 if __name__ == "__main__":
     print("Running H5 Morphology Integration Tests")

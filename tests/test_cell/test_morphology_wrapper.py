@@ -39,6 +39,26 @@ class TestMorphologyWrapper:
         assert morph_name == "test_morph"
         assert morph_ext == ".h5"
 
+    def test_split_morphology_path_error_invalid_path(self):
+        """Test split_morphology_path raises error for invalid path."""
+        from bluecellulab.exceptions import BluecellulabError
+
+        # Empty string triggers the error because dirname("") == ""
+        with pytest.raises(BluecellulabError, match="Failed to split path"):
+            split_morphology_path("")
+
+    def test_split_morphology_path_container_with_cell_name(self, tmp_path):
+        """Test split_morphology_path with H5 container and cell name."""
+        container_file = tmp_path / "container.h5"
+        container_file.write_bytes(b"dummy h5 content")
+
+        cell_path = f"{container_file}/cell_name"
+        collection_dir, morph_name, morph_ext = split_morphology_path(cell_path)
+
+        assert collection_dir == str(container_file)
+        assert morph_name == "cell_name"
+        assert morph_ext == ""
+
     def test_morphology_wrapper_init_success(self):
         """Test successful MorphologyWrapper initialization with real H5 file."""
         # Test with a real H5 file from BlueCelluLab test data
@@ -421,3 +441,62 @@ class TestCellH5Integration:
 
         # Should also have 20 points after conversion
         assert len(neuron2.soma.points) == 20
+
+    def test_contourcenter_function(self):
+        """Test contourcenter utility function."""
+        import numpy as np
+        from bluecellulab.cell.morphio_wrapper import contourcenter
+
+        xyz = np.array([
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0]
+        ])
+
+        mean, new_xyz = contourcenter(xyz)
+
+        assert mean.shape == (3,)
+        assert new_xyz.shape == (101, 3)
+
+    def test_get_sides_function(self):
+        """Test get_sides utility function."""
+        import numpy as np
+        from bluecellulab.cell.morphio_wrapper import get_sides
+
+        points = np.array([
+            [0.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [1.0, -1.0, 0.0]
+        ])
+
+        major = np.array([1.0, 0.0, 0.0])
+        minor = np.array([0.0, 1.0, 0.0])
+
+        sides, rads = get_sides(points, major, minor)
+
+        assert len(sides) == 2
+        assert len(rads) == 2
+        assert len(sides[0]) > 0
+        assert len(sides[1]) > 0
+
+    def test_contour2centroid_function(self):
+        """Test contour2centroid utility function."""
+        import numpy as np
+        from bluecellulab.cell.morphio_wrapper import contour2centroid
+
+        N = 20
+        radius = 5.0
+        phase = 2 * np.pi / (N - 1) * np.arange(N)
+        points = np.zeros((N, 3))
+        points[:, 0] = radius * np.cos(phase)
+        points[:, 1] = radius * np.sin(phase)
+
+        mean = np.array([0.0, 0.0, 0.0])
+
+        result_points, diameters = contour2centroid(mean, points)
+
+        assert result_points.shape[0] == 21
+        assert diameters.shape[0] == 21
+        assert np.all(diameters > 0)
