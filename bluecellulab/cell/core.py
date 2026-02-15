@@ -831,6 +831,51 @@ class Cell(InjectableMixin, PlottableMixin):
         """Get the number of segments in the cell."""
         return sum(section.nseg for section in self.sections.values())
 
+    def compute_segment_coordinates(self) -> dict[str, np.ndarray]:
+        """Compute 3D coordinates of segment endpoints for all sections.
+        
+        Extracts 3D point data from NEURON sections and interpolates segment
+        boundary positions along the section axis. Used for extracellular
+        stimulus displacement calculations.
+        
+        Returns:
+            Dictionary mapping section names to arrays of shape (nseg+1, 3)
+            containing [x, y, z] coordinates of segment endpoints in micrometers.
+            Sections without 3D point data return empty arrays.
+        """
+        segment_coords = {}
+        
+        for section in self.sections.values():
+            n_pts = int(neuron.h.n3d(sec=section))
+            
+            if n_pts == 0:
+                logger.warning(
+                    f"Section {section.name()} has no 3D points, "
+                    "cannot compute segment coordinates"
+                )
+                segment_coords[section.name()] = np.array([])
+                continue
+            
+            arc_positions = np.array([neuron.h.arc3d(i, sec=section) for i in range(n_pts)])
+            x_coords = np.array([neuron.h.x3d(i, sec=section) for i in range(n_pts)])
+            y_coords = np.array([neuron.h.y3d(i, sec=section) for i in range(n_pts)])
+            z_coords = np.array([neuron.h.z3d(i, sec=section) for i in range(n_pts)])
+            
+            if section.L > 0:
+                arc_normalized = arc_positions / section.L
+            else:
+                arc_normalized = arc_positions
+            
+            seg_positions = np.linspace(0, 1, section.nseg + 1)
+            
+            x_interp = np.interp(seg_positions, arc_normalized, x_coords)
+            y_interp = np.interp(seg_positions, arc_normalized, y_coords)
+            z_interp = np.interp(seg_positions, arc_normalized, z_coords)
+            
+            segment_coords[section.name()] = np.column_stack((x_interp, y_interp, z_interp))
+        
+        return segment_coords
+
     def add_synapse_replay(
         self, stimulus: SynapseReplay, spike_threshold: float, spike_location: str
     ) -> None:

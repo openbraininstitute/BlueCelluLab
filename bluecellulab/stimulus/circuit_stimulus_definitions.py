@@ -50,6 +50,7 @@ class Pattern(Enum):
     ORNSTEIN_UHLENBECK = "ornstein_uhlenbeck"
     RELATIVE_ORNSTEIN_UHLENBECK = "relative_ornstein_uhlenbeck"
     SINUSOIDAL = "sinusoidal"
+    SPATIALLY_UNIFORM_E_FIELD = "spatially_uniform_e_field"
 
     @classmethod
     def from_blueconfig(cls, pattern: str) -> Pattern:
@@ -98,6 +99,8 @@ class Pattern(Enum):
             return Pattern.RELATIVE_ORNSTEIN_UHLENBECK
         elif pattern == "sinusoidal":
             return Pattern.SINUSOIDAL
+        elif pattern == "spatially_uniform_e_field":
+            return Pattern.SPATIALLY_UNIFORM_E_FIELD
         else:
             raise ValueError(f"Unknown pattern {pattern}")
 
@@ -380,6 +383,17 @@ class Stimulus:
                 node_set=node_set,
                 compartment_set=compartment_set,
             )
+        elif pattern == Pattern.SPATIALLY_UNIFORM_E_FIELD:
+            return SpatiallyUniformEField(
+                target=target_name,
+                delay=stimulus_entry["delay"],
+                duration=stimulus_entry["duration"],
+                fields=stimulus_entry["fields"],
+                ramp_up_time=stimulus_entry.get("ramp_up_time", 0.0),
+                ramp_down_time=stimulus_entry.get("ramp_down_time", 0.0),
+                node_set=node_set,
+                compartment_set=compartment_set,
+            )
         else:
             raise ValueError(f"Unknown pattern {pattern}")
 
@@ -511,3 +525,32 @@ class RelativeOrnsteinUhlenbeck(Stimulus):
 class Sinusoidal(Stimulus):
     amp_start: float
     frequency: float
+
+
+@dataclass(frozen=True, config=dict(extra="forbid"))
+class SpatiallyUniformEField(Stimulus):
+    fields: list[dict[str, float]]
+    ramp_up_time: NonNegativeFloat = 0.0
+    ramp_down_time: NonNegativeFloat = 0.0
+
+    @field_validator("fields")
+    @classmethod
+    def validate_fields(cls, v):
+        if not v:
+            raise ValueError("fields list cannot be empty")
+        
+        for i, field_dict in enumerate(v):
+            if "Ex" not in field_dict or "Ey" not in field_dict or "Ez" not in field_dict:
+                raise ValueError(
+                    f"Field {i} must contain Ex, Ey, and Ez components"
+                )
+            
+            frequency = field_dict.get("frequency", 0.0)
+            if frequency < 0:
+                raise ValueError(f"Field {i} frequency must be non-negative")
+            
+            phase = field_dict.get("phase", 0.0)
+            if not isinstance(phase, (int, float)):
+                raise ValueError(f"Field {i} phase must be a number")
+        
+        return v

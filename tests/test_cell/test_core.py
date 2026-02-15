@@ -922,3 +922,18 @@ class TestCellCurrentsRecordings:
         called = [c.args[0] for c in mock_add.call_args_list]
         assert "ina" in called
         assert "i_ExpSyn" in called
+
+    def test_compute_segment_coordinates(self):
+        """Cell: Test compute_segment_coordinates for extracellular stimuli."""
+        segment_coords = self.cell.compute_segment_coordinates()
+        
+        assert isinstance(segment_coords, dict)
+        assert len(segment_coords) > 0
+        
+        soma_name = self.cell.soma.name()
+        assert soma_name in segment_coords
+        
+        soma_coords = segment_coords[soma_name]
+        assert isinstance(soma_coords, np.ndarray)
+        assert soma_coords.shape[1] == 3
+        assert soma_coords.shape[0] == self.cell.soma.nseg + 1
