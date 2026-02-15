@@ -2,6 +2,7 @@
 """H5 morphology integration tests with proper folder structure"""
 
 from pathlib import Path
+import contextlib
 
 import h5py
 import neuron
@@ -21,10 +22,15 @@ class TestH5MorphologyIntegration:
         import tempfile
         import os
 
-        # Create a temporary file for testing
+        # Create a temporary hoc template for testing
         with tempfile.NamedTemporaryFile(suffix=".hoc", delete=False) as tmp:
             tmp.write(b"begintemplate Dummy_Template\npublic init()\nproc init() {\n}\nendtemplate Dummy_Template")
             tmp_path = tmp.name
+
+        with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as h5_tmp:
+            h5_path = h5_tmp.name
+        with h5py.File(h5_path, "w") as h5f:
+            h5f.create_group("some_cell")
 
         try:
             # Create a template instance
@@ -40,16 +46,13 @@ class TestH5MorphologyIntegration:
             assert not template._is_valid_morphology_path("nonexistent_container.h5/cell_name")
 
             # Test with existing H5 container
-            container_file = Path(__file__).parent.parent / "examples" / "container_nbS1-O1__202247__cADpyr__L5_TPC_A" / "morphologies" / "merged-morphologies.h5"
-
-            if container_file.exists():
-                # Test with valid H5 container path (should return True since container exists)
-                valid_path = f"{container_file}/some_cell"
-                assert template._is_valid_morphology_path(valid_path)
+            valid_path = f"{h5_path}/some_cell"
+            assert template._is_valid_morphology_path(valid_path)
 
         finally:
             # Clean up temporary file
             os.unlink(tmp_path)
+            os.unlink(h5_path)
 
     def test_is_valid_morphology_path_invalid_h5_container(self):
         """Test _is_valid_morphology_path with corrupted H5 container."""
@@ -85,11 +88,8 @@ class TestH5MorphologyIntegration:
         if not mech_dir.exists():
             mech_dir = Path(__file__).parent / "x86_64"
         if mech_dir.exists():
-            try:
+            with contextlib.suppress(RuntimeError):
                 neuron.load_mechanisms(str(mech_dir.parent))
-            except RuntimeError:
-                # Mechanisms already loaded, continue
-                pass
 
     def test_morphio_wrapper_single_h5(self):
         """Test MorphIOWrapper with single H5 file."""
@@ -185,6 +185,7 @@ class TestH5MorphologyIntegration:
                    "container_nbS1-O1__202247__cADpyr__L5_TPC_A" / "morphologies/h5" /
                    "dend-rat_20150119_LH1_cell1_axon-rp111203_C3_idA_-_Scale_x1.000_y0.950_z1.000_-_Clone_0.h5")
 
+        neuron.h("create __bcl_cov_tmp_sec")
         # Clear any existing sections
         for sec in neuron.h.allsec():
             neuron.h.delete_section(sec=sec)
@@ -273,37 +274,39 @@ class TestH5MorphologyIntegration:
             tmp.write(b"begintemplate Dummy_Template\npublic init()\nproc init() {\n}\nendtemplate Dummy_Template")
             tmp_path = tmp.name
 
+        with tempfile.NamedTemporaryFile(suffix=".h5", delete=False) as h5_tmp:
+            h5_path = h5_tmp.name
+        with h5py.File(h5_path, "w") as h5f:
+            h5f.create_group("nested")
+            h5f["nested"].create_group("cell")
+
         try:
             template = NeuronTemplate(tmp_path, tmp_path, "v5", None)
 
-            container_file = Path(__file__).parent / "examples" / "container_nbS1-O1__202247__cADpyr__L5_TPC_A" / "morphologies" / "merged-morphologies.h5"
-
-            if container_file.exists():
-                nested_path = f"{container_file}/dend-rat_20150119_LH1_cell1_axon-rp111203_C3_idA_-_Scale_x1.000_y0.950_z1.000_-_Clone_0"
-                assert template._is_valid_morphology_path(nested_path)
+            nested_path = f"{h5_path}/nested/cell"
+            assert template._is_valid_morphology_path(nested_path)
 
         finally:
             os.unlink(tmp_path)
+            os.unlink(h5_path)
 
-    def test_split_morphology_path_with_nested_directories(self):
+    def test_split_morphology_path_with_nested_directories(self, tmp_path):
         """Test split_morphology_path with deeply nested directory structure."""
         from bluecellulab.cell.morphio_wrapper import split_morphology_path
 
-        container_file = (
-            Path(__file__).parent / "examples" /
-            "container_nbS1-O1__202247__cADpyr__L5_TPC_A" / "morphologies" /
-            "merged-morphologies.h5"
-        )
+        container_file = tmp_path / "deep" / "nested" / "merged-morphologies.h5"
+        container_file.parent.mkdir(parents=True)
+        container_file.write_bytes(b"dummy")
 
-        if container_file.exists():
-            cell_path = f"{container_file}/dend-rat_20150119_LH1_cell1_axon-rp111203_C3_idA_-_Scale_x1.000_y0.950_z1.000_-_Clone_0"
-            collection_dir, morph_name, morph_ext = split_morphology_path(cell_path)
+        cell_path = f"{container_file}/nested/cell"
+        collection_dir, morph_name, morph_ext = split_morphology_path(cell_path)
 
-            assert str(container_file) == collection_dir
-            assert "dend-rat_20150119_LH1_cell1_axon-rp111203_C3_idA" in morph_name
+        assert str(container_file) == collection_dir
+        assert morph_name == "nested/cell"
+        assert morph_ext == ""
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     print("Running H5 Morphology Integration Tests")
     print("=" * 60)
 

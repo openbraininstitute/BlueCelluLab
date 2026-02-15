@@ -63,34 +63,26 @@ class TestMorphologyWrapper:
         """Test successful MorphologyWrapper initialization with real H5 file."""
         # Test with a real H5 file from BlueCelluLab test data
         h5_file = Path(__file__).parent.parent / "examples" / "container_nbS1-O1__202247__cADpyr__L5_TPC_A" / "morphologies" / "h5" / "dend-rat_20150119_LH1_cell1_axon-rp111203_C3_idA_-_Scale_x1.000_y0.950_z1.000_-_Clone_0.h5"
+        assert h5_file.exists(), f"Test file not found: {h5_file}"
 
-        try:
-            wrapper = MorphIOWrapper(h5_file)
+        wrapper = MorphIOWrapper(h5_file)
 
-            # Test basic properties
-            assert wrapper._morph_ext == ".h5"
-            assert wrapper._morph_name == "dend-rat_20150119_LH1_cell1_axon-rp111203_C3_idA_-_Scale_x1.000_y0.950_z1.000_-_Clone_0"
-            assert len(wrapper._section_names) > 0
-            assert len(wrapper.morph_as_hoc()) > 0
+        # Test basic properties
+        assert wrapper._morph_ext == ".h5"
+        assert wrapper._morph_name == "dend-rat_20150119_LH1_cell1_axon-rp111203_C3_idA_-_Scale_x1.000_y0.950_z1.000_-_Clone_0"
+        assert len(wrapper._section_names) > 0
+        assert len(wrapper.morph_as_hoc()) > 0
 
-            # Test section names are SectionName objects
-            for section_name in wrapper._section_names:
-                assert isinstance(section_name, SectionName)
-                assert hasattr(section_name, 'name')
-                assert hasattr(section_name, 'id')
+        # Test section names are SectionName objects
+        for section_name in wrapper._section_names:
+            assert isinstance(section_name, SectionName)
+            assert hasattr(section_name, 'name')
+            assert hasattr(section_name, 'id')
 
-            # Test HOC commands are valid
-            commands = wrapper.morph_as_hoc()
-            assert any('create' in cmd for cmd in commands)
-            assert any('pt3dadd' in cmd for cmd in commands)
-
-        except FileNotFoundError:
-            pytest.skip("Neurodamus test data not available")
-        except Exception as e:
-            if "MorphIO is not available" in str(e):
-                pytest.skip("MorphIO not available")
-            else:
-                raise
+        # Test HOC commands are valid
+        commands = wrapper.morph_as_hoc()
+        assert any('create' in cmd for cmd in commands)
+        assert any('pt3dadd' in cmd for cmd in commands)
 
     def test_morphology_wrapper_individual_h5_files(self):
         """Test MorphologyWrapper with individual H5 file."""
@@ -99,27 +91,17 @@ class TestMorphologyWrapper:
             "container_nbS1-O1__202247__cADpyr__L5_TPC_A" / "morphologies" / "h5" /
             "dend-rat_20150119_LH1_cell1_axon-rp111203_C3_idA_-_Scale_x1.000_y0.950_z1.000_-_Clone_0.h5"
         )
+        assert h5_file.exists(), f"Test file not found: {h5_file}"
 
-        try:
-            wrapper = MorphIOWrapper(h5_file)
+        wrapper = MorphIOWrapper(h5_file)
 
-            # Test that file loads successfully
-            assert wrapper._morph_ext == ".h5"
-            assert len(wrapper._section_names) > 0
-            assert len(wrapper.morph_as_hoc()) > 0
+        # Test that file loads successfully
+        assert wrapper._morph_ext == ".h5"
+        assert len(wrapper._section_names) > 0
+        assert len(wrapper.morph_as_hoc()) > 0
 
-            # Test that morph property is accessible
-            assert wrapper.morph is not None
-
-        except FileNotFoundError:
-            pytest.skip(f"Test file {h5_file} not available")
-        except Exception as e:
-            if "MorphIO is not available" in str(e):
-                pytest.skip("MorphIO not available")
-            elif "Missing points or structure datasets" in str(e):
-                pytest.skip("File structure not compatible")
-            else:
-                raise
+        # Test that morph property is accessible
+        assert wrapper.morph is not None
 
     def test_morphology_wrapper_h5_container(self):
         """Test MorphologyWrapper with H5 container."""
@@ -165,6 +147,9 @@ class TestMorphologyWrapper:
         import sys
         original_modules = sys.modules.copy()
 
+        # Ensure branch below is always executed
+        sys.modules['morphio'] = object()
+
         # Remove morphio from sys.modules if it exists
         if 'morphio' in sys.modules:
             del sys.modules['morphio']
@@ -195,37 +180,29 @@ class TestMorphologyWrapper:
             "container_nbS1-O1__202247__cADpyr__L5_TPC_A" / "morphologies" / "h5" /
             "dend-rat_20150119_LH1_cell1_axon-rp111203_C3_idA_-_Scale_x1.000_y0.950_z1.000_-_Clone_0.h5"
         )
+        assert h5_file.exists(), f"Test file not found: {h5_file}"
 
-        try:
-            wrapper = MorphIOWrapper(h5_file)
+        wrapper = MorphIOWrapper(h5_file)
 
-            # Test that morph_as_hoc generates HOC commands
-            commands = wrapper.morph_as_hoc()
+        # Test that morph_as_hoc generates HOC commands
+        commands = wrapper.morph_as_hoc()
 
-            assert isinstance(commands, list)
-            assert len(commands) > 0
+        assert isinstance(commands, list)
+        assert len(commands) > 0
 
-            # Verify sections were created
-            import neuron
-            for cmd in commands:
-                neuron.h(cmd)
+        # Verify sections were created
+        import neuron
+        for cmd in commands:
+            neuron.h(cmd)
 
-            # Check that soma exists
-            soma_exists = False
-            for sec in neuron.h.allsec():
-                if 'soma' in neuron.h.secname(sec=sec):
-                    soma_exists = True
-                    break
+        # Check that soma exists
+        soma_exists = False
+        for sec in neuron.h.allsec():
+            if 'soma' in neuron.h.secname(sec=sec):
+                soma_exists = True
+                break
 
-            assert soma_exists, "Soma section should exist in NEURON after loading"
-
-        except FileNotFoundError:
-            pytest.skip("Neurodamus test data not available")
-        except Exception as e:
-            if "MorphIO is not available" in str(e):
-                pytest.skip("MorphIO not available")
-            else:
-                raise
+        assert soma_exists, "Soma section should exist in NEURON after loading"
 
     def test_morph_property(self):
         """Test morph property access."""
@@ -234,22 +211,14 @@ class TestMorphologyWrapper:
             "container_nbS1-O1__202247__cADpyr__L5_TPC_A" / "morphologies" / "h5" /
             "dend-rat_20150119_LH1_cell1_axon-rp111203_C3_idA_-_Scale_x1.000_y0.950_z1.000_-_Clone_0.h5"
         )
+        assert h5_file.exists(), f"Test file not found: {h5_file}"
 
-        try:
-            wrapper = MorphIOWrapper(h5_file)
+        wrapper = MorphIOWrapper(h5_file)
 
-            # Test morph property
-            assert wrapper.morph is not None
-            assert hasattr(wrapper.morph, 'soma')
-            assert hasattr(wrapper.morph, 'sections')
-
-        except FileNotFoundError:
-            pytest.skip("Neurodamus test data not available")
-        except Exception as e:
-            if "MorphIO is not available" in str(e):
-                pytest.skip("MorphIO not available")
-            else:
-                raise
+        # Test morph property
+        assert wrapper.morph is not None
+        assert hasattr(wrapper.morph, 'soma')
+        assert hasattr(wrapper.morph, 'sections')
 
     def test_section_name_objects(self):
         """Test that section names are SectionName objects."""
@@ -258,26 +227,18 @@ class TestMorphologyWrapper:
             "container_nbS1-O1__202247__cADpyr__L5_TPC_A" / "morphologies" / "h5" /
             "dend-rat_20150119_LH1_cell1_axon-rp111203_C3_idA_-_Scale_x1.000_y0.950_z1.000_-_Clone_0.h5"
         )
+        assert h5_file.exists(), f"Test file not found: {h5_file}"
 
-        try:
-            wrapper = MorphIOWrapper(h5_file)
+        wrapper = MorphIOWrapper(h5_file)
 
-            # Test that _section_names contains SectionName objects
-            assert len(wrapper._section_names) > 0
-            assert isinstance(wrapper._section_names[0], SectionName)
-            assert wrapper._section_names[0].name == "soma"
-            assert wrapper._section_names[0].id == 0
+        # Test that _section_names contains SectionName objects
+        assert len(wrapper._section_names) > 0
+        assert isinstance(wrapper._section_names[0], SectionName)
+        assert wrapper._section_names[0].name == "soma"
+        assert wrapper._section_names[0].id == 0
 
-            # Test string representation
-            assert str(wrapper._section_names[0]) == "soma[0]"
-
-        except FileNotFoundError:
-            pytest.skip("Neurodamus test data not available")
-        except Exception as e:
-            if "MorphIO is not available" in str(e):
-                pytest.skip("MorphIO not available")
-            else:
-                raise
+        # Test string representation
+        assert str(wrapper._section_names[0]) == "soma[0]"
 
 
 class TestCellH5Integration:
