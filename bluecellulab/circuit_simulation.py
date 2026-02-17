@@ -273,23 +273,22 @@ class CircuitSimulation:
         else:
             pre_gids = None
 
-        # if pre_spike_trains take int as key then convert to CellId
+        normalized_pre_spike_trains: dict[CellId, Iterable] | None = None
         if pre_spike_trains is not None:
-            if not isinstance(next(iter(pre_spike_trains.keys())), tuple):
-                pre_spike_trains = {
-                    create_cell_id(gid): pre_spike_trains[gid]  # type: ignore
-                    for gid in pre_spike_trains
-                }
+            normalized_pre_spike_trains = {
+                create_cell_id(gid): spikes
+                for gid, spikes in pre_spike_trains.items()
+            }
 
         if self.gids_instantiated:
             raise BluecellulabError(
                 "instantiate_gids() is called twice on the "
-                "same CircuitSimumation, this is not supported"
+                "same CircuitSimulation, this is not supported"
             )
         else:
             self.gids_instantiated = True
 
-        if pre_spike_trains or add_replay:
+        if normalized_pre_spike_trains or add_replay:
             if add_synapses is False:
                 raise BluecellulabError(
                     "You need to set add_synapses to True "
@@ -315,7 +314,7 @@ class CircuitSimulation:
                 pre_gids=pre_gids,
                 add_minis=add_minis,
             )
-        if add_replay or interconnect_cells or pre_spike_trains:
+        if add_replay or interconnect_cells or normalized_pre_spike_trains:
             if add_replay and not add_synapses:
                 raise BluecellulabError(
                     "add_replay option can not be used if add_synapses is False"
@@ -329,8 +328,8 @@ class CircuitSimulation:
             self._add_connections(
                 add_replay=add_replay,
                 interconnect_cells=interconnect_cells,
-                user_pre_spike_trains=pre_spike_trains,
-            )  # type: ignore
+                user_pre_spike_trains=normalized_pre_spike_trains,
+            )
         if add_stimuli:
             add_noise_stimuli = True
             add_hyperpolarizing_stimuli = True
@@ -839,7 +838,8 @@ class CircuitSimulation:
                 cell.connect_to_circuit(SonataProxy(cell_id, self.circuit_access))
 
     def _apply_modifications(self) -> None:
-        """Apply condition modifications from the simulation config to cells."""
+        """Apply condition modifications from the simulation config to
+        cells."""
         try:
             modifications = self.circuit_access.config.get_modifications()
         except (NotImplementedError, AttributeError):

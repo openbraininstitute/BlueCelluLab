@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Module for applying SONATA condition modifications to cells.
 
 Implements all five SONATA modification types:
@@ -57,7 +56,8 @@ SECTION_LIST_MAP: dict[str, str] = {
 
 
 class _AttributeCollector(ast.NodeVisitor):
-    """AST visitor that collects all attribute names referenced in an expression."""
+    """AST visitor that collects all attribute names referenced in an
+    expression."""
 
     def __init__(self):
         self.attrs: set[str] = set()
@@ -68,7 +68,8 @@ class _AttributeCollector(ast.NodeVisitor):
 
 
 def _validate_assignment(node) -> list:
-    """Return assignment targets from an AST node, raising on non-assignments."""
+    """Return assignment targets from an AST node, raising on non-
+    assignments."""
     if isinstance(node, ast.Assign):
         return node.targets
     if isinstance(node, ast.AugAssign):
@@ -81,7 +82,8 @@ def _validate_assignment(node) -> list:
 def parse_section_configure(
     config_str: str, placeholder: str = "%s"
 ) -> tuple[str, set[str]]:
-    """Parse a section_configure string, returning sanitized code and referenced attrs.
+    """Parse a section_configure string, returning sanitized code and
+    referenced attrs.
 
     Args:
         config_str: The raw section_configure string (e.g. "%s.gbar = 0").
@@ -101,7 +103,7 @@ def parse_section_configure(
     for elem in tree.body:
         targets = _validate_assignment(elem)
         for tgt in targets:
-            if not isinstance(tgt, ast.Attribute) or tgt.value.id != "__sec_wildcard__":
+            if not isinstance(tgt, ast.Attribute) or not isinstance(tgt.value, ast.Name) or tgt.value.id != "__sec_wildcard__":
                 raise ValueError(
                     "section_configure only supports single assignments "
                     f"of attributes of the section wildcard {placeholder}"
@@ -176,7 +178,8 @@ def _apply_ttx(cells: dict, mod: ModificationTTX, circuit_access) -> None:
 def _apply_configure_all_sections(
     cells: dict, mod: ModificationConfigureAllSections, circuit_access
 ) -> None:
-    """Apply configure_all_sections — exec section_configure on all sections."""
+    """Apply configure_all_sections — exec section_configure on all
+    sections."""
     logger.info(
         "Applying modification '%s' (type=configure_all_sections) to node_set '%s'",
         mod.name,

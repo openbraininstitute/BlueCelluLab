@@ -366,7 +366,7 @@ class TestApplyConfigureAllSectionsZeroMatch:
 class _CellWithoutApical:
     """Helper cell-like object that raises AttributeError for 'apical'."""
 
-    sections = {}
+    sections: dict[str, object] = {}
 
     @property
     def apical(self):
