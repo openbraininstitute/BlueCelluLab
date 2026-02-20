@@ -146,7 +146,7 @@ def apply_modifications(
         elif isinstance(mod, ModificationCompartmentSet):
             _apply_compartment_set(cells, mod, circuit_access)
         else:
-            raise ValueError(f"Unknown modification type: {mod.type}")
+            raise ValueError(f"Unknown modification type: {type(mod).__name__}")
 
 
 def _resolve_target_cells(cells: dict, mod, circuit_access) -> list:
