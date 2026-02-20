@@ -701,7 +701,7 @@ class TestApplyModifications:
         assert seg.gbar == 0.5
 
     def test_unknown_type_raises(self):
-        mod = ModificationBase(name="bad", type="unknown")
+        mod = ModificationBase(name="bad")
         with pytest.raises(ValueError, match="Unknown modification type"):
             apply_modifications({}, [mod], mock.MagicMock())
 
