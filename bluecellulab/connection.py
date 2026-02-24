@@ -39,6 +39,7 @@ class Connection:
         self.delay = post_synapse.syn_description[SynapseProperty.AXONAL_DELAY]
         self.weight = post_synapse.syn_description[SynapseProperty.G_SYNX]
         self.pre_cell = pre_cell
+        self.pre_gid = pre_gid
         self.pre_spiketrain = pre_spiketrain
         self.post_synapse = post_synapse
         self.pc = parallel_context
@@ -86,6 +87,7 @@ class Connection:
                     raise ValueError("pre_gid must be provided when using ParallelContext")
                 self.post_netcon = self.pc.gid_connect(int(pre_gid), self.post_synapse.hsynapse)
 
+            # NetCon setup
             self.set_netcon_weight(self.post_netcon_weight)
             self.set_netcon_delay(self.post_netcon_delay)
             self.post_netcon.threshold = spike_threshold

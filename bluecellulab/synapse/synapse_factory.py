@@ -49,6 +49,7 @@ class SynapseFactory:
         popids: tuple[int, int],
         extracellular_calcium: float | None,
         connection_modifiers: dict,
+        post_gid: int,
     ) -> Synapse:
         """Returns a Synapse object."""
         syn_type = cls.determine_synapse_type(syn_description)
@@ -61,13 +62,13 @@ class SynapseFactory:
             else:
                 randomize_gaba_risetime = True
             synapse = GabaabSynapse(cell.cell_id, syn_hoc_args, syn_id, syn_description,
-                                    popids, extracellular_calcium, randomize_gaba_risetime)
+                                    popids, post_gid, extracellular_calcium, randomize_gaba_risetime)
         elif syn_type == SynapseType.AMPANMDA:
             synapse = AmpanmdaSynapse(cell.cell_id, syn_hoc_args, syn_id, syn_description,
-                                      popids, extracellular_calcium)
+                                      popids, post_gid, extracellular_calcium)
         else:
             synapse = GluSynapse(cell.cell_id, syn_hoc_args, syn_id, syn_description,
-                                 popids, extracellular_calcium)
+                                 popids, post_gid, extracellular_calcium)
 
         synapse = cls.apply_connection_modifiers(connection_modifiers, synapse)
 

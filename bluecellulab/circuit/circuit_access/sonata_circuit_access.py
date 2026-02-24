@@ -178,12 +178,9 @@ class SonataCircuitAccess(CircuitAccess):
             return out
 
     def extract_synapses(
-        self, cell_id: CellId, projections: Optional[list[str] | str]
+        self, cell_id: CellId, projections: Optional[list[str] | str | bool]
     ) -> pd.DataFrame:
-        """Extract the synapses.
-
-        If projections is None, all the synapses are extracted.
-        """
+        """Extract the synapses."""
         snap_node_id = CircuitNodeId(cell_id.population_name, cell_id.id)
         edges = self._circuit.edges
 
@@ -308,3 +305,10 @@ class SonataCircuitAccess(CircuitAccess):
     def emodel_path(self, cell_id: CellId) -> str:
         node_population = self._circuit.nodes[cell_id.population_name]
         return str(node_population.models.get_filepath(cell_id.id))
+
+    def node_population_sizes(self) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for pop_name, node_pop in self._circuit.nodes.items():
+            s = getattr(node_pop, "size", None)
+            out[str(pop_name)] = int(s() if callable(s) else s)
+        return out

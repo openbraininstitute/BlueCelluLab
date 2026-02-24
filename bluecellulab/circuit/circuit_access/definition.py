@@ -88,7 +88,7 @@ class CircuitAccess(Protocol):
         raise NotImplementedError
 
     def extract_synapses(
-        self, cell_id: CellId, projections: Optional[list[str] | str]
+        self, cell_id: CellId, projections: Optional[list[str] | str | bool]
     ) -> pd.DataFrame:
         raise NotImplementedError
 
@@ -122,3 +122,4 @@ class CircuitAccess(Protocol):
 
     def emodel_path(self, cell_id: CellId) -> str:
         raise NotImplementedError
+
