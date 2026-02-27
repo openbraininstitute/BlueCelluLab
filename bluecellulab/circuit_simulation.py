@@ -22,7 +22,7 @@ from typing import Any, Optional
 import logging
 import warnings
 
-from bluecellulab.reports.utils import configure_all_reports
+from bluecellulab.reports.utils import prepare_recordings_for_reports
 import neuron
 import numpy as np
 import pandas as pd
@@ -343,7 +343,7 @@ class CircuitSimulation:
                 add_seclamp_stimuli=add_seclamp_stimuli,
             )
 
-        configure_all_reports(
+        self.recording_index, self.sites_index = prepare_recordings_for_reports(
             cells=self.cells,
             simulation_config=self.circuit_access.config
         )

@@ -60,6 +60,15 @@
       "start_time": 1000.0,
       "end_time": 1275.0,
       "unit": "mV"
+    },
+    "compartment_set_ik": {
+      "compartment_set": "Mosaic_A",
+      "type": "compartment_set",
+      "variable_name": "ik",
+      "dt": 0.1,
+      "start_time": 1000.0,
+      "end_time": 1275.0,
+      "unit": "mA/cm2"
     }
   }
 }
