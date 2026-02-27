@@ -23,6 +23,7 @@ from bluecellulab.circuit.node_id import CellId
 import numpy as np
 
 from bluecellulab.cell.section_tools import section_to_variable_recording_str
+from bluecellulab.reports.typing import ReportConfigurableCell
 from bluecellulab.type_aliases import NeuronSection, SiteEntry
 from bluecellulab.tools import (
     resolve_source_nodes,
@@ -33,7 +34,10 @@ logger = logging.getLogger(__name__)
 SUPPORTED_REPORT_TYPES = {"compartment", "compartment_set"}
 
 
-def prepare_recordings_for_reports(cells, simulation_config):
+def prepare_recordings_for_reports(
+    cells: Dict[CellId, ReportConfigurableCell],
+    simulation_config: Any,
+) -> tuple[dict[CellId, list[str]], dict[CellId, list[SiteEntry]]]:
     recording_index: dict[CellId, list[str]] = defaultdict(list)  # (pop,gid) -> [rec_name,...] ordered
     sites_index: dict[CellId, list[SiteEntry]] = defaultdict(list)
 
@@ -86,9 +90,11 @@ def prepare_recordings_for_reports(cells, simulation_config):
             if cell is None or not sites:
                 continue
 
-            if not hasattr(cell, "report_sites") or not isinstance(getattr(cell, "report_sites"), dict):
-                cell.report_sites = {}
-            cell.report_sites.setdefault(report_name, [])
+            report_sites = getattr(cell, "report_sites", None)
+            if not isinstance(report_sites, dict):
+                report_sites = {}
+                setattr(cell, "report_sites", report_sites)
+            report_sites.setdefault(report_name, [])
 
             rec_names = cell.configure_recording(sites, variable, report_name)
             if len(rec_names) != len(sites):
@@ -110,7 +116,7 @@ def prepare_recordings_for_reports(cells, simulation_config):
                     "segx": float(segx),
                 }
                 sites_index[cell_id].append(site_entry)
-                cell.report_sites[report_name].append(site_entry)
+                report_sites[report_name].append(site_entry)
 
     return dict(recording_index), dict(sites_index)
 
@@ -123,8 +129,7 @@ def build_recording_sites(
     report_cfg: dict,
     compartment_nodes: list | None,
 ) -> Dict[int, List[Tuple[Any, str, float]]]:
-    """
-    Resolve recording sites for instantiated cells in one population.
+    """Resolve recording sites for instantiated cells in one population.
 
     Parameters
     ----------
@@ -291,11 +296,11 @@ def merge_spikes(list_of_pop_dicts: list[dict[str, dict[int, list]]]) -> dict[st
 def gather_recording_sites(
     gathered_per_rank: list[Dict[CellId, List[SiteEntry]]]
 ) -> Dict[CellId, List[SiteEntry]]:
-    """
-    Combine per-rank recording site registries into a global one.
+    """Combine per-rank recording site registries into a global one.
 
-    Each rank contributes recording locations for the cells it instantiated.
-    This reconstructs the full recording topology across MPI ranks.
+    Each rank contributes recording locations for the cells it
+    instantiated. This reconstructs the full recording topology across
+    MPI ranks.
     """
     merged: dict[CellId, list[SiteEntry]] = defaultdict(list)
 
@@ -338,8 +343,9 @@ def gather_payload_to_rank0(
     local_payload: dict,
     local_spikes: dict,
 ) -> tuple[Optional[dict], Optional[dict]]:
-    """
-    Gather payload + spikes. Returns (all_payload, all_spikes) on rank 0, else (None, None).
+    """Gather payload + spikes.
+
+    Returns (all_payload, all_spikes) on rank 0, else (None, None).
     """
     gathered_payload = pc.py_gather(local_payload, 0)
     gathered_spikes = pc.py_gather(local_spikes, 0)

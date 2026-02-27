@@ -1018,9 +1018,8 @@ class Cell(InjectableMixin, PlottableMixin):
                             variable_name: str,
                             report_name: str
                             ) -> list[str]:
-        """
-        Attach NEURON recordings for a variable at the given sites and return the
-        recording names created.
+        """Attach NEURON recordings for a variable at the given sites and
+        return the recording names created.
 
         Parameters
         ----------

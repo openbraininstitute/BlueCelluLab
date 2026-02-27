@@ -35,8 +35,9 @@ class ReportManager:
         cells: Dict[CellId, Any],
         spikes_by_pop: Optional[Dict[str, Dict[int, list[float]]]] = None,
     ):
-        """
-        Write all configured reports (compartment and spike) in SONATA format.
+        """Write all configured reports (compartment and spike) in SONATA
+        format.
+
         `cells` entries must expose `report_sites` and `get_recording(rec_name)`
         for compartment reports. If `spikes_by_pop` is None, entries must also
         provide `get_recorded_spikes(location=..., threshold=...)`.
