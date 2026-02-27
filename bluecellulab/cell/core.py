@@ -19,9 +19,10 @@ import logging
 
 from pathlib import Path
 import queue
-from typing import List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple
 from typing_extensions import deprecated
 
+from bluecellulab.reports.typing import ReportSite
 import neuron
 import numpy as np
 import pandas as pd
@@ -1012,46 +1013,62 @@ class Cell(InjectableMixin, PlottableMixin):
                     targets.append((sec, sec_name, seg.x))
         return targets
 
-    def configure_recording(self, recording_sites, variable_name, report_name):
-        """Configure recording of a variable on a single cell.
-
-        This function sets up the recording of the specified variable (e.g., membrane voltage)
-        in the target cell, for each resolved segment.
+    def configure_recording(self,
+                            recording_sites:  Iterable[tuple[NeuronSection | None, str, float]],
+                            variable_name: str,
+                            report_name: str
+                            ) -> list[tuple[ReportSite, str]]:
+        """
+        Attach NEURON recordings for a variable at the given sites and return the
+        recording names created.
 
         Parameters
         ----------
-        cell : Any
-            The cell object on which to configure recordings.
-
-        recording_sites : list of tuples
-            List of tuples (section, section_name, segment) where:
-            - section is the section object in the cell.
-            - section_name is the name of the section.
-            - segment is the Neuron segment index (0-1).
-
+        recording_sites : iterable
+            (section, section_name, segx) tuples describing recording locations.
         variable_name : str
-            The name of the variable to record (e.g., "v" for membrane voltage).
-
+            Variable to record (e.g. "v", "ina", "kca.gkca").
         report_name : str
-            The name of the report (used in logging).
+            Report identifier (for logging).
+
+        Returns
+        -------
+        list[tuple[ReportSite, str]]
+            Pairs of (site, rec_name) for sites that were successfully configured.
         """
         node_id = self.cell_id.id
+        added: list[str] = []
 
         for sec, sec_name, seg in recording_sites:
             try:
-                self.add_variable_recording(variable=variable_name, section=sec, segx=seg)
+                if sec is None:
+                    self.add_variable_recording(variable=variable_name, section=None, segx=float(seg))
+                    sec_obj = self.soma
+                    rec_name = section_to_variable_recording_str(sec_obj, float(seg), variable_name)
+                else:
+                    rec_name = section_to_variable_recording_str(sec, float(seg), variable_name)
+                    if rec_name not in self.recordings:
+                        self.add_variable_recording(variable=variable_name, section=sec, segx=float(seg))
+                added.append(rec_name)
+
                 logger.info(
                     f"Recording '{variable_name}' at {sec_name}({seg}) on GID {node_id} for report '{report_name}'"
                 )
+
             except AttributeError:
                 logger.warning(
                     f"Recording for variable '{variable_name}' is not implemented in Cell."
                 )
-                return
+                continue
+
             except Exception as e:
                 logger.warning(
-                    f"Failed to record '{variable_name}' at {sec_name}({seg}) on GID {node_id} for report '{report_name}': {e}"
+                    f"Failed to record '{variable_name}' at {sec_name}({seg}) on GID {node_id} "
+                    f"for report '{report_name}': {e}"
                 )
+                continue
+
+        return added
 
     def add_currents_recordings(
         self,

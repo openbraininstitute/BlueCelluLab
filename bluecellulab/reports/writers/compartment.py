@@ -28,74 +28,60 @@ logger = logging.getLogger(__name__)
 
 
 class CompartmentReportWriter(BaseReportWriter):
-    """Writes SONATA compartment (voltage) reports."""
+    """Writes SONATA compartment reports."""
 
     def write(self, cells: Dict, tstart=0, tstop=None):
         report_name = self.cfg.get("name", "unnamed")
-        variable = self.cfg.get("variable_name", "v")
-        report_type = self.cfg.get("type", "compartment")
 
-        # Resolve source set
+        # Resolve which population this report targets (for H5 group path)
+        report_type = self.cfg.get("type", "compartment")
         source_sets = self.cfg["_source_sets"]
         if report_type == "compartment":
             src_name = self.cfg.get("cells")
         elif report_type == "compartment_set":
             src_name = self.cfg.get("compartment_set")
         else:
-            raise NotImplementedError(
-                f"Unsupported report type '{report_type}' in configuration for report '{report_name}'"
-            )
+            raise NotImplementedError(f"Unsupported report type '{report_type}' for '{report_name}'")
 
         src = source_sets.get(src_name)
         if not src:
-            logger.warning(f"{report_type} '{src_name}' not found – skipping '{report_name}'.")
+            logger.warning("%s '%s' not found – skipping '%s'.", report_type, src_name, report_name)
             return
 
         population = src["population"]
-        node_ids, comp_nodes = resolve_source_nodes(src, report_type, cells, population)
-        recording_sites_per_cell = build_recording_sites(
-            cells, node_ids, population, report_type, self.cfg, comp_nodes
-        )
-
-        # Detect trace mode
-        sample_cell = next(iter(cells.values()))
-        is_trace_mode = isinstance(sample_cell, dict)
 
         data_matrix: List[np.ndarray] = []
         node_id_list: List[int] = []
         idx_ptr: List[int] = [0]
         elem_ids: List[int] = []
 
-        for nid in sorted(recording_sites_per_cell):
-            recording_sites = recording_sites_per_cell[nid]
-            cell = cells.get((population, nid)) or cells.get(f"{population}_{nid}")
-            if cell is None:
-                logger.warning(f"Cell or trace for ({population}, {nid}) not found – skipping.")
+        # Iterate cells belonging to this population only
+        pop_cells = [(gid, cell) for (pop, gid), cell in cells.items() if pop == population]
+        if not pop_cells:
+            logger.warning("No cells found for population '%s' – skipping '%s'.", population, report_name)
+            return
+
+        for gid, cell in sorted(pop_cells, key=lambda x: x[0]):
+            sites = getattr(cell, "report_sites", {}).get(report_name, [])
+            if not sites:
                 continue
 
-            if is_trace_mode:
-                voltage = np.asarray(cell["voltage"], dtype=np.float32)
-                for sec, sec_name, seg in recording_sites:
-                    data_matrix.append(voltage)
-                    node_id_list.append(nid)
-                    elem_ids.append(len(elem_ids))
-                    idx_ptr.append(idx_ptr[-1] + 1)
-            else:
-                for sec, sec_name, seg in recording_sites:
-                    try:
-                        if hasattr(cell, "get_variable_recording"):
-                            trace = cell.get_variable_recording(variable=variable, section=sec, segx=seg)
-                        else:
-                            trace = np.asarray(cell["voltage"], dtype=np.float32)
-                        data_matrix.append(trace)
-                        node_id_list.append(nid)
-                        elem_ids.append(len(elem_ids))
-                        idx_ptr.append(idx_ptr[-1] + 1)
-                    except Exception as e:
-                        logger.warning(f"Failed recording {nid}:{sec_name}@{seg}: {e}")
+            for site in sites:
+                rec_name = site["rec_name"]
+                try:
+                    trace = cell.get_recording(rec_name)
+                except Exception as e:
+                    logger.warning("Missing recording '%s' for (%s,%d) in '%s': %s",
+                                   rec_name, population, gid, report_name, e)
+                    continue
+
+                data_matrix.append(np.asarray(trace, dtype=np.float32))
+                node_id_list.append(gid)
+                elem_ids.append(len(elem_ids))
+                idx_ptr.append(idx_ptr[-1] + 1)
 
         if not data_matrix:
-            logger.warning(f"No data for report '{report_name}'.")
+            logger.warning("No data for report '%s'.", report_name)
             return
 
         self._write_sonata_report_file(
@@ -212,6 +198,12 @@ class CompartmentReportWriter(BaseReportWriter):
             variable = report_cfg.get("variable_name", "v")
             if variable == "v":
                 data_ds.attrs["units"] = "mV"
+
+            units = report_cfg.get("unit")
+            if units is None:
+                units = "mV" if variable == "v" else "unknown"
+
+            data_ds.attrs["units"] = str(units)
 
             mapping = grp.require_group("mapping")
             mapping.create_dataset("node_ids", data=node_ids_arr)
