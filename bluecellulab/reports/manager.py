@@ -35,12 +35,24 @@ class ReportManager:
         cells: Dict[CellId, Any],
         spikes_by_pop: Optional[Dict[str, Dict[int, list[float]]]] = None,
     ):
-        """Write all configured reports (compartment and spike) in SONATA
-        format.
+        """Write all configured SONATA reports (compartment and spike).
 
-        `cells` entries must expose `report_sites` and `get_recording(rec_name)`
-        for compartment reports. If `spikes_by_pop` is None, entries must also
-        provide `get_recorded_spikes(location=..., threshold=...)`.
+        `cells` maps CellId to live Cell objects or recording proxies.
+        For compartment reports each entry must provide:
+            - ``report_sites``: ``{report_name: [site_dict, ...]}``
+            - ``get_recording(rec_name)`` → recorded trace
+
+        If ``spikes_by_pop`` is not provided, spike times are obtained from the
+        cells via ``get_recorded_spikes(location=..., threshold=...)``.
+
+        Parameters
+        ----------
+        cells : Dict[CellId, Any]
+            Cell objects or proxies exposing recordings and report topology.
+
+        spikes_by_pop : dict[str, dict[int, list[float]]], optional
+            Precomputed spikes ``{population: {gid: [times...]}}``. If omitted,
+            spikes are extracted from the cells.
         """
         self._write_compartment_reports(cells)
         self._write_spike_report(

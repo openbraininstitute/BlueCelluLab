@@ -33,89 +33,110 @@ logger = logging.getLogger(__name__)
 SUPPORTED_REPORT_TYPES = {"compartment", "compartment_set"}
 
 
+def _get_source_for_report(simulation_config: Any, report_name: str, report_cfg: dict) -> tuple[str, dict]:
+    report_type = report_cfg.get("type", "compartment")
+
+    if report_type == "compartment_set":
+        source_sets = simulation_config.get_compartment_sets()
+        source_name = report_cfg.get("compartment_set")
+        key = "compartment_set"
+    elif report_type == "compartment":
+        source_sets = simulation_config.get_node_sets()
+        source_name = report_cfg.get("cells")
+        key = "cells"
+    else:
+        raise NotImplementedError(
+            f"Report type '{report_type}' is not supported. Supported types: {SUPPORTED_REPORT_TYPES}"
+        )
+
+    if not source_name:
+        logger.warning("Report '%s' missing '%s' for type '%s'.", report_name, key, report_type)
+        raise KeyError("missing_source_name")
+
+    source = source_sets.get(source_name)
+    if not source:
+        logger.warning("%s '%s' not found for report '%s', skipping.", report_type, source_name, report_name)
+        raise KeyError("missing_source")
+
+    return report_type, source
+
+
+def _ensure_report_sites(cell: Any) -> dict[str, list[SiteEntry]]:
+    report_sites = getattr(cell, "report_sites", None)
+    if not isinstance(report_sites, dict):
+        report_sites = {}
+        setattr(cell, "report_sites", report_sites)
+    return report_sites
+
+
 def prepare_recordings_for_reports(
     cells: Dict[CellId, Any],
     simulation_config: Any,
 ) -> tuple[dict[CellId, list[str]], dict[CellId, list[SiteEntry]]]:
-    recording_index: dict[CellId, list[str]] = defaultdict(list)  # (pop,gid) -> [rec_name,...] ordered
+    """Configure report recordings on instantiated cells and build recording
+    indices.
+
+    Parameters
+    ----------
+    cells
+        Mapping of CellId -> live Cell objects.
+    simulation_config
+        Simulation config providing report entries and node/compartment sets.
+
+    Returns
+    -------
+    (recording_index, sites_index)
+        recording_index maps CellId -> ordered list of recording names (rec_name).
+        sites_index maps CellId -> list of site entries (report, rec_name, section, segx).
+
+    Notes
+    -----
+    Populates `cell.report_sites[report_name]` with the configured site entries.
+    """
+    recording_index: dict[CellId, list[str]] = defaultdict(list)
     sites_index: dict[CellId, list[SiteEntry]] = defaultdict(list)
 
-    report_entries = simulation_config.get_report_entries()
-
-    for report_name, report_cfg in report_entries.items():
-        report_type = report_cfg.get("type", "compartment")
-
-        if report_type == "compartment_set":
-            source_sets = simulation_config.get_compartment_sets()
-            source_name = report_cfg.get("compartment_set")
-            if not source_name:
-                logger.warning(
-                    f"Report '{report_name}' does not specify a node set in 'compartment_set' for {report_type}."
-                )
-                continue
-        elif report_type == "compartment":
-            source_sets = simulation_config.get_node_sets()
-            source_name = report_cfg.get("cells")
-            if not source_name:
-                logger.warning(
-                    f"Report '{report_name}' does not specify a node set in 'cells' for {report_type}."
-                )
-                continue
-        else:
-            raise NotImplementedError(
-                f"Report type '{report_type}' is not supported. "
-                f"Supported types: {SUPPORTED_REPORT_TYPES}"
-            )
-
-        source = source_sets.get(source_name)
-        if not source:
-            logger.warning(
-                f"{report_type} '{source_name}' not found for report '{report_name}', skipping recording."
-            )
+    for report_name, report_cfg in simulation_config.get_report_entries().items():
+        try:
+            report_type, source = _get_source_for_report(simulation_config, report_name, report_cfg)
+        except KeyError:
             continue
 
         population = source["population"]
         node_ids, compartment_nodes = resolve_source_nodes(source, report_type, cells, population)
 
-        recording_sites_per_cell = build_recording_sites(
+        sites_per_cell = build_recording_sites(
             cells, node_ids, population, report_type, report_cfg, compartment_nodes
         )
-
         variable = report_cfg.get("variable_name", "v")
 
-        for node_id, sites in recording_sites_per_cell.items():
+        for node_id, sites in sites_per_cell.items():
             cell_id = CellId(population, node_id)
             cell = cells.get(cell_id)
             if cell is None or not sites:
                 continue
 
-            report_sites = getattr(cell, "report_sites", None)
-            if not isinstance(report_sites, dict):
-                report_sites = {}
-                setattr(cell, "report_sites", report_sites)
+            report_sites = _ensure_report_sites(cell)
             report_sites.setdefault(report_name, [])
 
             rec_names = cell.configure_recording(sites, variable, report_name)
             if len(rec_names) != len(sites):
                 logger.warning(
                     "Configured %d/%d recording sites for report '%s' on %s.",
-                    len(rec_names),
-                    len(sites),
-                    report_name,
-                    cell_id,
+                    len(rec_names), len(sites), report_name, cell_id,
                 )
 
             for (sec, sec_name, segx), rec_name in zip(sites, rec_names):
                 recording_index[cell_id].append(rec_name)
 
-                site_entry = {
+                entry: SiteEntry = {
                     "report": report_name,
                     "rec_name": rec_name,
                     "section": sec_name,
                     "segx": float(segx),
                 }
-                sites_index[cell_id].append(site_entry)
-                report_sites[report_name].append(site_entry)
+                sites_index[cell_id].append(entry)
+                report_sites[report_name].append(entry)
 
     return dict(recording_index), dict(sites_index)
 
