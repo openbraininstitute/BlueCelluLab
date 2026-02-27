@@ -41,6 +41,7 @@ dependencies = [
     "efel>=5.7.19",
     "neo>=0.14.0",
     "quantities>=0.16.2",
+    "morphio>=3.0.0",
 ]
 requires-python = ">=3.10"
 

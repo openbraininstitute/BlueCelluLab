@@ -67,7 +67,9 @@ class NeuronTemplate:
 
         if not os.path.exists(template_filepath):
             raise FileNotFoundError(f"Couldn't find template file: {template_filepath}")
-        if not os.path.exists(morph_filepath):
+
+        # Check morphology path - handle H5 container paths
+        if not self._is_valid_morphology_path(morph_filepath):
             raise FileNotFoundError(f"Couldn't find morphology file: {morph_filepath}")
 
         self.template_name = self.load(template_filepath)
@@ -77,7 +79,29 @@ class NeuronTemplate:
 
     def get_cell(self, gid: Optional[int]) -> HocObjectType:
         """Returns the hoc object matching the template format."""
-        morph_dir, morph_fname = os.path.split(self.morph_filepath)
+        # Use split_morphology_path for consistent handling of all morphology types
+        # including H5 containers (similar to Neurodamus approach)
+        from bluecellulab.cell.morphio_wrapper import split_morphology_path
+
+        morph_dir, morph_name, morph_ext = split_morphology_path(str(self.morph_filepath))
+
+        # Reconstruct filename with extension (Neurodamus-style)
+        # For H5 containers: morph_dir ends with .h5, morph_ext might be wrong due to dots in cell name
+        # For single files: morph_name is "file" and morph_ext is ".h5"
+        if morph_dir.endswith('.h5'):
+            # This is an H5 container path - reconstruct the cell name and add .h5
+            # The cell name is everything after the container file
+            morph_fname = morph_name + morph_ext if morph_ext and not morph_ext.startswith('.') else morph_name + morph_ext
+            # Ensure it ends with .h5 for HOC template validation
+            if not morph_fname.endswith('.h5'):
+                morph_fname = morph_fname + '.h5'
+        elif morph_ext:
+            # Regular file with extension
+            morph_fname = morph_name + morph_ext
+        else:
+            # Fallback: add .h5 extension
+            morph_fname = morph_name + '.h5'
+
         if self.template_format == "v6":
             attr_names = getattr(
                 neuron.h, self.template_name.split('_bluecellulab')[0] + "_NeededAttributes", None
@@ -144,6 +168,45 @@ class NeuronTemplate:
         neuron.h(template_content)
 
         return template_name
+
+    def _is_valid_morphology_path(self, morph_filepath: str) -> bool:
+        """Check if morphology path is valid, handling H5 container paths."""
+        # Check if it's a regular file
+        if os.path.exists(morph_filepath):
+            return True
+
+        # Check if it's an H5 container path (format: container.h5/CellName.h5)
+        if '/' in morph_filepath and '.h5' in morph_filepath:
+            # Split into container path and cell name
+            parts = morph_filepath.split('/')
+            if len(parts) >= 2:
+                # Find the part that ends with .h5 and is not the last part
+                # (last part is the cell name which also ends with .h5)
+                h5_index = -1
+                for i, part in enumerate(parts[:-1]):  # Exclude last part
+                    if part.endswith('.h5'):
+                        h5_index = i
+                        break
+
+                if h5_index >= 0:
+                    # The container file is everything up to and including the .h5 part
+                    container_path = '/'.join(parts[:h5_index + 1])
+                    # Cell name is everything after, with .h5 extension removed
+                    cell_name_with_ext = '/'.join(parts[h5_index + 1:])
+                    # Remove .h5 extension from cell name for H5 container lookup
+                    cell_name = cell_name_with_ext.rsplit('.h5', 1)[0] if cell_name_with_ext.endswith('.h5') else cell_name_with_ext
+
+                    # Check if container file exists
+                    if os.path.exists(container_path):
+                        try:
+                            import h5py
+                            # Check if cell exists in the container
+                            with h5py.File(container_path, 'r') as f:
+                                return cell_name in f
+                        except Exception:
+                            return False
+
+        return False
 
 
 def shorten_and_hash_string(label: str, keep_length=40, hash_length=9) -> str:
