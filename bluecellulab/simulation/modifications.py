@@ -192,14 +192,14 @@ def _apply_configure_all_sections(
     n_sections = 0
     for cell_id in target_cell_ids:
         cell = cells[cell_id]
-        cell_applied = 0
+        sections_applied = 0
         for sec_name, section in cell.sections.items():
             if _exec_on_section(config, section, attrs):
-                cell_applied += 1
+                sections_applied += 1
                 logger.debug("  Applied to section '%s' of cell %s", sec_name, cell_id)
-        if cell_applied > 0:
+        if sections_applied > 0:
             n_cells += 1
-        n_sections += cell_applied
+        n_sections += sections_applied
 
     logger.info(
         "Modification '%s' applied to %d sections across %d cells",
@@ -234,6 +234,15 @@ def _apply_section_list(
             f"from section_configure '{mod.section_configure}'"
         )
     list_name = match.group(1)
+
+    # Validate that ALL attribute references use the same section list prefix
+    all_prefixes = re.findall(r"(\w+)\.", mod.section_configure)
+    if not all(prefix == list_name for prefix in all_prefixes):
+        mixed_prefixes = set(all_prefixes)
+        raise ValueError(
+            f"section_list modification '{mod.name}': mixed section list prefixes detected "
+            f"{mixed_prefixes}. All statements must reference the same section list '{list_name}'."
+        )
 
     prop_name = SECTION_LIST_MAP.get(list_name)
     if prop_name is None:
@@ -277,15 +286,15 @@ def _apply_section_list(
             )
             continue
 
-        cell_applied = 0
+        sections_applied = 0
         for section in section_list:
             sec_name = section.name().split(".")[-1]
             if _exec_on_section(config_str, section, attrs):
-                cell_applied += 1
+                sections_applied += 1
                 logger.debug("  Applied to section '%s' of cell %s", sec_name, cell_id)
-        if cell_applied > 0:
+        if sections_applied > 0:
             n_cells += 1
-        n_sections += cell_applied
+        n_sections += sections_applied
 
     logger.info(
         "Modification '%s' applied to %d sections across %d cells",
@@ -323,13 +332,15 @@ def _apply_section(cells: dict, mod: ModificationSection, circuit_access) -> Non
 
     # Build per-section config strings
     # For each unique section name, replace "<name>[idx]." with "sec."
-    # and parse to get attrs
+    # and parse to get attrs. This handles multi-section configs like
+    # "apic[10].x = 0; dend[3].y = 1" by creating separate config strings
+    # for each section (apic[10] gets "sec.x = 0; sec.y = 1" if dend statements
+    # are also present, though only the apic statement will match). The config_str
+    # is stored in the dict and later retrieved when applying to each cell.
     section_configs: dict[str, tuple[str, set[str]]] = {}
     for sec_name in section_names:
         escaped = re.escape(sec_name)
         config_str = re.sub(escaped + r"\.", "sec.", mod.section_configure)
-        # Filter to only statements that reference this section
-        # (handle multi-section configs like "apic[10].x = 0; dend[3].y = 1")
         collector = _AttributeCollector()
         tree = ast.parse(config_str)
         for elem in tree.body:
@@ -342,7 +353,7 @@ def _apply_section(cells: dict, mod: ModificationSection, circuit_access) -> Non
     n_sections = 0
     for cell_id in target_cell_ids:
         cell = cells[cell_id]
-        cell_applied = 0
+        sections_applied = 0
         for sec_name, (config_str, attrs) in section_configs.items():
             try:
                 section = cell.get_section(sec_name)
@@ -355,11 +366,11 @@ def _apply_section(cells: dict, mod: ModificationSection, circuit_access) -> Non
                 )
                 continue
             if _exec_on_section(config_str, section, attrs):
-                cell_applied += 1
+                sections_applied += 1
                 logger.debug("  Applied to section '%s' of cell %s", sec_name, cell_id)
-        if cell_applied > 0:
+        if sections_applied > 0:
             n_cells += 1
-        n_sections += cell_applied
+        n_sections += sections_applied
 
     logger.info(
         "Modification '%s' applied to %d sections across %d cells",
@@ -452,18 +463,18 @@ def _apply_compartment_set(
             )
             continue
 
-        cell_applied = 0
+        segments_applied = 0
         for section, sec_name, seg_x in resolved:
             segment = section(seg_x)
             if all(hasattr(segment, attr) for attr in all_attrs):
                 exec(config_str, {"__builtins__": None}, {"seg": segment})  # noqa: S102
-                cell_applied += 1
+                segments_applied += 1
                 logger.debug(
                     "  Applied to segment '%s(%s)' of cell %s", sec_name, seg_x, cell_id
                 )
-        if cell_applied > 0:
+        if segments_applied > 0:
             n_cells += 1
-        n_segments += cell_applied
+        n_segments += segments_applied
 
     logger.info(
         "Modification '%s' applied to %d segments across %d cells",
