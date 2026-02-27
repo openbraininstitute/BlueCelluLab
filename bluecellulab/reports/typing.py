@@ -32,13 +32,15 @@ class ReportSiteResolvable(Protocol):
     def resolve_segments_from_config(
         self,
         report_cfg: dict
-    ) -> list[ReportSite]: ...
+    ) -> list[ReportSite]:
+        ...
 
     def resolve_segments_from_compartment_set(
         self,
         node_id: int,
         compartment_nodes: list
-    ) -> list[ReportSite]: ...
+    ) -> list[ReportSite]:
+        ...
 
 
 class ReportConfigurableCell(ReportSiteResolvable, Protocol):
@@ -49,7 +51,8 @@ class ReportConfigurableCell(ReportSiteResolvable, Protocol):
         recording_sites: Iterable[ReportSite],
         variable_name: str,
         report_name: str,
-    ) -> list[str]: ...
+    ) -> list[str]:
+        ...
 
 
 class SpikeExtractableCell(Protocol):
@@ -59,4 +62,5 @@ class SpikeExtractableCell(Protocol):
         self,
         location: str = "soma",
         threshold: float = -20.0,
-    ) -> Any: ...
+    ) -> Any:
+        ...

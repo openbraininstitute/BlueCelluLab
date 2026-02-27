@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 
 SUPPORTED_REPORT_TYPES = {"compartment", "compartment_set"}
 
+
 def prepare_recordings_for_reports(cells, simulation_config):
     recording_index: dict[CellId, list[str]] = defaultdict(list)  # (pop,gid) -> [rec_name,...] ordered
     sites_index: dict[CellId, list[SiteEntry]] = defaultdict(list)
@@ -85,19 +86,34 @@ def prepare_recordings_for_reports(cells, simulation_config):
             if cell is None or not sites:
                 continue
 
-            rec_names = cell.configure_recording(sites, variable, report_name)
+            if not hasattr(cell, "report_sites") or not isinstance(getattr(cell, "report_sites"), dict):
+                cell.report_sites = {}
+            cell.report_sites.setdefault(report_name, [])
 
-            for (sec, sec_name, segx), rec_name in zip(sites, rec_names, strict=True):
+            rec_names = cell.configure_recording(sites, variable, report_name)
+            if len(rec_names) != len(sites):
+                logger.warning(
+                    "Configured %d/%d recording sites for report '%s' on %s.",
+                    len(rec_names),
+                    len(sites),
+                    report_name,
+                    cell_id,
+                )
+
+            for (sec, sec_name, segx), rec_name in zip(sites, rec_names):
                 recording_index[cell_id].append(rec_name)
 
-                sites_index[cell_id].append({
+                site_entry = {
                     "report": report_name,
                     "rec_name": rec_name,
                     "section": sec_name,
                     "segx": float(segx),
-                })
+                }
+                sites_index[cell_id].append(site_entry)
+                cell.report_sites[report_name].append(site_entry)
 
     return dict(recording_index), dict(sites_index)
+
 
 def build_recording_sites(
     cells: Dict[CellId, Any],
@@ -152,6 +168,7 @@ def build_recording_sites(
             targets_per_cell[node_id] = targets
 
     return targets_per_cell
+
 
 def extract_spikes_from_cells(
     cells: Dict[Any, Any],
@@ -262,6 +279,7 @@ def merge_dicts(dicts: list[dict]) -> dict:
         out.update(d)
     return out
 
+
 def merge_spikes(list_of_pop_dicts: list[dict[str, dict[int, list]]]) -> dict[str, dict[int, list]]:
     out: dict[str, dict[int, list]] = defaultdict(dict)
     for pop_dict in list_of_pop_dicts:
@@ -288,6 +306,7 @@ def gather_recording_sites(
             merged[cell_key].extend(sites)
 
     return dict(merged)
+
 
 def collect_local_payload(
     cells: Dict[CellId, Any],
@@ -331,6 +350,7 @@ def gather_payload_to_rank0(
     all_payload = merge_dicts(gathered_payload)
     all_spikes = merge_spikes(gathered_spikes)
     return all_payload, all_spikes
+
 
 def collect_local_spikes(
     sim: Any,

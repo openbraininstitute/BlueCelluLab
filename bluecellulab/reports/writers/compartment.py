@@ -18,10 +18,6 @@ import h5py
 from typing import Dict, List
 
 from .base_writer import BaseReportWriter
-from bluecellulab.reports.utils import (
-    build_recording_sites,
-    resolve_source_nodes,
-)
 import logging
 
 logger = logging.getLogger(__name__)

@@ -22,7 +22,6 @@ import queue
 from typing import Iterable, List, Optional, Tuple
 from typing_extensions import deprecated
 
-from bluecellulab.reports.typing import ReportSite
 import neuron
 import numpy as np
 import pandas as pd
@@ -130,6 +129,7 @@ class Cell(InjectableMixin, PlottableMixin):
         neuron.h.finitialize()
 
         self.recordings: dict[str, HocObjectType] = {}
+        self.report_sites: dict[str, list[dict]] = {}
         self.synapses: dict[SynapseID, Synapse] = {}
         self.connections: dict[SynapseID, bluecellulab.Connection] = {}
 
@@ -1014,10 +1014,10 @@ class Cell(InjectableMixin, PlottableMixin):
         return targets
 
     def configure_recording(self,
-                            recording_sites:  Iterable[tuple[NeuronSection | None, str, float]],
+                            recording_sites: Iterable[tuple[NeuronSection | None, str, float]],
                             variable_name: str,
                             report_name: str
-                            ) -> list[tuple[ReportSite, str]]:
+                            ) -> list[str]:
         """
         Attach NEURON recordings for a variable at the given sites and return the
         recording names created.
@@ -1033,8 +1033,8 @@ class Cell(InjectableMixin, PlottableMixin):
 
         Returns
         -------
-        list[tuple[ReportSite, str]]
-            Pairs of (site, rec_name) for sites that were successfully configured.
+        list[str]
+            Recording-name strings usable with `get_recording`.
         """
         node_id = self.cell_id.id
         added: list[str] = []
