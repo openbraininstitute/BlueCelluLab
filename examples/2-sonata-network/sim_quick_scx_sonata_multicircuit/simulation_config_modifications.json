@@ -1,0 +1,58 @@
+{
+    "manifest": {
+      "$OUTPUT_DIR": "./output_sonata_modifications",
+      "$INPUT_DIR": "./input/"
+    },
+    "run": {
+      "tstart": 0.0,
+      "tstop": 100.0,
+      "dt": 0.025,
+      "random_seed": 1,
+      "spike_threshold": -30
+    },
+    "conditions": {
+      "v_init": -65,
+      "modifications": [
+        {
+          "name": "TTX_block_NodeB",
+          "type": "ttx",
+          "node_set": "Mosaic_B"
+        },
+        {
+          "name": "double_cm_all",
+          "type": "configure_all_sections",
+          "node_set": "Mosaic_A",
+          "section_configure": "%s.cm = 2.0"
+        },
+        {
+          "name": "scale_soma_cm",
+          "type": "section_list",
+          "node_set": "Mosaic_A",
+          "section_configure": "somatic.cm *= 1.5"
+        },
+        {
+          "name": "set_apic0_cm",
+          "type": "section",
+          "node_set": "Mosaic_A",
+          "section_configure": "apic[0].cm = 5.0"
+        },
+        {
+          "name": "set_compartment_cm",
+          "type": "compartment_set",
+          "compartment_set": "Mosaic_A",
+          "section_configure": "cm = 10.0"
+        }
+      ]
+    },
+    "target_simulator": "NEURON",
+    "network": "circuit_sonata.json",
+    "node_set": "Mosaic_A",
+    "compartment_sets_file": "compartment_sets.json",
+    "output": {
+      "output_dir": "$OUTPUT_DIR",
+      "spikes_file": "out.h5",
+      "spikes_sort_order": "by_time"
+    },
+    "inputs": {},
+    "reports": {}
+  }

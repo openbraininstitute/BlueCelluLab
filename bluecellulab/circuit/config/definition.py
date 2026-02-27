@@ -17,7 +17,11 @@ from __future__ import annotations
 from typing import Optional, Protocol
 
 
-from bluecellulab.circuit.config.sections import Conditions, ConnectionOverrides
+from bluecellulab.circuit.config.sections import (
+    Conditions,
+    ConnectionOverrides,
+    ModificationBase,
+)
 from bluecellulab.stimulus.circuit_stimulus_definitions import Stimulus
 
 
@@ -34,6 +38,9 @@ class SimulationConfig(Protocol):
         raise NotImplementedError
 
     def connection_entries(self) -> list[ConnectionOverrides]:
+        raise NotImplementedError
+
+    def get_modifications(self) -> list[ModificationBase]:
         raise NotImplementedError
 
     def get_compartment_sets(self) -> dict[str, dict]:
@@ -108,8 +115,5 @@ class SimulationConfig(Protocol):
     def extracellular_calcium(self) -> Optional[float]:
         raise NotImplementedError
 
-    def add_connection_override(
-        self,
-        connection_override: ConnectionOverrides
-    ) -> None:
+    def add_connection_override(self, connection_override: ConnectionOverrides) -> None:
         raise NotImplementedError

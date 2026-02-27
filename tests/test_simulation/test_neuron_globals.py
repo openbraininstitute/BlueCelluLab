@@ -16,8 +16,18 @@ from unittest import mock
 import pytest
 import neuron
 
-from bluecellulab.circuit.config.sections import ConditionEntry, Conditions, MechanismConditions
-from bluecellulab.simulation.neuron_globals import NeuronGlobalParams, NeuronGlobals, set_global_condition_parameters, set_init_depleted_values, set_minis_single_vesicle_values
+from bluecellulab.circuit.config.sections import (
+    ConditionEntry,
+    Conditions,
+    MechanismConditions,
+)
+from bluecellulab.simulation.neuron_globals import (
+    NeuronGlobalParams,
+    NeuronGlobals,
+    set_global_condition_parameters,
+    set_init_depleted_values,
+    set_minis_single_vesicle_values,
+)
 
 
 @mock.patch("neuron.h")
@@ -62,6 +72,24 @@ def test_set_minis_single_vesicle_values():
     assert neuron.h.minis_single_vesicle_ProbAMPANMDA_EMS == 1.0
     assert neuron.h.minis_single_vesicle_ProbGABAAB_EMS == 0.0
     assert neuron.h.minis_single_vesicle_GluSynapse == 0.0
+
+
+@mock.patch("neuron.h")
+def test_set_global_condition_parameters_generic_mechanisms(mocked_h):
+    """Test that generic mechanisms dict applies all variables as NEURON globals."""
+    # Make hasattr return True for the globals we expect
+    mocked_h.cao_CR_GluSynapse = 1.0  # so the extracellular_calcium path works
+    conditions = Conditions(
+        mechanisms={
+            "ProbGABAAB_EMS": {"property_x": 1, "property_y": 0.25},
+            "CustomMech": {"custom_var": 42.0},
+        },
+    )
+    set_global_condition_parameters(conditions)
+    # Verify generic setattr calls were made for existing attributes
+    assert mocked_h.property_x_ProbGABAAB_EMS == 1
+    assert mocked_h.property_y_ProbGABAAB_EMS == 0.25
+    assert mocked_h.custom_var_CustomMech == 42.0
 
 
 def test_neuron_globals():
