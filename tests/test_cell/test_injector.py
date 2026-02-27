@@ -112,7 +112,7 @@ class TestInjector:
         assert seclamp_obj.rs == rs
 
         self.sim.run(10, dt=1, cvode=False)
-        current = self.cell.get_recording("test_volt_clamp")
+        current = self.cell.get_recording(n_recording)
         assert current == approx(np.array(
             [66.5, 5.39520998, -10.76796553, 20.6887735,
              17.8876999, 15.14995787, 13.47384441, 12.55945316,
@@ -134,9 +134,38 @@ class TestInjector:
         assert seclamp_obj.rs == rs
 
         self.sim.run(10, dt=1, cvode=False)
-        current = self.cell.get_recording("test_volt_clamp_dt")
+        current = self.cell.get_recording(n_recording)
         assert current == approx(np.array(
             [66.5, -10.76796553, 17.8876999, 13.47384441, 12.09052411]), abs=1e-3)
+
+    def test_multilevel_voltage_clamp(self):
+        """Test voltage clamp with multiple voltages."""
+        amp = 10
+        stop_time = 10
+        voltages = [20, 30]
+        durations = [2, 3, 5]
+        rs = 1
+        seclamp_obj = self.cell.add_voltage_clamp(
+            stop_time=stop_time, level=amp, rs=rs, levels=voltages, durations=durations,
+        )
+        assert seclamp_obj.amp1 == amp
+        assert seclamp_obj.dur1 == stop_time
+        assert seclamp_obj.rs == rs
+
+        v_rec = neuron.h.Vector()
+        v_rec.record(seclamp_obj._ref_vc)
+
+        self.sim.run(10, dt=0.2, cvode=False)
+        voltage_rec = np.array(v_rec.to_python())
+        # has to add one 10 at the beginning for t=0
+        assert (voltage_rec == np.array(
+            [
+                10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,  # 10 + 1 extra for t=0
+                20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,  # 15
+                30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30,
+                30, 30, 30, 30, 30, 30, 30, 30, 30, 30  # 25
+            ]
+        )).all()
 
     def test_get_noise_step_rand(self):
         """Unit test for _get_noise_step_rand."""

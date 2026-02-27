@@ -319,8 +319,8 @@ def _apply_section(cells: dict, mod: ModificationSection, circuit_access) -> Non
     )
 
     # Extract section names from section_configure
-    # Format: "apic[10].gbar = 0; apic[10].gbar2 = 1" or "dend[3].x = 5"
-    # Find all unique "<name>[<idx>]." patterns
+    # Format: "apic[10].gbar = 0; apic[10].gbar2 = 1"
+    # Per SONATA spec, all statements must reference the same section
     section_names = list(
         dict.fromkeys(re.findall(r"(\w+\[\d+\])\.", mod.section_configure))
     )
@@ -330,47 +330,43 @@ def _apply_section(cells: dict, mod: ModificationSection, circuit_access) -> Non
             f"from section_configure '{mod.section_configure}'"
         )
 
-    # Build per-section config strings
-    # For each unique section name, replace "<name>[idx]." with "sec."
-    # and parse to get attrs. This handles multi-section configs like
-    # "apic[10].x = 0; dend[3].y = 1" by creating separate config strings
-    # for each section (apic[10] gets "sec.x = 0; sec.y = 1" if dend statements
-    # are also present, though only the apic statement will match). The config_str
-    # is stored in the dict and later retrieved when applying to each cell.
-    section_configs: dict[str, tuple[str, set[str]]] = {}
-    for sec_name in section_names:
-        escaped = re.escape(sec_name)
-        config_str = re.sub(escaped + r"\.", "sec.", mod.section_configure)
-        collector = _AttributeCollector()
-        tree = ast.parse(config_str)
-        for elem in tree.body:
-            _validate_assignment(elem)
-            collector.visit(elem)
-        section_configs[sec_name] = (config_str, collector.attrs)
+    # Validate that ALL statements reference the same section (per SONATA spec)
+    if len(section_names) > 1:
+        raise ValueError(
+            f"section modification '{mod.name}': multiple sections detected "
+            f"{section_names}. All statements must reference the same section."
+        )
+
+    # Build config string by replacing the section name with "sec."
+    sec_name = section_names[0]
+    escaped = re.escape(sec_name)
+    config_str = re.sub(escaped + r"\.", "sec.", mod.section_configure)
+    collector = _AttributeCollector()
+    tree = ast.parse(config_str)
+    for elem in tree.body:
+        _validate_assignment(elem)
+        collector.visit(elem)
+    attrs = collector.attrs
 
     target_cell_ids = _resolve_target_cells(cells, mod, circuit_access)
     n_cells = 0
     n_sections = 0
     for cell_id in target_cell_ids:
         cell = cells[cell_id]
-        sections_applied = 0
-        for sec_name, (config_str, attrs) in section_configs.items():
-            try:
-                section = cell.get_section(sec_name)
-            except (ValueError, TypeError):
-                logger.warning(
-                    "section '%s': cell %s does not have section '%s', skipping",
-                    mod.name,
-                    cell_id,
-                    sec_name,
-                )
-                continue
-            if _exec_on_section(config_str, section, attrs):
-                sections_applied += 1
-                logger.debug("  Applied to section '%s' of cell %s", sec_name, cell_id)
-        if sections_applied > 0:
+        try:
+            section = cell.get_section(sec_name)
+        except (ValueError, TypeError):
+            logger.warning(
+                "section '%s': cell %s does not have section '%s', skipping",
+                mod.name,
+                cell_id,
+                sec_name,
+            )
+            continue
+        if _exec_on_section(config_str, section, attrs):
+            n_sections += 1
             n_cells += 1
-        n_sections += sections_applied
+            logger.debug("  Applied to section '%s' of cell %s", sec_name, cell_id)
 
     logger.info(
         "Modification '%s' applied to %d sections across %d cells",
