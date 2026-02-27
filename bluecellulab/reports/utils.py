@@ -23,7 +23,6 @@ from bluecellulab.circuit.node_id import CellId
 import numpy as np
 
 from bluecellulab.cell.section_tools import section_to_variable_recording_str
-from bluecellulab.reports.typing import ReportConfigurableCell
 from bluecellulab.type_aliases import NeuronSection, SiteEntry
 from bluecellulab.tools import (
     resolve_source_nodes,
@@ -35,7 +34,7 @@ SUPPORTED_REPORT_TYPES = {"compartment", "compartment_set"}
 
 
 def prepare_recordings_for_reports(
-    cells: Dict[CellId, ReportConfigurableCell],
+    cells: Dict[CellId, Any],
     simulation_config: Any,
 ) -> tuple[dict[CellId, list[str]], dict[CellId, list[SiteEntry]]]:
     recording_index: dict[CellId, list[str]] = defaultdict(list)  # (pop,gid) -> [rec_name,...] ordered
