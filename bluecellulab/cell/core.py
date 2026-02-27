@@ -1040,14 +1040,12 @@ class Cell(InjectableMixin, PlottableMixin):
 
         for sec, sec_name, seg in recording_sites:
             try:
-                if sec is None:
-                    self.add_variable_recording(variable=variable_name, section=None, segx=float(seg))
-                    sec_obj = self.soma
-                    rec_name = section_to_variable_recording_str(sec_obj, float(seg), variable_name)
-                else:
-                    rec_name = section_to_variable_recording_str(sec, float(seg), variable_name)
-                    if rec_name not in self.recordings:
-                        self.add_variable_recording(variable=variable_name, section=sec, segx=float(seg))
+                section_obj = self.soma if sec is None else sec
+                rec_name = section_to_variable_recording_str(section_obj, float(seg), variable_name)
+
+                if rec_name not in self.recordings:
+                    self.add_variable_recording(variable=variable_name, section=section_obj, segx=float(seg))
+
                 added.append(rec_name)
 
                 logger.info(
