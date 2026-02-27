@@ -189,6 +189,9 @@ class InjectableMixin:
         vclamp.amp1 = level
 
         if durations is not None and levels is not None:
+            if len(levels) != len(durations) - 1:
+                raise BluecellulabError("Inconsistent durations and levels for seclamp.")
+
             voltage_vec = h.Vector(levels)
             time_vec = h.Vector(np.cumsum(durations))
 
