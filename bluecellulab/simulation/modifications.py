@@ -236,7 +236,9 @@ def _apply_section_list(
     list_name = match.group(1)
 
     # Validate that ALL attribute references use the same section list prefix
-    all_prefixes = re.findall(r"(\w+)\.", mod.section_configure)
+    # Use a pattern that matches "identifier.identifier" to avoid matching
+    # numbers before decimal points (e.g. "1.5" should not match "1" as prefix)
+    all_prefixes = re.findall(r"([a-zA-Z_]\w*)\.(?=[a-zA-Z_])", mod.section_configure)
     if not all(prefix == list_name for prefix in all_prefixes):
         mixed_prefixes = set(all_prefixes)
         raise ValueError(
@@ -413,16 +415,10 @@ def _apply_compartment_set(
     comp_nodes = comp_entry.get("compartment_set", [])
     population_name = comp_entry.get("population")
 
-    # Parse section_configure — bare format: "attr = value"
-    # Prefix with "seg." to make it executable
-    config_str = re.sub(r"(\b\w+)\s*=", r"seg.\1 =", mod.section_configure)
-    # But we need to be careful: only LHS identifiers should be prefixed.
-    # Better approach: use ast to parse and validate
-    # For compartment_set, the format is "attr = value [; attr = value ...]"
-    # We prefix each bare assignment target with "seg."
+    # Parse section_configure — bare format: "attr = value [; attr = value ...]"
+    # Prefix each bare assignment target with "seg." to make it executable
     statements = [s.strip() for s in mod.section_configure.split(";") if s.strip()]
     prefixed_parts = []
-    all_attrs: set[str] = set()
     for stmt in statements:
         prefixed = "seg." + stmt.strip()
         prefixed_parts.append(prefixed)

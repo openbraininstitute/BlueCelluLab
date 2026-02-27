@@ -404,6 +404,53 @@ class TestApplySectionListAttributeError:
             _apply_section_list({}, mod, _make_circuit_access([]))
 
 
+class TestApplySectionListMixedPrefixes:
+    def test_float_values_not_treated_as_prefixes(self, caplog):
+        """Regression: 'somatic.cm *= 1.5' should NOT raise mixed prefix error."""
+        import logging
+
+        cell_id = mock.MagicMock()
+        sec = mock.MagicMock()
+        sec.name.return_value = "Cell.soma[0]"
+        cell = mock.MagicMock()
+        cell.somatic = [sec]
+        cells = {cell_id: cell}
+        mod = ModificationSectionList(
+            name="scale",
+            type="section_list",
+            node_set="target",
+            section_configure="somatic.cm *= 1.5",
+        )
+        ca = _make_circuit_access(target_cell_ids=[cell_id])
+        with caplog.at_level(logging.INFO):
+            _apply_section_list(cells, mod, ca)
+        assert "applied to" in caplog.text
+
+    def test_mixed_prefixes_raises(self):
+        """'apical.gbar = 0; basal.cm = 1' should raise mixed prefix error."""
+        mod = ModificationSectionList(
+            name="mixed",
+            type="section_list",
+            node_set="target",
+            section_configure="apical.gbar = 0; basal.cm = 1",
+        )
+        with pytest.raises(ValueError, match="mixed section list prefixes"):
+            _apply_section_list({}, mod, _make_circuit_access([]))
+
+
+class TestApplySectionMixedSections:
+    def test_mixed_sections_raises(self):
+        """'apic[10].x = 0; dend[3].y = 1' should raise multiple sections error."""
+        mod = ModificationSection(
+            name="mixed",
+            type="section",
+            node_set="target",
+            section_configure="apic[10].x = 0; dend[3].y = 1",
+        )
+        with pytest.raises(ValueError, match="multiple sections detected"):
+            _apply_section({}, mod, _make_circuit_access([]))
+
+
 class TestApplySectionEdgeCases:
     def test_invalid_section_configure_raises(self):
         mod = ModificationSection(
