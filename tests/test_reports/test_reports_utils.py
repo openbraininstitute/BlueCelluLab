@@ -39,7 +39,7 @@ class DummyCell:
     def __init__(self, targets, rec_names):
         self.targets = targets
         self.rec_names = rec_names
-        self.report_sites = None
+        self.report_sites: dict[str, list[dict]] = {}
 
     def resolve_segments_from_config(self, _cfg):
         return self.targets
@@ -47,8 +47,8 @@ class DummyCell:
     def resolve_segments_from_compartment_set(self, _node_id, _compartment_nodes):
         return self.targets
 
-    def configure_recording(self, _sites, _variable, _report_name):
-        return self.rec_names
+    def configure_recording(self, sites, _variable, _report_name):
+        return list(zip(sites, self.rec_names))
 
 
 class DummyConfig:

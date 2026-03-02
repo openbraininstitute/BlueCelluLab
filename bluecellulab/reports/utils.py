@@ -18,7 +18,6 @@ from collections import defaultdict
 from dataclasses import dataclass
 import logging
 from typing import Dict, Any, List, Mapping, Optional, Tuple
-from neuron import h
 
 from bluecellulab.circuit.node_id import CellId
 import numpy as np
@@ -32,8 +31,6 @@ from bluecellulab.tools import (
 logger = logging.getLogger(__name__)
 
 SUPPORTED_REPORT_TYPES = {"compartment", "compartment_set"}
-
-NeuronSection = type(h.Section())  # or your existing alias
 
 
 def _get_source_for_report(simulation_config: Any, report_name: str, report_cfg: dict) -> tuple[str, dict]:
@@ -250,7 +247,7 @@ def extract_spikes_from_cells(
 class RecordedCell:
     """Read-only cell-like object backed by stored recordings."""
     recordings: Dict[str, np.ndarray]
-    report_sites: Dict[str, list[dict]]
+    report_sites: Dict[str, list[SiteEntry]]
     soma: NeuronSection | None = None
 
     def get_recording(self, var_name: str) -> np.ndarray:
@@ -283,7 +280,7 @@ def payload_to_cells(
         recs = blob.get("recordings", {}) or {}
         recs_np = {name: np.asarray(vals, dtype=np.float32) for name, vals in recs.items()}
 
-        by_report: dict[str, list[dict]] = defaultdict(list)
+        by_report: dict[str, list[SiteEntry]] = defaultdict(list)
         cell_id = CellId(pop, gid)
         for site in sites_index.get(cell_id, []):
             by_report[site["report"]].append(site)

@@ -1040,6 +1040,7 @@ class Cell(InjectableMixin, PlottableMixin):
 
         for site in recording_sites:
             sec, sec_name, seg = site
+            report_site = ReportSite(sec, sec_name, float(seg))
 
             try:
                 section_obj = self.soma if sec is None else sec
@@ -1052,7 +1053,7 @@ class Cell(InjectableMixin, PlottableMixin):
                         segx=float(seg),
                     )
 
-                configured.append((site, rec_name))
+                configured.append((report_site, rec_name))
 
                 logger.info(
                     f"Recording '{variable_name}' at {sec_name}({seg}) on GID {node_id} for report '{report_name}'"
@@ -1060,7 +1061,7 @@ class Cell(InjectableMixin, PlottableMixin):
 
             except AttributeError:
                 logger.warning(
-                    "Recording '%s' not available at %s(%s) on GID %s for report '%s'",
+                    "Recording for variable '%s' is not implemented at %s(%s) on GID %s for report '%s'",
                     variable_name, sec_name, seg, node_id, report_name,
                 )
 

@@ -13,11 +13,14 @@ NeuronSection: TypeAlias = hoc_type
 TStim: TypeAlias = hoc_type
 
 SectionMapping = Dict[str, NeuronSection]
+
+
 class SiteEntry(TypedDict):
     report: str
     rec_name: str
     section: str
     segx: float
+
 
 class ReportSite(NamedTuple):
     section: Optional[NeuronSection]
