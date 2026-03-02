@@ -1,7 +1,7 @@
 """Type aliases used within the package."""
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Dict, NamedTuple, Optional, TypedDict
 
 from neuron import h as hoc_type
 from typing_extensions import TypeAlias
@@ -13,4 +13,13 @@ NeuronSection: TypeAlias = hoc_type
 TStim: TypeAlias = hoc_type
 
 SectionMapping = Dict[str, NeuronSection]
-SiteEntry: TypeAlias = dict[str, Any]
+class SiteEntry(TypedDict):
+    report: str
+    rec_name: str
+    section: str
+    segx: float
+
+class ReportSite(NamedTuple):
+    section: Optional[NeuronSection]
+    section_name: str
+    segx: float

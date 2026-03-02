@@ -46,7 +46,7 @@ from bluecellulab.rngsettings import RNGSettings
 from bluecellulab.stimulus.circuit_stimulus_definitions import SynapseReplay
 from bluecellulab.synapse import SynapseFactory, Synapse
 from bluecellulab.synapse.synapse_types import SynapseID
-from bluecellulab.type_aliases import HocObjectType, NeuronSection, SectionMapping
+from bluecellulab.type_aliases import HocObjectType, NeuronSection, ReportSite, SectionMapping
 from bluecellulab.cell.section_tools import currents_vars, section_to_variable_recording_str
 
 logger = logging.getLogger(__name__)
@@ -1017,7 +1017,7 @@ class Cell(InjectableMixin, PlottableMixin):
                             recording_sites: Iterable[tuple[NeuronSection | None, str, float]],
                             variable_name: str,
                             report_name: str
-                            ) -> list[str]:
+                            ) -> list[tuple[ReportSite, str]]:
         """Attach NEURON recordings for a variable at the given sites and
         return the recording names created.
 
@@ -1032,21 +1032,27 @@ class Cell(InjectableMixin, PlottableMixin):
 
         Returns
         -------
-        list[str]
-            Recording-name strings usable with `get_recording`.
+        list[tuple[ReportSite, str]]
+            (site, rec_name) pairs for successfully configured recordings.
         """
         node_id = self.cell_id.id
-        added: list[str] = []
+        configured: list[tuple[ReportSite, str]] = []
 
-        for sec, sec_name, seg in recording_sites:
+        for site in recording_sites:
+            sec, sec_name, seg = site
+
             try:
                 section_obj = self.soma if sec is None else sec
                 rec_name = section_to_variable_recording_str(section_obj, float(seg), variable_name)
 
                 if rec_name not in self.recordings:
-                    self.add_variable_recording(variable=variable_name, section=section_obj, segx=float(seg))
+                    self.add_variable_recording(
+                        variable=variable_name,
+                        section=None if sec is None else sec,
+                        segx=float(seg),
+                    )
 
-                added.append(rec_name)
+                configured.append((site, rec_name))
 
                 logger.info(
                     f"Recording '{variable_name}' at {sec_name}({seg}) on GID {node_id} for report '{report_name}'"
@@ -1054,18 +1060,17 @@ class Cell(InjectableMixin, PlottableMixin):
 
             except AttributeError:
                 logger.warning(
-                    f"Recording for variable '{variable_name}' is not implemented in Cell."
+                    "Recording '%s' not available at %s(%s) on GID %s for report '%s'",
+                    variable_name, sec_name, seg, node_id, report_name,
                 )
-                continue
 
             except Exception as e:
                 logger.warning(
                     f"Failed to record '{variable_name}' at {sec_name}({seg}) on GID {node_id} "
                     f"for report '{report_name}': {e}"
                 )
-                continue
 
-        return added
+        return configured
 
     def add_currents_recordings(
         self,

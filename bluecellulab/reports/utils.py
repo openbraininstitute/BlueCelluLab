@@ -18,6 +18,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 import logging
 from typing import Dict, Any, List, Mapping, Optional, Tuple
+from neuron import h
 
 from bluecellulab.circuit.node_id import CellId
 import numpy as np
@@ -31,6 +32,8 @@ from bluecellulab.tools import (
 logger = logging.getLogger(__name__)
 
 SUPPORTED_REPORT_TYPES = {"compartment", "compartment_set"}
+
+NeuronSection = type(h.Section())  # or your existing alias
 
 
 def _get_source_for_report(simulation_config: Any, report_name: str, report_cfg: dict) -> tuple[str, dict]:
@@ -59,14 +62,6 @@ def _get_source_for_report(simulation_config: Any, report_name: str, report_cfg:
         raise KeyError("missing_source")
 
     return report_type, source
-
-
-def _ensure_report_sites(cell: Any) -> dict[str, list[SiteEntry]]:
-    report_sites = getattr(cell, "report_sites", None)
-    if not isinstance(report_sites, dict):
-        report_sites = {}
-        setattr(cell, "report_sites", report_sites)
-    return report_sites
 
 
 def prepare_recordings_for_reports(
@@ -116,17 +111,20 @@ def prepare_recordings_for_reports(
             if cell is None or not sites:
                 continue
 
-            report_sites = _ensure_report_sites(cell)
-            report_sites.setdefault(report_name, [])
+            cell.report_sites.setdefault(report_name, [])
 
-            rec_names = cell.configure_recording(sites, variable, report_name)
-            if len(rec_names) != len(sites):
+            configured = cell.configure_recording(sites, variable, report_name)
+
+            if len(configured) != len(sites):
                 logger.warning(
                     "Configured %d/%d recording sites for report '%s' on %s.",
-                    len(rec_names), len(sites), report_name, cell_id,
+                    len(configured),
+                    len(sites),
+                    report_name,
+                    cell_id,
                 )
 
-            for (sec, sec_name, segx), rec_name in zip(sites, rec_names):
+            for (sec, sec_name, segx), rec_name in configured:
                 recording_index[cell_id].append(rec_name)
 
                 entry: SiteEntry = {
@@ -136,7 +134,7 @@ def prepare_recordings_for_reports(
                     "segx": float(segx),
                 }
                 sites_index[cell_id].append(entry)
-                report_sites[report_name].append(entry)
+                cell.report_sites[report_name].append(entry)
 
     return dict(recording_index), dict(sites_index)
 
@@ -353,7 +351,8 @@ def collect_local_payload(
         for rec_name in recording_index.get(cell_id, []):
             recs[rec_name] = cell.get_recording(rec_name).tolist()
 
-        payload[f"{pop}_{gid}"] = {"recordings": recs}
+        key = f"{pop}_{gid}"
+        payload[key] = {"recordings": recs}
 
     return payload
 
@@ -395,7 +394,12 @@ def collect_local_spikes(
                 threshold=sim.spike_threshold,
             )
             spikes[pop][gid] = list(times) if times is not None else []
-        except Exception:
+        except Exception as e:
+            logger.debug(
+                "Failed to collect spikes for (%s, %d): %s",
+                pop, gid, e,
+                exc_info=True,
+            )
             spikes[pop][gid] = []
 
     return spikes
