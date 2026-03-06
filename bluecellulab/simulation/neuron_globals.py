@@ -13,11 +13,14 @@
 # limitations under the License.
 """Module that handles the global NEURON parameters."""
 
+import logging
 from typing import Optional
 from typing import NamedTuple
 import neuron
 from bluecellulab.circuit.config.sections import Conditions, MechanismConditions
 from bluecellulab.exceptions import error_context
+
+logger = logging.getLogger(__name__)
 
 
 def set_global_condition_parameters(condition_parameters: Conditions) -> None:
@@ -35,14 +38,31 @@ def set_global_condition_parameters(condition_parameters: Conditions) -> None:
         set_minis_single_vesicle_values(mechanism_conditions)
         set_init_depleted_values(mechanism_conditions)
 
+    # Apply all mechanism variables generically (matching neurodamus behavior)
+    if condition_parameters.mechanisms:
+        for suffix, variables in condition_parameters.mechanisms.items():
+            for var_name, value in variables.items():
+                global_name = f"{var_name}_{suffix}"
+                if hasattr(neuron.h, global_name):
+                    setattr(neuron.h, global_name, value)
+                    logger.debug("Set NEURON global %s = %s", global_name, value)
+
 
 def set_init_depleted_values(mech_conditions: MechanismConditions) -> None:
     """Set the init_depleted values in NEURON."""
     with error_context("mechanism/s for init_depleted need to be compiled"):
-        if mech_conditions.glusynapse and mech_conditions.glusynapse.init_depleted is not None:
+        if (
+            mech_conditions.glusynapse
+            and mech_conditions.glusynapse.init_depleted is not None
+        ):
             neuron.h.init_depleted_GluSynapse = mech_conditions.glusynapse.init_depleted
-        if mech_conditions.ampanmda and mech_conditions.ampanmda.init_depleted is not None:
-            neuron.h.init_depleted_ProbAMPANMDA_EMS = mech_conditions.ampanmda.init_depleted
+        if (
+            mech_conditions.ampanmda
+            and mech_conditions.ampanmda.init_depleted is not None
+        ):
+            neuron.h.init_depleted_ProbAMPANMDA_EMS = (
+                mech_conditions.ampanmda.init_depleted
+            )
         if mech_conditions.gabaab and mech_conditions.gabaab.init_depleted is not None:
             neuron.h.init_depleted_ProbGABAAB_EMS = mech_conditions.gabaab.init_depleted
 
@@ -50,15 +70,24 @@ def set_init_depleted_values(mech_conditions: MechanismConditions) -> None:
 def set_minis_single_vesicle_values(mech_conditions: MechanismConditions) -> None:
     """Set the minis_single_vesicle values in NEURON."""
     with error_context("mechanism/s for minis_single_vesicle need to be compiled"):
-        if mech_conditions.ampanmda and mech_conditions.ampanmda.minis_single_vesicle is not None:
+        if (
+            mech_conditions.ampanmda
+            and mech_conditions.ampanmda.minis_single_vesicle is not None
+        ):
             neuron.h.minis_single_vesicle_ProbAMPANMDA_EMS = (
                 mech_conditions.ampanmda.minis_single_vesicle
             )
-        if mech_conditions.gabaab and mech_conditions.gabaab.minis_single_vesicle is not None:
+        if (
+            mech_conditions.gabaab
+            and mech_conditions.gabaab.minis_single_vesicle is not None
+        ):
             neuron.h.minis_single_vesicle_ProbGABAAB_EMS = (
                 mech_conditions.gabaab.minis_single_vesicle
             )
-        if mech_conditions.glusynapse and mech_conditions.glusynapse.minis_single_vesicle is not None:
+        if (
+            mech_conditions.glusynapse
+            and mech_conditions.glusynapse.minis_single_vesicle is not None
+        ):
             neuron.h.minis_single_vesicle_GluSynapse = (
                 mech_conditions.glusynapse.minis_single_vesicle
             )
@@ -73,7 +102,7 @@ class NeuronGlobals:
     _instance = None
 
     def __init__(self):
-        raise RuntimeError('Call get_instance() instead')
+        raise RuntimeError("Call get_instance() instead")
 
     @classmethod
     def get_instance(cls):
@@ -112,7 +141,9 @@ class NeuronGlobals:
         self.v_init = params.v_init
 
 
-def set_neuron_globals(temperature: Optional[float] = 34.0, v_init: Optional[float] = -80.0) -> None:
+def set_neuron_globals(
+    temperature: Optional[float] = 34.0, v_init: Optional[float] = -80.0
+) -> None:
     """Set the global NEURON parameters."""
     if temperature is None and v_init is None:
         return
