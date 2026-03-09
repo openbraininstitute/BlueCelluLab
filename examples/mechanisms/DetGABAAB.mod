@@ -104,10 +104,10 @@ ASSIGNED {
 PROCEDURE setup_delay_vecs() {
 VERBATIM
 #ifndef CORENEURON_BUILD
-    void** vv_delay_times = (void**)(&_p_delay_times);
-    void** vv_delay_weights = (void**)(&_p_delay_weights);
-    *vv_delay_times = (void*)NULL;
-    *vv_delay_weights = (void*)NULL;
+    IvocVect** vv_delay_times = (IvocVect**)(&_p_delay_times);
+    IvocVect** vv_delay_weights = (IvocVect**)(&_p_delay_weights);
+    *vv_delay_times = (IvocVect*)NULL;
+    *vv_delay_weights = (IvocVect*)NULL;
     if (ifarg(1)) {
         *vv_delay_times = vector_arg(1);
     }
