@@ -20,7 +20,7 @@ class SiteEntry(TypedDict):
     rec_name: str
     section: str
     segx: float
-    area_um2: float
+    area_um2: float | None
 
 
 class ReportSite(NamedTuple):

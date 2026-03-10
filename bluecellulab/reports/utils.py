@@ -125,12 +125,18 @@ def prepare_recordings_for_reports(
             for (sec, sec_name, segx), rec_name in configured:
                 recording_index[cell_id].append(rec_name)
 
+                area_um2 = None
+                try:
+                    area_um2 = float(neuron.h.area(segx, sec=sec))
+                except Exception:
+                    pass
+
                 entry: SiteEntry = {
                     "report": report_name,
                     "rec_name": rec_name,
                     "section": sec_name,
                     "segx": float(segx),
-                    "area_um2": float(neuron.h.area(segx, sec=sec)),
+                    "area_um2": area_um2,
                 }
                 sites_index[cell_id].append(entry)
                 cell.report_sites[report_name].append(entry)

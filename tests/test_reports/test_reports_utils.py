@@ -224,7 +224,14 @@ def test_collect_local_payload_and_spikes():
     cell_ids = [CellId("p", 1), CellId("p", 2)]
 
     payload = collect_local_payload(cells, cell_ids, recording_index)
-    assert payload == {"p_1": {"recordings": {"r1": [1.0, 2.0]}}}
+    assert payload == {
+        "p_1": {
+            "recordings": {
+                "r1": [1.0, 2.0],
+                "neuron.h._ref_t": [1.0, 2.0],
+            }
+        }
+    }
 
     sim = SimpleNamespace(
         cells={CellId("p", 1): c1, CellId("p", 2): c2},
