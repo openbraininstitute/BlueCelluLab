@@ -120,7 +120,7 @@ def run_pyneuron(soma_l, soma_d, params):
 
     neuron.h.finitialize(params.V_INIT)
     neuron.h.dt = params.DT
-    neuron.run(params.T_STOP)
+    neuron.h.continuerun(params.T_STOP)
 
     voltage = np.array(v_vec)
     time = np.array(t_vec)
@@ -156,7 +156,7 @@ def run_pyneuron_with_template(params):
 
     neuron.h.finitialize(params.V_INIT)
     neuron.h.dt = params.DT
-    neuron.run(params.T_STOP)
+    neuron.h.continuerun(params.T_STOP)
 
     voltage = np.array(v_vec)
     time = np.array(t_vec)
