@@ -28,7 +28,7 @@ keywords = [
     "Blue Brain Project",
 ]
 dependencies = [
-    "NEURON>=8.0.2,<9.0.0",
+    "NEURON>=8.0.2",
     "numpy>=2.0.0,<2.4",
     "matplotlib>=3.0.0,<4.0.0",
     "pandas>=1.0.0,<3.0.0",
