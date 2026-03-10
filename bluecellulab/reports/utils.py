@@ -21,6 +21,7 @@ from typing import Dict, Any, List, Mapping, Optional, Tuple
 
 from bluecellulab.circuit.node_id import CellId
 import numpy as np
+import neuron
 
 from bluecellulab.cell.section_tools import section_to_variable_recording_str
 from bluecellulab.type_aliases import NeuronSection, SiteEntry
@@ -129,6 +130,7 @@ def prepare_recordings_for_reports(
                     "rec_name": rec_name,
                     "section": sec_name,
                     "segx": float(segx),
+                    "area_um2": float(neuron.h.area(segx, sec=sec)),
                 }
                 sites_index[cell_id].append(entry)
                 cell.report_sites[report_name].append(entry)
@@ -347,6 +349,11 @@ def collect_local_payload(
         recs: dict[str, list[float]] = {}
         for rec_name in recording_index.get(cell_id, []):
             recs[rec_name] = cell.get_recording(rec_name).tolist()
+
+        try:
+            recs["neuron.h._ref_t"] = cell.get_recording("neuron.h._ref_t").tolist()
+        except Exception:
+            pass
 
         key = f"{pop}_{gid}"
         payload[key] = {"recordings": recs}
