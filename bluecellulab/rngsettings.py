@@ -84,6 +84,8 @@ class RNGSettings:
             self.base_seed = base_seed
         neuron.h.globalSeed = self.base_seed
 
+        logger.debug("Setting base seed to: %d", self.base_seed)
+
         if self._mode == 'Random123':
             rng = neuron.h.Random()
             rng.Random123_globalindex(self.base_seed)

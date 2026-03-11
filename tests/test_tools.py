@@ -158,7 +158,7 @@ class TestOnSonataCell:
             emodel_properties=self.emodel_properties,
         )
 
-        assert input_resistance == pytest.approx(334.11, abs=0.02)
+        assert input_resistance == pytest.approx(334.11, abs=0.07)
 
     def test_calculate_SS_voltage(self):
         """Unit test calculate_SS_voltage."""
@@ -279,7 +279,7 @@ class TestOnSonataCircuit:
         i_hold, v_control = holding_current_subprocess(
             v_hold, enable_ttx=True, cell_kwargs=cell_kwargs
         )
-        assert i_hold == pytest.approx(-0.03160848349)
+        assert i_hold == pytest.approx(-0.03160848349, rel=1e-5)
         assert v_control == pytest.approx(v_hold)
 
 

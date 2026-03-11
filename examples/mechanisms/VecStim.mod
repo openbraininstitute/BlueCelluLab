@@ -169,8 +169,8 @@ ENDVERBATIM
 PROCEDURE play() {
 VERBATIM
     #ifndef CORENEURON_BUILD
-    void** vv;
-    vv = (void**)(&space);
+    IvocVect** vv;
+    vv = (IvocVect**)(&space);
     *vv = NULL;
     if (ifarg(1)) {
         *vv = vector_arg(1);

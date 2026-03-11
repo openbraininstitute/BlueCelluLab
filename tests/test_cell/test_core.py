@@ -670,6 +670,7 @@ def test_add_synapse_replay():
     cell_id = ("hippocampus_neurons", 0)
     circuit_sim.instantiate_gids(cell_id,
                                  add_stimuli=True, add_synapses=True,
+                                 add_projections=True,
                                  interconnect_cells=False)
     cell = circuit_sim.cells[cell_id]
     assert len(cell.connections) == 3

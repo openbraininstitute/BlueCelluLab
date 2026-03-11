@@ -100,27 +100,32 @@ class TestSonataCircuitAccess:
 
     def test_extract_synapses(self):
         cell_id = CellId("hippocampus_neurons", 1)
-        projections = None
-        res = self.circuit_access.extract_synapses(cell_id, projections)
+
+        # intrinsic-only
+        res = self.circuit_access.extract_synapses(cell_id, False)
+        assert res.empty
+
+        # intrinsic + all projections
+        res = self.circuit_access.extract_synapses(cell_id, True)
         assert res.shape == (1742, 16)
         assert all(res["source_popid"] == 2126)
-
         assert all(res["source_population_name"] == "hippocampus_projections")
         assert all(res["target_popid"] == 378)
         assert all(res[SynapseProperty.POST_SEGMENT_ID] != -1)
         assert SynapseProperty.U_HILL_COEFFICIENT not in res.columns
         assert SynapseProperty.CONDUCTANCE_RATIO not in res.columns
 
-        # projection parameter
-        projection = "hippocampus_projections"
+        # specific projection selection
+        projection = "hippocampus_projections__hippocampus_neurons__chemical"
         res = self.circuit_access.extract_synapses(cell_id, projection)
         assert res.shape == (1742, 16)
-        list_of_single_projection = [projection]
-        res = self.circuit_access.extract_synapses(cell_id, list_of_single_projection)
+
+        res = self.circuit_access.extract_synapses(cell_id, [projection])
         assert res.shape == (1742, 16)
-        empty_projection = []
-        res = self.circuit_access.extract_synapses(cell_id, empty_projection)
-        assert res.shape == (1742, 16)
+
+        # empty list == no projections requested (intrinsic-only)
+        res = self.circuit_access.extract_synapses(cell_id, [])
+        assert res.empty
 
     def test_target_contains_cell(self):
         target = "most_central_10_SP_PC"
