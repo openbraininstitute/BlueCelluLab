@@ -214,7 +214,13 @@ def test_payload_to_cells_and_recorded_cell_access():
         def name(self):
             return "soma[0]"
 
-    payload = {"popA_3": {"recordings": {"neuron.h.soma[0](0.5)._ref_v": [1.0, 2.0, 3.0]}}}
+    payload = {
+        CellId("popA", 3): {
+            "recordings": {
+                "neuron.h.soma[0](0.5)._ref_v": [1.0, 2.0, 3.0]
+            }
+        }
+    }
     sites_index = {
         CellId("popA", 3): [{
             "report": "r1",
@@ -255,6 +261,7 @@ def test_gather_recording_sites_merges_and_skips_empty():
 def test_collect_local_payload_and_spikes():
     c1 = MagicMock()
     c1.get_recording.return_value = np.array([1.0, 2.0], dtype=np.float32)
+    c1.get_time.return_value = np.array([1.0, 2.0], dtype=np.float32)
     c1.get_recorded_spikes.return_value = [0.2, 0.5]
 
     c2 = MagicMock()
@@ -266,7 +273,7 @@ def test_collect_local_payload_and_spikes():
 
     payload = collect_local_payload(cells, cell_ids, recording_index)
     assert payload == {
-        "p_1": {
+        CellId("p", 1): {
             "recordings": {
                 "r1": [1.0, 2.0],
                 "neuron.h._ref_t": [1.0, 2.0],

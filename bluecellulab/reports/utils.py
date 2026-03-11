@@ -159,22 +159,32 @@ def build_recording_sites(
     cells : dict[CellId, Any]
         Mapping from CellId to cell-like objects.
     node_ids : list[int]
-        Node IDs to resolve within `population`.
+        List of node IDs for which recordings should be configured.
     population : str
-        Population name used to build CellId(population, node_id).
+        Name of the population to which the cells belong.
     report_type : str
-        "compartment" or "compartment_set".
+        The report type, either 'compartment_set' or 'compartment'.
     report_cfg : dict
         Report configuration.
-    compartment_nodes : list | None
-        Compartment-set entries used when `report_type == "compartment_set"`.
+    compartment_nodes : list or None
+        Optional list of [node_id, section_name, seg_x] defining segment locations
+        for each cell (used if report_type == 'compartment_set').
 
     Returns
     -------
-    dict[int, list[tuple[Any, str, float]]]
-        Mapping `{node_id: [(section_obj, section_name, segx), ...]}`.
+    dict
+        Mapping from node ID to list of recording site tuples:
+        (section_object, section_name, seg_x).
     """
     targets_per_cell: Dict[int, List[Tuple[Any, str, float]]] = {}
+
+    if report_type == "compartment_set" and compartment_nodes is None:
+        logger.warning(
+            "Report type 'compartment_set' requires compartment nodes, but none were found "
+            "for population '%s'. No recording sites will be resolved.",
+            population,
+        )
+        return {}
 
     for node_id in node_ids:
         cell = cells.get(CellId(population, node_id))
@@ -182,8 +192,6 @@ def build_recording_sites(
             continue
 
         if report_type == "compartment_set":
-            if compartment_nodes is None:
-                continue
             targets = cell.resolve_segments_from_compartment_set(node_id, compartment_nodes)
         elif report_type == "compartment":
             targets = cell.resolve_segments_from_config(report_cfg)
@@ -272,24 +280,22 @@ class RecordedCell:
 
 
 def payload_to_cells(
-    payload: Mapping[str, Any],
+    payload: Mapping[CellId, Any],
     sites_index: Mapping[CellId, list[SiteEntry]],
 ) -> Dict[CellId, RecordedCell]:
     """
-    payload: {"pop_gid": {"recordings": {rec_name: [floats...]}}}
-    sites_index: {(pop,gid): [{"report":..., "rec_name":..., "section":..., "segx":...}, ...]}
+    payload: {CellId(...): {"recordings": {rec_name: [floats...]}}}
+    sites_index: {CellId(...): [{"report":..., "rec_name":..., "section":..., "segx":...}, ...]}
     """
     out: Dict[CellId, RecordedCell] = {}
 
-    for key, blob in payload.items():
-        pop, gid_s = key.rsplit("_", 1)
-        gid = int(gid_s)
+    for cell_id, blob in payload.items():
 
         recs = blob.get("recordings", {}) or {}
         recs_np = {name: np.asarray(vals, dtype=np.float32) for name, vals in recs.items()}
 
         by_report: dict[str, list[SiteEntry]] = defaultdict(list)
-        cell_id = CellId(pop, gid)
+
         for site in sites_index.get(cell_id, []):
             by_report[site["report"]].append(site)
 
@@ -333,18 +339,18 @@ def gather_recording_sites(
         for cell_key, sites in rank_dict.items():
             merged[cell_key].extend(sites)
 
-    return dict(merged)
+    return merged
 
 
 def collect_local_payload(
     cells: Dict[CellId, Any],
     cell_ids_for_this_rank: list[CellId],
     recording_index: Dict[CellId, list[str]],
-) -> dict[str, dict[str, dict[str, list[float]]]]:
+) -> dict[CellId, dict[str, Any]]:
     """
     Build rank-local payload: {'pop_gid': {'recordings': {rec_name: trace_list}}}
     """
-    payload: dict[str, dict[str, dict[str, list[float]]]] = {}
+    payload: dict[CellId, dict[str, dict[str, list[float]]]] = {}
 
     for pop, gid in cell_ids_for_this_rank:
         cell_id = CellId(pop, gid)
@@ -356,13 +362,9 @@ def collect_local_payload(
         for rec_name in recording_index.get(cell_id, []):
             recs[rec_name] = cell.get_recording(rec_name).tolist()
 
-        try:
-            recs["neuron.h._ref_t"] = cell.get_recording("neuron.h._ref_t").tolist()
-        except Exception:
-            pass
+        recs["neuron.h._ref_t"] = cell.get_time().tolist()
 
-        key = f"{pop}_{gid}"
-        payload[key] = {"recordings": recs}
+        payload[cell_id] = {"recordings": recs}
 
     return payload
 
