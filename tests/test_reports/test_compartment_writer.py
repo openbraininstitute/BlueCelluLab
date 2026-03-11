@@ -28,16 +28,8 @@ from bluecellulab.reports.writers.compartment import CompartmentReportWriter
 script_dir = Path(__file__).parent.parent
 
 
-# -----------------------------
-# Fixtures (new "RecordedCell-like" API)
-# -----------------------------
 @pytest.fixture
 def mock_cell():
-    """
-    Cell-like object for the new writer API:
-      - .report_sites: dict[report_name -> list[site dicts]]
-      - .get_recording(rec_name) -> np.ndarray
-    """
     cell = MagicMock()
     cell.report_sites = {
         "test_report": [{"rec_name": "rec_0", "section": "soma[0]", "segx": 0.5}]
@@ -57,8 +49,6 @@ def mock_cells(mock_cell):
 
 @pytest.fixture
 def mock_config_node_set():
-    # With the refactor, the writer uses _source_sets only to determine population.
-    # Node selection is reflected by which cells you pass + their report_sites.
     return {
         "name": "test_report",
         "type": "compartment",
@@ -89,7 +79,6 @@ def mock_config_compartment_set():
         "_source_sets": {
             "custom_segments": {
                 "population": "default",
-                # content below is not used by the new writer; kept for realism
                 "elements": {
                     "1": [["dend[0]", 0.3]],
                     "2": [["soma[0]", 0.5]],
@@ -99,9 +88,6 @@ def mock_config_compartment_set():
     }
 
 
-# -----------------------------
-# Helpers
-# -----------------------------
 def make_trace(length: int, value: float) -> np.ndarray:
     return (np.ones(length) * value).astype(np.float32)
 
@@ -118,9 +104,6 @@ def make_cell_for_report(
     return cell
 
 
-# -----------------------------
-# Unit tests for H5 writer
-# -----------------------------
 def test_write_node_set(tmp_path, mock_cells, mock_config_node_set):
     out = tmp_path / "report.h5"
     writer = CompartmentReportWriter(report_cfg=mock_config_node_set, output_path=out, sim_dt=0.1)
@@ -138,10 +121,6 @@ def test_write_node_set(tmp_path, mock_cells, mock_config_node_set):
 
 
 def test_write_compartment_set(tmp_path, mock_config_compartment_set):
-    """
-    New behavior: writer reads per-cell sites from cell.report_sites[report_name].
-    So we do NOT patch build_recording_sites/resolve_source_nodes anymore.
-    """
     out = tmp_path / "report.h5"
 
     c1 = make_cell_for_report(
@@ -178,12 +157,6 @@ def test_write_compartment_set(tmp_path, mock_config_compartment_set):
 
 
 def test_compartment_set_multinode_order(tmp_path):
-    """
-    New behavior replacement for old "trace-mode multinode merge":
-    - we build 3 cell objects for gids 0,1,2
-    - each has one site for report 'trace_merge'
-    - verify the H5 columns are in gid order (because writer sorts cells by gid)
-    """
     out = tmp_path / "trace_merge.h5"
     tlen = 10
 
@@ -234,13 +207,6 @@ def test_compartment_set_multinode_order(tmp_path):
 
 
 def test_compartment_set_multisegment_single_node(tmp_path):
-    """
-    New behavior replacement for old "trace-mode multisegment node":
-    - one cell gid 0
-    - report_sites has 4 sites => 4 columns
-    - node_ids repeats gid for each element
-    - elem_ids is 0..3 and pointers [0,1,2,3,4] (one element per column)
-    """
     out = tmp_path / "trace_multisegment.h5"
     tlen = 10
 
@@ -288,16 +254,7 @@ def test_compartment_set_multisegment_single_node(tmp_path):
         assert np.allclose(data, 42.0)
 
 
-# -----------------------------
-# Integration-ish test
-# -----------------------------
 class TestSimCompartmentSet:
-    """
-    This test only makes sense if the example output files exist and the reporting
-    pipeline still generates both files. If your refactor changes paths/names, update
-    these accordingly.
-    """
-
     def setup_method(self):
         sim_path = (
             script_dir
@@ -309,8 +266,6 @@ class TestSimCompartmentSet:
         self.sim.instantiate_gids(dstut_cells, add_stimuli=True, add_synapses=True)
         self.sim.run()
 
-        # If your new flow requires payload_to_cells(...) then this integration test
-        # should be rewritten. For now, skip if the live cells don't have report_sites/get_recording.
         sample_cell = next(iter(self.sim.cells.values()))
         if not hasattr(sample_cell, "get_recording") or not hasattr(sample_cell, "report_sites"):
             pytest.skip("Live cells do not expose report_sites/get_recording; update integration test to payload flow.")
@@ -327,3 +282,15 @@ class TestSimCompartmentSet:
             / "examples/sim_quick_scx_sonata_multicircuit/output_sonata_compartment_set/soma_compartment_set.h5"
         )
         self.dataset_path = "/report/NodeA/data"
+
+    def test_compartment_compartmentset_match(self):
+        """Compare voltage reports from compartment and compartment_set output."""
+        with h5py.File(self.file1_path, "r") as f1, h5py.File(self.file2_path, "r") as f2:
+            assert self.dataset_path in f1, f"'{self.dataset_path}' not found in {self.file1_path}"
+            assert self.dataset_path in f2, f"'{self.dataset_path}' not found in {self.file2_path}"
+
+            data1 = np.array(f1[self.dataset_path])
+            data2 = np.array(f2[self.dataset_path])
+
+            assert data1.shape == data2.shape, f"Shape mismatch: {data1.shape} != {data2.shape}"
+            assert np.allclose(data1, data2), "Data mismatch in dataset content"

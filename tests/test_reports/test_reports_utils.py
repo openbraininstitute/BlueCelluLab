@@ -159,6 +159,47 @@ def test_prepare_recordings_for_reports_warns_on_rec_mismatch(caplog):
     assert len(sites_index[cell_id]) == 1
 
 
+def test_prepare_recordings_for_reports_populates_area_um2(monkeypatch):
+    cell_id = CellId("popA", 9)
+    targets = [("sec", "soma[0]", 0.5)]
+    cell = DummyCell(targets=targets, rec_names=["rec_soma"])
+    cells = {cell_id: cell}
+
+    cfg = DummyConfig(
+        report_entries={"r1": {"type": "compartment", "cells": "targets", "variable_name": "v"}},
+        node_sets={"targets": {"population": "popA"}},
+    )
+
+    mock_neuron = SimpleNamespace(h=SimpleNamespace(area=lambda _segx, sec: 12.34))
+    monkeypatch.setattr("bluecellulab.reports.utils.neuron", mock_neuron)
+
+    _, sites_index = prepare_recordings_for_reports(cells, cfg)
+
+    assert sites_index[cell_id][0]["area_um2"] == 12.34
+
+
+def test_prepare_recordings_for_reports_area_failure_sets_none(monkeypatch):
+    cell_id = CellId("popA", 10)
+    targets = [("sec", "soma[0]", 0.5)]
+    cell = DummyCell(targets=targets, rec_names=["rec_soma"])
+    cells = {cell_id: cell}
+
+    cfg = DummyConfig(
+        report_entries={"r1": {"type": "compartment", "cells": "targets", "variable_name": "v"}},
+        node_sets={"targets": {"population": "popA"}},
+    )
+
+    def _raise_area(_segx, sec):
+        raise RuntimeError("area unavailable")
+
+    mock_neuron = SimpleNamespace(h=SimpleNamespace(area=_raise_area))
+    monkeypatch.setattr("bluecellulab.reports.utils.neuron", mock_neuron)
+
+    _, sites_index = prepare_recordings_for_reports(cells, cfg)
+
+    assert sites_index[cell_id][0]["area_um2"] is None
+
+
 def test_prepare_recordings_for_reports_unsupported_type():
     cell_id = CellId("popA", 1)
     cells = {cell_id: DummyCell(targets=[], rec_names=[])}
