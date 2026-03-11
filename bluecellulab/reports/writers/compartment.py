@@ -192,8 +192,6 @@ class CompartmentReportWriter(BaseReportWriter):
             data_ds = grp.create_dataset("data", data=data_array.astype(np.float32))
 
             variable = report_cfg.get("variable_name", "v")
-            if variable == "v":
-                data_ds.attrs["units"] = "mV"
 
             units = report_cfg.get("unit")
             if units is None:
