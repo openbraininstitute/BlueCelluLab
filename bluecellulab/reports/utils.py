@@ -141,6 +141,37 @@ def prepare_recordings_for_reports(
                 sites_index[cell_id].append(entry)
                 cell.report_sites[report_name].append(entry)
 
+    for cell_id, cell in cells.items():
+        sec = cell.soma
+        sec_name = sec.name().split(".")[-1]
+        segx = 0.5
+        rec_name = section_to_variable_recording_str(sec, segx, "v")
+
+        if rec_name in recording_index[cell_id]:
+            continue
+
+        report_name = "__default_voltage__"
+        cell.report_sites.setdefault(report_name, [])
+
+        configured = cell.configure_recording(
+            [(sec, sec_name, segx)],
+            "v",
+            report_name,
+        )
+
+        for (sec, sec_name, segx), rec_name in configured:
+            recording_index[cell_id].append(rec_name)
+
+            entry_default_voltage: SiteEntry = {
+                "report": report_name,
+                "rec_name": rec_name,
+                "section": sec_name,
+                "segx": float(segx),
+                "area_um2": None,
+            }
+            sites_index[cell_id].append(entry_default_voltage)
+            cell.report_sites[report_name].append(entry_default_voltage)
+
     return dict(recording_index), dict(sites_index)
 
 

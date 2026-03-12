@@ -35,11 +35,20 @@ from bluecellulab.reports.utils import (
 )
 
 
+class DummySection:
+    def name(self):
+        return "cell.soma[0]"
+
+    def __str__(self):
+        return "soma[0]"
+
+
 class DummyCell:
     def __init__(self, targets, rec_names):
         self.targets = targets
         self.rec_names = rec_names
         self.report_sites: dict[str, list[dict]] = {}
+        self.soma = DummySection()
 
     def resolve_segments_from_config(self, _cfg):
         return self.targets
@@ -47,7 +56,9 @@ class DummyCell:
     def resolve_segments_from_compartment_set(self, _node_id, _compartment_nodes):
         return self.targets
 
-    def configure_recording(self, sites, _variable, _report_name):
+    def configure_recording(self, sites, variable, report_name):
+        if report_name == "__default_voltage__":
+            return [(site, f"default_{variable}_{idx}") for idx, site in enumerate(sites)]
         return list(zip(sites, self.rec_names))
 
 
@@ -134,8 +145,11 @@ def test_prepare_recordings_for_reports_compartment_populates_report_sites(caplo
         recording_index, sites_index = prepare_recordings_for_reports(cells, cfg)
 
     assert not caplog.records
-    assert recording_index[cell_id] == ["rec_soma", "rec_dend"]
-    assert len(sites_index[cell_id]) == 2
+    assert recording_index[cell_id][:2] == ["rec_soma", "rec_dend"]
+    assert len(recording_index[cell_id]) == 3
+    assert len(sites_index[cell_id]) == 3
+    assert "__default_voltage__" in cell.report_sites
+    assert len(cell.report_sites["__default_voltage__"]) == 1
     assert "r1" in cell.report_sites
     assert [s["rec_name"] for s in cell.report_sites["r1"]] == ["rec_soma", "rec_dend"]
 
@@ -155,8 +169,10 @@ def test_prepare_recordings_for_reports_warns_on_rec_mismatch(caplog):
         recording_index, sites_index = prepare_recordings_for_reports(cells, cfg)
 
     assert "Configured 1/2 recording sites" in caplog.text
-    assert recording_index[cell_id] == ["only_one"]
-    assert len(sites_index[cell_id]) == 1
+    assert recording_index[cell_id][0] == "only_one"
+    assert len(recording_index[cell_id]) == 2
+    assert len(sites_index[cell_id]) == 2
+    assert "__default_voltage__" in cell.report_sites
 
 
 def test_prepare_recordings_for_reports_populates_area_um2(monkeypatch):
