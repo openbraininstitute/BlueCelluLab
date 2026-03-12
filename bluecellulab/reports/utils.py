@@ -178,7 +178,6 @@ def prepare_recordings_for_reports(
             sites_index[cell_id].append(entry_default_voltage)
             cell.report_sites[report_name].append(entry_default_voltage)
 
-
     return dict(recording_index), dict(sites_index)
 
 

@@ -34,12 +34,14 @@ from bluecellulab.reports.utils import (
     prepare_recordings_for_reports,
 )
 
+
 class DummySection:
     def name(self):
         return "cell.soma[0]"
 
     def __str__(self):
         return "soma[0]"
+
 
 class DummyCell:
     def __init__(self, targets, rec_names):
