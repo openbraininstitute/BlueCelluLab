@@ -159,24 +159,17 @@ def prepare_recordings_for_reports(
             report_name,
         )
 
-        for (sec, sec_name, segx), rec_name in configured:
-            recording_index[cell_id].append(rec_name)
+        recording_index[cell_id].append(configured[1])
 
-            area_um2 = None
-            try:
-                area_um2 = float(neuron.h.area(segx, sec=sec))
-            except Exception:
-                pass
-
-            entry_default_voltage: SiteEntry = {
-                "report": report_name,
-                "rec_name": rec_name,
-                "section": sec_name,
-                "segx": float(segx),
-                "area_um2": area_um2,
-            }
-            sites_index[cell_id].append(entry_default_voltage)
-            cell.report_sites[report_name].append(entry_default_voltage)
+        entry_default_voltage: SiteEntry = {
+            "report": report_name,
+            "rec_name": rec_name,
+            "section": sec_name,
+            "segx": float(segx),
+            "area_um2": None,
+        }
+        sites_index[cell_id].append(entry_default_voltage)
+        cell.report_sites[report_name].append(entry_default_voltage)
 
     return dict(recording_index), dict(sites_index)
 
