@@ -167,7 +167,7 @@ def prepare_recordings_for_reports(
                 "rec_name": rec_name,
                 "section": sec_name,
                 "segx": float(segx),
-                "area_um2": area_um2,
+                "area_um2": None,
             }
             sites_index[cell_id].append(entry_default_voltage)
             cell.report_sites[report_name].append(entry_default_voltage)
