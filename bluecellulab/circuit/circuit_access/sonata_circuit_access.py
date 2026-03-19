@@ -31,7 +31,7 @@ from bluecellulab.circuit.circuit_access.definition import CircuitAccess, Emodel
 from bluecellulab.circuit import CellId, SynapseProperty
 from bluecellulab.circuit.config import SimulationConfig
 from bluecellulab.circuit.synapse_properties import SynapseProperties
-from bluecellulab.circuit.config import SimulationConfig, SonataSimulationConfig
+from bluecellulab.circuit.config import SonataSimulationConfig
 from bluecellulab.circuit.synapse_properties import (
     properties_from_snap,
     properties_to_snap,
@@ -331,11 +331,10 @@ class SonataCircuitAccess(CircuitAccess):
                 return f"{h5_container_path}/{morphology_name}.h5"
 
         # Check for neurolucida-asc format
-        if alternate_morphologies and "neurolucida-asc" in alternate_morphologies:
-            try:
-                return str(node_population.morph.get_filepath(cell_id.id, extension="asc"))
-            except BluepySnapError:
-                logger.debug(f"Could not get ASC morphology from alternate_morphologies for {cell_id}")
+        try:  # if asc defined in alternate morphology
+            return str(node_population.morph.get_filepath(cell_id.id, extension="asc"))
+        except BluepySnapError:
+            logger.debug(f"No asc morphology found for {cell_id}, trying swc.")
 
         # Fallback to default morphology handling
         try:
