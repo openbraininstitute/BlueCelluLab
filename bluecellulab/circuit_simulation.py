@@ -135,7 +135,7 @@ class CircuitSimulation:
         self.spike_threshold = self.circuit_access.config.spike_threshold
         self.spike_location = self.circuit_access.config.spike_location
 
-        self.projections: list[str] | str | bool = False
+        self.projections: list[str] | str | None = None
 
         condition_parameters = self.circuit_access.config.condition_parameters()
         set_global_condition_parameters(condition_parameters)
@@ -278,6 +278,8 @@ class CircuitSimulation:
 
         if add_projections is True:
             self.projections = self.circuit_access.config.get_all_projection_names()
+        elif add_projections is None or add_projections is False:
+            self.projections = None
         else:
             self.projections = add_projections
 

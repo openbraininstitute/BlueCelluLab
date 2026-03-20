@@ -178,7 +178,7 @@ class SonataCircuitAccess(CircuitAccess):
             return out
 
     def extract_synapses(
-        self, cell_id: CellId, projections: Optional[list[str] | str | bool]
+        self, cell_id: CellId, projections: Optional[list[str] | str]
     ) -> pd.DataFrame:
         """Extract the synapses."""
         snap_node_id = CircuitNodeId(cell_id.population_name, cell_id.id)
@@ -309,6 +309,6 @@ class SonataCircuitAccess(CircuitAccess):
     def node_population_sizes(self) -> dict[str, int]:
         out: dict[str, int] = {}
         for pop_name, node_pop in self._circuit.nodes.items():
-            s = getattr(node_pop, "size", None)
+            s = node_pop.size
             out[str(pop_name)] = int(s() if callable(s) else s)
         return out
