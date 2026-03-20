@@ -14,10 +14,12 @@
 """Unit tests for the circuit_access module."""
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pandas as pd
 import pytest
+from bluepysnap.exceptions import BluepySnapError
 
 from bluecellulab.circuit import CellId, SonataCircuitAccess
 from bluecellulab.circuit.circuit_access import EmodelProperties, get_synapse_connection_parameters
@@ -236,3 +238,141 @@ def test_get_emodel_properties_soma_scaler():
     circuit_access = SonataCircuitAccess(circuit_sonata_quick_scx_config)
     assert circuit_access.get_emodel_properties(CellId("NodeA", 0)).soma_scaler == 1.0
     assert circuit_access.get_emodel_properties(CellId("NodeA", 1)).soma_scaler == 1.002
+
+
+def test_get_target_cell_ids_with_population_filter():
+    access = object.__new__(SonataCircuitAccess)
+    access.config = SimpleNamespace(
+        get_node_sets=lambda: {"target": {"population": "popA", "node_id": [1, 2]}}
+    )
+    access._circuit = SimpleNamespace(
+        nodes={"popA": SimpleNamespace(ids=lambda _: [1, 2])}
+    )
+
+    result = SonataCircuitAccess.get_target_cell_ids(access, "target")
+
+    assert result == {CellId("popA", 1), CellId("popA", 2)}
+
+
+def test_get_target_cell_ids_without_population_filter():
+    access = object.__new__(SonataCircuitAccess)
+    access.config = SimpleNamespace(get_node_sets=lambda: {"target": {"layer": "L23"}})
+    access._circuit = SimpleNamespace(
+        nodes=SimpleNamespace(
+            ids=lambda _: [
+                SimpleNamespace(population="popA", id=1),
+                SimpleNamespace(population="popB", id=5),
+            ]
+        )
+    )
+
+    result = SonataCircuitAccess.get_target_cell_ids(access, "target")
+
+    assert result == {CellId("popA", 1), CellId("popB", 5)}
+
+
+def test_morph_filepath_h5v1_container_path():
+    access = object.__new__(SonataCircuitAccess)
+    node_population = SimpleNamespace(
+        config={"alternate_morphologies": {"h5v1": "/data/merged-morphologies.h5"}},
+        get=lambda _: {"morphology": "cell_42"},
+        morph=SimpleNamespace(get_filepath=lambda *_args, **_kwargs: "unused"),
+    )
+    access._circuit = SimpleNamespace(nodes={"popA": node_population})
+
+    result = SonataCircuitAccess.morph_filepath(access, CellId("popA", 42))
+
+    assert result == "/data/merged-morphologies.h5/cell_42.h5"
+
+
+def test_morph_filepath_h5v1_empty_name_falls_back_to_asc():
+    access = object.__new__(SonataCircuitAccess)
+    node_population = SimpleNamespace(
+        config={
+            "alternate_morphologies": {
+                "h5v1": "/data/merged-morphologies.h5",
+                "neurolucida-asc": "/data/asc",
+            }
+        },
+        get=lambda _: {"morphology": ""},
+        morph=SimpleNamespace(get_filepath=lambda *_args, **kwargs: "/data/asc/cell.asc" if kwargs.get("extension") == "asc" else "/data/swc/cell.swc"),
+    )
+    access._circuit = SimpleNamespace(nodes={"popA": node_population})
+
+    result = SonataCircuitAccess.morph_filepath(access, CellId("popA", 42))
+
+    assert result == "/data/asc/cell.asc"
+
+
+def test_morph_filepath_asc_error_falls_back_to_default():
+    access = object.__new__(SonataCircuitAccess)
+
+    def _get_filepath(*_args, **kwargs):
+        if kwargs.get("extension") == "asc":
+            raise BluepySnapError("asc not available")
+        return "/data/swc/cell.swc"
+
+    node_population = SimpleNamespace(
+        config={"alternate_morphologies": {"neurolucida-asc": "/data/asc"}},
+        get=lambda _: {"morphology": "cell_42"},
+        morph=SimpleNamespace(get_filepath=_get_filepath),
+    )
+    access._circuit = SimpleNamespace(nodes={"popA": node_population})
+
+    result = SonataCircuitAccess.morph_filepath(access, CellId("popA", 42))
+
+    assert result == "/data/swc/cell.swc"
+
+
+def test_morph_filepath_raises_informative_error_on_full_failure():
+    access = object.__new__(SonataCircuitAccess)
+    node_population = SimpleNamespace(
+        config={},
+        get=lambda _: {"morphology": "cell_42"},
+        morph=SimpleNamespace(
+            get_filepath=lambda *_args, **_kwargs: (_ for _ in ()).throw(BluepySnapError("missing"))
+        ),
+    )
+    access._circuit = SimpleNamespace(nodes={"popA": node_population})
+
+    with pytest.raises(BluepySnapError, match="Could not determine morphology path"):
+        SonataCircuitAccess.morph_filepath(access, CellId("popA", 42))
+
+
+def test_emodel_path_fallback_from_model_template():
+    access = object.__new__(SonataCircuitAccess)
+
+    class _Models:
+        @staticmethod
+        def get_filepath(_cell_id):
+            raise BluepySnapError("missing models helper")
+
+    node_population = SimpleNamespace(
+        models=_Models(),
+        get=lambda _: {"model_template": "hoc:MyTemplate"},
+        config={"biophysical_neuron_models_dir": "/data/emodels"},
+    )
+    access._circuit = SimpleNamespace(nodes={"popA": node_population})
+
+    result = SonataCircuitAccess.emodel_path(access, CellId("popA", 1))
+
+    assert result == "/data/emodels/MyTemplate.hoc"
+
+
+def test_emodel_path_raises_on_fallback_failure():
+    access = object.__new__(SonataCircuitAccess)
+
+    class _Models:
+        @staticmethod
+        def get_filepath(_cell_id):
+            raise BluepySnapError("missing models helper")
+
+    node_population = SimpleNamespace(
+        models=_Models(),
+        get=lambda _: {"model_template": "not_hoc_format"},
+        config={},
+    )
+    access._circuit = SimpleNamespace(nodes={"popA": node_population})
+
+    with pytest.raises(BluepySnapError, match="Could not determine emodel path"):
+        SonataCircuitAccess.emodel_path(access, CellId("popA", 1))
