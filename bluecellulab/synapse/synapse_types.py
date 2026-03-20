@@ -82,6 +82,7 @@ class Synapse:
         self.source_popid, self.target_popid = popids
 
         self.pre_local_id = int(self.syn_description[SynapseProperty.PRE_GID])
+        self.pre_gid = int(self.syn_description[SynapseProperty.PRE_GID])
         self.post_gid = int(post_gid)
 
         self.hoc_args = hoc_args

@@ -1024,21 +1024,9 @@ class CircuitSimulation:
         return self.gids.global_gid(pop, gid)
 
     def _build_gid_namespace(self) -> GidNamespace:
-        ca = self.circuit_access  # SonataCircuitAccess
-        sizes = ca.node_population_sizes()  # pop -> N nodes
-
+        sizes = self.circuit_access.node_population_sizes()
         pops_sorted = sorted(sizes.keys())
-        max_raw = {p: max(0, int(n) - 1) for p, n in sizes.items()}  # ids 0..N-1
-
-        # compute only on rank 0 and broadcast
-        if self.pc is not None:
-            if int(self.pc.id()) == 0:
-                pop_offset = self._compute_offsets_from_max(pops_sorted, max_raw)
-            else:
-                pop_offset = None
-            pop_offset = self.pc.py_broadcast(pop_offset, 0)
-            return GidNamespace(pop_offset)
-
+        max_raw = {p: max(0, int(n) - 1) for p, n in sizes.items()}
         pop_offset = self._compute_offsets_from_max(pops_sorted, max_raw)
         return GidNamespace(pop_offset)
 
