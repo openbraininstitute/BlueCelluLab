@@ -143,7 +143,7 @@ class TestInjector:
         amp = 10
         stop_time = 10
         voltages = [20, 30]
-        durations = [2, 3, 5]
+        durations = [2, 3]
         rs = 1
         seclamp_obj = self.cell.add_voltage_clamp(
             stop_time=stop_time, level=amp, rs=rs, levels=voltages, durations=durations,
@@ -158,6 +158,7 @@ class TestInjector:
         self.sim.run(10, dt=0.2, cvode=False)
         voltage_rec = np.array(v_rec.to_python())
         # has to add one 10 at the beginning for t=0
+        # last value (30) will last until clamp is off
         assert (voltage_rec == np.array(
             [
                 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,  # 10 + 1 extra for t=0

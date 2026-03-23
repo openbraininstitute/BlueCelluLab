@@ -639,13 +639,14 @@ class TestCellV6:
         assert seg_1 == 0.25
 
     def test_configure_recording_success(self):
-        sites = [(None, "soma[0]", 0.5), (None, "dend[0]", 0.3)]
+        dend = MagicMock(name="dend_section")
+        sites = [(None, "soma[0]", 0.5), (dend, "dend[0]", 0.3)]
         self.cell.add_variable_recording = MagicMock()
 
         self.cell.configure_recording(sites, "v", "test_report")
 
         self.cell.add_variable_recording.assert_any_call(variable="v", section=None, segx=0.5)
-        self.cell.add_variable_recording.assert_any_call(variable="v", section=None, segx=0.3)
+        self.cell.add_variable_recording.assert_any_call(variable="v", section=dend, segx=0.3)
 
         # Optional: check number of total calls
         assert self.cell.add_variable_recording.call_count == 2
