@@ -19,10 +19,6 @@ from bluecellulab.circuit import CellId, SynapseProperty
 from bluecellulab.circuit.config.sections import ConnectionOverrides
 
 
-# -----------------------------
-# Fakes / helpers
-# -----------------------------
-
 class FakeSonataCircuitAccess:
     """Minimal SONATA CircuitAccess stub for GID namespace tests."""
     def __init__(self, sizes: dict[str, int]):
@@ -47,9 +43,7 @@ class FakePC:
 
     def py_gather(self, data, root):
         self.gathered = (data, root)
-        # In MPI, rank0 sees list of all ranks' contributions.
-        # Our FakePC can be configured to return a provided gather_result.
-        return self.gather_result if self.gather_result is not None else [data]
+        return self.gather_result or [data]
 
     def py_broadcast(self, value, root):
         self.broadcasted = (value, root)
@@ -94,24 +88,14 @@ def make_sim(*, pc=None, circuit_access=None):
     sim.dt = 0.1
     sim.spike_threshold = -20.0
     sim.spike_location = "soma"
-
-    # New fields introduced by refactor
     sim.gids = None
     sim.projections = False
-
-    # SONATA-only
     sim.circuit_format = circuit_simulation.CircuitFormat.SONATA
     sim.circuit_access = circuit_access if circuit_access is not None else FakeSonataCircuitAccess({})
-
-    # Default empty cells
     sim.cells = {}
 
     return sim
 
-
-# -----------------------------
-# Tests: connection overrides
-# -----------------------------
 
 def test_add_connections_skips_zero_weight_override(monkeypatch):
     sim = make_sim(pc=None)
@@ -218,10 +202,6 @@ def test_add_connections_applies_last_matching_override(monkeypatch):
     assert conn.post_netcon_delay == pytest.approx(4.0)
     assert conn.post_netcon_weight == pytest.approx(3.0)
 
-
-# -----------------------------
-# Tests: GID namespace behavior
-# -----------------------------
 
 def test_gid_namespace_offsets_are_1000_blocked_and_1_based():
     sim = make_sim(pc=None, circuit_access=FakeSonataCircuitAccess({"PopA": 3, "PopB": 2}))
