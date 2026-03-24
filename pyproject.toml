@@ -16,6 +16,7 @@ classifiers = [
     "Operating System :: POSIX",
     "Topic :: Scientific/Engineering",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Utilities",
 ]
 keywords = [
@@ -28,11 +29,12 @@ keywords = [
     "Blue Brain Project",
 ]
 dependencies = [
-    "NEURON>=8.0.2,<9.0.0",
-    "numpy>=2.0.0,<2.4",
+    "NEURON>=8.0.2",
+    "numpy>=2.0.0,<2.5",
     "matplotlib>=3.0.0,<4.0.0",
     "pandas>=1.0.0,<3.0.0",
     "bluepysnap>=3.0.0,<4.0.0",
+    "libsonata>=0.1.34",
     "pydantic>=2.5.2,<3.0.0",
     "typing-extensions>=4.8.0",
     "networkx>=3.1",

@@ -204,6 +204,10 @@ class BluepySimulationConfig:
     ) -> None:
         self._connection_overrides.append(connection_override)
 
+    def get_modifications(self) -> list:
+        """Bluepy configs do not support modifications."""
+        return []
+
     def get_compartment_sets(self) -> dict[str, dict[str, Any]]:
         """Bluepy configs do not support compartment_sets."""
         raise NotImplementedError("Compartment sets are only supported for SonataSimulationConfig.")

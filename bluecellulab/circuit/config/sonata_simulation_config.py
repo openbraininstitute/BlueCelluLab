@@ -19,7 +19,12 @@ from pathlib import Path
 from typing import Optional
 import warnings
 
-from bluecellulab.circuit.config.sections import Conditions, ConnectionOverrides
+from bluecellulab.circuit.config.sections import (
+    Conditions,
+    ConnectionOverrides,
+    ModificationBase,
+    modification_from_libsonata,
+)
 from bluecellulab.stimulus.circuit_stimulus_definitions import Stimulus
 
 from bluepysnap import Simulation as SnapSimulation
@@ -66,33 +71,49 @@ class SonataSimulationConfig:
         for value in inputs.values():
             # Validate mutual exclusivity and existence of compartment_set
             if "compartment_set" in value and "node_set" in value:
-                raise ValueError("Stimulus entry must not include both 'node_set' and 'compartment_set'.")
+                raise ValueError(
+                    "Stimulus entry must not include both 'node_set' and 'compartment_set'."
+                )
 
             if "compartment_set" in value:
                 if compartment_sets is None:
-                    raise ValueError("SONATA simulation config references 'compartment_set' in inputs but no 'compartment_sets_file' is configured.")
+                    raise ValueError(
+                        "SONATA simulation config references 'compartment_set' in inputs but no 'compartment_sets_file' is configured."
+                    )
                 comp_name = value["compartment_set"]
                 if comp_name not in compartment_sets:
-                    raise ValueError(f"Compartment set '{comp_name}' not found in compartment_sets file.")
+                    raise ValueError(
+                        f"Compartment set '{comp_name}' not found in compartment_sets file."
+                    )
                 # Validate the list: must be list of triples, sorted and unique by (node_id, sec_ref, seg)
                 comp_entry = compartment_sets[comp_name]
                 comp_nodes = comp_entry.get("compartment_set")
                 if comp_nodes is None:
-                    raise ValueError(f"Compartment set '{comp_name}' does not contain 'compartment_set' key.")
+                    raise ValueError(
+                        f"Compartment set '{comp_name}' does not contain 'compartment_set' key."
+                    )
                 # Validate duplicates and sorted order
                 try:
                     last = None
                     for trip in comp_nodes:
                         if not (isinstance(trip, list) and len(trip) >= 3):
-                            raise ValueError(f"Invalid compartment_set entry '{trip}' in '{comp_name}'; expected [node_id, section, seg].")
+                            raise ValueError(
+                                f"Invalid compartment_set entry '{trip}' in '{comp_name}'; expected [node_id, section, seg]."
+                            )
                         key = (trip[0], trip[1], trip[2])
                         if last is not None and key < last:
-                            raise ValueError(f"Compartment list for '{comp_name}' must be sorted ascending.")
+                            raise ValueError(
+                                f"Compartment list for '{comp_name}' must be sorted ascending."
+                            )
                         if last == key:
-                            raise ValueError(f"Compartment list for '{comp_name}' contains duplicate entry {key}.")
+                            raise ValueError(
+                                f"Compartment list for '{comp_name}' contains duplicate entry {key}."
+                            )
                         last = key
                 except TypeError:
-                    raise ValueError(f"Compartment list for '{comp_name}' contains non-comparable entries.")
+                    raise ValueError(
+                        f"Compartment list for '{comp_name}' contains non-comparable entries."
+                    )
 
             stimulus = Stimulus.from_sonata(value, config_dir=config_dir)
             if stimulus:
@@ -104,6 +125,12 @@ class SonataSimulationConfig:
         """Returns parameters of global condition block of sonataconfig."""
         condition_object = self.impl.conditions
         return Conditions.from_sonata(condition_object)
+
+    @lru_cache(maxsize=1)
+    def get_modifications(self) -> list[ModificationBase]:
+        """Returns the list of modifications from the conditions block."""
+        mods = self.impl.conditions.modifications()
+        return [modification_from_libsonata(m) for m in mods]
 
     @lru_cache(maxsize=1)
     def _connection_entries(self) -> list[ConnectionOverrides]:
@@ -126,7 +153,7 @@ class SonataSimulationConfig:
         full_path = Path(filepath)
         if config_dir is not None and not full_path.is_absolute():
             full_path = Path(config_dir) / filepath
-        with open(full_path, 'r') as f:
+        with open(full_path, "r") as f:
             return json.load(f)
 
     @lru_cache(maxsize=1)
@@ -145,7 +172,9 @@ class SonataSimulationConfig:
             base_node_sets.update(sim_node_sets)
 
         if not base_node_sets:
-            raise ValueError("No 'node_sets_file' found in simulation or circuit config.")
+            raise ValueError(
+                "No 'node_sets_file' found in simulation or circuit config."
+            )
 
         return base_node_sets
 
@@ -156,6 +185,8 @@ class SonataSimulationConfig:
         Each key is a report name, and the value is its configuration.
         """
         reports = self.impl.config.get("reports", {})
+        if reports is None:
+            return {}
         if not isinstance(reports, dict):
             raise ValueError("Invalid format for 'reports' in SONATA config.")
         return reports
@@ -215,8 +246,7 @@ class SonataSimulationConfig:
     @property
     def duration(self) -> Optional[float]:
         warnings.warn(
-            "`duration` is deprecated. Use `tstop` instead.",
-            DeprecationWarning
+            "`duration` is deprecated. Use `tstop` instead.", DeprecationWarning
         )
         return self.tstop
 
@@ -253,10 +283,7 @@ class SonataSimulationConfig:
     def extracellular_calcium(self) -> Optional[float]:
         return self.condition_parameters().extracellular_calcium
 
-    def add_connection_override(
-        self,
-        connection_override: ConnectionOverrides
-    ) -> None:
+    def add_connection_override(self, connection_override: ConnectionOverrides) -> None:
         self._connection_overrides.append(connection_override)
 
     def _get_config_dir(self):

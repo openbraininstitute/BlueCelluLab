@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Dict
+from typing import Any, Optional, Dict
+
+from bluecellulab.circuit.node_id import CellId
 from bluecellulab.reports.writers import get_writer
 from bluecellulab.reports.utils import SUPPORTED_REPORT_TYPES, extract_spikes_from_cells  # helper you already have / write
 
@@ -30,31 +32,36 @@ class ReportManager:
 
     def write_all(
         self,
-        cells_or_traces: Dict,
-        spikes_by_pop: Optional[Dict[str, Dict[int, list]]] = None,
+        cells: Dict[CellId, Any],
+        spikes_by_pop: Optional[Dict[str, Dict[int, list[float]]]] = None,
     ):
-        """Write all configured reports (compartment and spike) in SONATA
-        format.
+        """Write all configured SONATA reports (compartment and spike).
+
+        `cells` maps CellId to live Cell objects or recording proxies.
+        For compartment reports each entry must provide:
+            - ``report_sites``: ``{report_name: [site_dict, ...]}``
+            - ``get_recording(rec_name)`` → recorded trace
+
+        If ``spikes_by_pop`` is not provided, spike times are obtained from the
+        cells via ``get_recorded_spikes(location=..., threshold=...)``.
 
         Parameters
         ----------
-        cells_or_traces : dict
-            A dictionary mapping (population, gid) to either:
-            - Cell objects with recorded data (used in single-process simulations), or
-            - Precomputed trace dictionaries, e.g., {"voltage": ndarray}, typically gathered across ranks in parallel runs.
+        cells : Dict[CellId, Any]
+            Cell objects or proxies exposing recordings and report topology.
 
-        spikes_by_pop : dict, optional
-            A precomputed dictionary of spike times by population.
-            If not provided, spike times are extracted from `cells_or_traces`.
-
-        Notes
-        -----
-        In parallel simulations, you must gather all traces and spikes to rank 0 and pass them here.
+        spikes_by_pop : dict[str, dict[int, list[float]]], optional
+            Precomputed spikes ``{population: {gid: [times...]}}``. If omitted,
+            spikes are extracted from the cells.
         """
-        self._write_voltage_reports(cells_or_traces)
-        self._write_spike_report(spikes_by_pop or extract_spikes_from_cells(cells_or_traces, location=self.cfg.spike_location, threshold=self.cfg.spike_threshold))
+        self._write_compartment_reports(cells)
+        self._write_spike_report(
+            spikes_by_pop or extract_spikes_from_cells(
+                cells, location=self.cfg.spike_location, threshold=self.cfg.spike_threshold
+            )
+        )
 
-    def _write_voltage_reports(self, cells_or_traces):
+    def _write_compartment_reports(self, cells):
         for name, rcfg in self.cfg.get_report_entries().items():
             if rcfg.get("type") not in SUPPORTED_REPORT_TYPES:
                 continue
@@ -83,9 +90,9 @@ class ReportManager:
 
             out_path = self.cfg.report_file_path(rcfg, name)
             writer = get_writer("compartment")(rcfg, out_path, self.dt)
-            writer.write(cells_or_traces, self.cfg.tstart, self.cfg.tstop)
+            writer.write(cells, self.cfg.tstart, self.cfg.tstop)
 
-    def _write_spike_report(self, spikes_by_pop):
+    def _write_spike_report(self, spikes_by_pop: Dict[str, Dict[int, list[float]]]):
         out_path = self.cfg.spikes_file_path
         writer = get_writer("spikes")({}, out_path, self.dt)
         writer.write(spikes_by_pop)

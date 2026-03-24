@@ -29,7 +29,7 @@ from bluecellulab.circuit.circuit_access.definition import CircuitAccess, Emodel
 from bluecellulab.circuit import CellId, SynapseProperty
 from bluecellulab.circuit.config import SimulationConfig
 from bluecellulab.circuit.synapse_properties import SynapseProperties
-from bluecellulab.circuit.config import SimulationConfig, SonataSimulationConfig
+from bluecellulab.circuit.config import SonataSimulationConfig
 from bluecellulab.circuit.synapse_properties import (
     properties_from_snap,
     properties_to_snap,
@@ -298,7 +298,7 @@ class SonataCircuitAccess(CircuitAccess):
         node_population = self._circuit.nodes[cell_id.population_name]
         try:  # if asc defined in alternate morphology
             return str(node_population.morph.get_filepath(cell_id.id, extension="asc"))
-        except BluepySnapError as e:
+        except BluepySnapError:
             logger.debug(f"No asc morphology found for {cell_id}, trying swc.")
             return str(node_population.morph.get_filepath(cell_id.id))
 
