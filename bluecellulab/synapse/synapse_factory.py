@@ -24,14 +24,14 @@ import pandas as pd
 
 import bluecellulab
 from bluecellulab.exceptions import BluecellulabError
-from bluecellulab.synapse import Synapse, GabaabSynapse, AmpanmdaSynapse, GluSynapse
+from bluecellulab.synapse import Synapse, GabaabSynapse, AmpanmdaSynapse, GluSynapse, Exp2Syn
 from bluecellulab.circuit.config.sections import Conditions
 from bluecellulab.circuit.synapse_properties import SynapseProperties, SynapseProperty
 from bluecellulab.synapse.synapse_types import SynapseHocArgs
 from bluecellulab.type_aliases import NeuronSection
 
 
-SynapseType = Enum("SynapseType", "GABAAB AMPANMDA GLUSYNAPSE")
+SynapseType = Enum("SynapseType", "GABAAB AMPANMDA GLUSYNAPSE ALLEN_CHEMICAL ALLEN_POINT")
 
 logger = logging.getLogger(__name__)
 
@@ -65,10 +65,15 @@ class SynapseFactory:
         elif syn_type == SynapseType.AMPANMDA:
             synapse = AmpanmdaSynapse(cell.cell_id, syn_hoc_args, syn_id, syn_description,
                                       popids, extracellular_calcium)
-        else:
+        elif syn_type == SynapseType.GLUSYNAPSE:
             synapse = GluSynapse(cell.cell_id, syn_hoc_args, syn_id, syn_description,
                                  popids, extracellular_calcium)
-
+        elif syn_type == SynapseType.ALLEN_CHEMICAL:
+            synapse = Exp2Syn(cell.cell_id, syn_hoc_args, syn_id, syn_description,
+                                 popids, extracellular_calcium)
+        elif syn_type == SynapseType.ALLEN_POINT:
+            synapse = Exp2Syn(cell.cell_id, syn_hoc_args, syn_id, syn_description,
+                                 popids, extracellular_calcium)
         synapse = cls.apply_connection_modifiers(connection_modifiers, synapse)
 
         return synapse
@@ -88,6 +93,9 @@ class SynapseFactory:
         syn_description: pd.Series,
     ) -> SynapseType:
         """Returns the type of synapse to be created."""
+        if not SynapseProperty.TYPE in syn_description:
+            return SynapseType.ALLEN_POINT
+
         is_inhibitory: bool = int(syn_description[SynapseProperty.TYPE]) < 100
         all_plasticity_props_available: bool = all(
             x in syn_description and syn_description[x] is not None and not math.isnan(syn_description[x])

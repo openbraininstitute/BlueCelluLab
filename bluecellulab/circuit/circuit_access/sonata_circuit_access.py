@@ -180,7 +180,8 @@ class SonataCircuitAccess(CircuitAccess):
     def extract_synapses(
         self, cell_id: CellId, projections: Optional[list[str] | str]
     ) -> pd.DataFrame:
-        """Extract the synapses.
+        """Extract the synapses. Checks available fields to determine which are present in
+        the edge file to determine the properties to extract.
 
         If projections is None, all the synapses are extracted.
         """
@@ -201,7 +202,10 @@ class SonataCircuitAccess(CircuitAccess):
 
                 # remove optional properties if they are not present
                 for optional_property in [SynapseProperty.U_HILL_COEFFICIENT,
-                                          SynapseProperty.CONDUCTANCE_RATIO]:
+                                          SynapseProperty.CONDUCTANCE_RATIO,
+                                          SynapseProperty.AFFERENT_SECTION_POS,
+                                          SynapseProperty.POST_SEGMENT_ID,
+                                          SynapseProperty.POST_SEGMENT_OFFSET]:
                     if optional_property.to_snap() not in edge_population.property_names:
                         edge_properties.remove(optional_property)
 
@@ -211,6 +215,20 @@ class SonataCircuitAccess(CircuitAccess):
                     for x in SynapseProperties.plasticity
                 ):
                     edge_properties += list(SynapseProperties.plasticity)
+
+                # check for allen instance - replace the entire edge_properties list as appropriate
+                # properties for allen point/chemical neuron connection type edges
+                if not SynapseProperty.TYPE in edge_population.property_names:
+                    if all(
+                        x in edge_population.property_names
+                        for x in SynapseProperties.allen_point
+                    ) and len(edge_population.property_names) == len(SynapseProperties.allen_point):
+                        edge_properties = list(SynapseProperties.allen_point)
+                    if all(
+                        x in edge_population.property_names
+                        for x in SynapseProperties.allen_chemical
+                    ):
+                        edge_properties = list(SynapseProperties.allen_chemical)
 
                 snap_properties = properties_to_snap(edge_properties)
                 synapses: pd.DataFrame = edge_population.get(afferent_edges, snap_properties)
