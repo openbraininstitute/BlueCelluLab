@@ -207,13 +207,13 @@ def test_gid_namespace_offsets_are_1000_blocked_and_1_based():
     sim = make_sim(pc=None, circuit_access=FakeSonataCircuitAccess({"PopA": 3, "PopB": 2}))
     sim.gids = sim._build_gid_namespace()
 
-    # PopA: offset 0, so gid = local_id + 1
-    assert sim.global_gid("PopA", 0) == 1
-    assert sim.global_gid("PopA", 2) == 3
+    # PopA: offset 0, so gid = local_id
+    assert sim.global_gid("PopA", 0) == 0
+    assert sim.global_gid("PopA", 2) == 2
 
     # PopB: should begin at the next 1000-block after PopA is filled
-    assert sim.global_gid("PopB", 0) == 1001
-    assert sim.global_gid("PopB", 1) == 1002
+    assert sim.global_gid("PopB", 0) == 1000
+    assert sim.global_gid("PopB", 1) == 1001
 
 
 def test_gid_namespace_does_not_depend_on_projections():

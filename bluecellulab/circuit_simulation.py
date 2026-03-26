@@ -746,8 +746,8 @@ class CircuitSimulation:
 
                 if real_synapse_connection:
                     if (
-                            user_pre_spike_trains is not None
-                            and pre_local_id in user_pre_spike_trains
+                        user_pre_spike_trains is not None
+                        and pre_local_id in user_pre_spike_trains
                     ):
                         raise BluecellulabError(
                             """Specifying prespike trains of real connections"""
@@ -1154,10 +1154,29 @@ class CircuitSimulation:
             emodel_properties=cell_kwargs["emodel_properties"],
         )
 
-    def global_gid(self, pop: str, gid: int) -> int:
+    def global_gid(self, pop: str, local_id: int) -> int:
+        """Convert a population name and local ID to a global GID.
+
+        Parameters
+        ----------
+        pop : str
+            Population name.
+        local_id : int
+            Local ID within the population.
+
+        Returns
+        -------
+        int
+            Global GID.
+
+        Raises
+        ------
+        RuntimeError
+            If GID namespace is not initialized.
+        """
         if self.gids is None:
             raise RuntimeError("GID namespace not initialized yet.")
-        return self.gids.global_gid(pop, gid)
+        return self.gids.global_gid(pop, local_id)
 
     def _build_gid_namespace(self) -> GidNamespace:
         sizes = self.circuit_access.node_population_sizes()

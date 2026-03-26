@@ -81,7 +81,6 @@ class Synapse:
 
         self.source_popid, self.target_popid = popids
 
-        self.pre_local_id = int(self.syn_description[SynapseProperty.PRE_GID])
         self.pre_gid = int(self.syn_description[SynapseProperty.PRE_GID])
         self.post_gid = int(post_gid)
 
@@ -148,7 +147,7 @@ class Synapse:
         """
         rng_settings = RNGSettings.get_instance()
         if rng_settings.mode == "Random123":
-            self.randseed1 = self.post_gid + 250
+            self.randseed1 = self.post_gid + 1 + 250  # convert 0-based GID to 1-based for RNG seeding (Neurodamus convention)
             self.randseed2 = self.syn_id.sid + 100
             self.randseed3 = self.source_popid * 65536 + self.target_popid + \
                 rng_settings.synapse_seed + 300
@@ -210,7 +209,7 @@ class Synapse:
         synapse_dict: dict[str, Any] = {}
 
         synapse_dict['synapse_id'] = self.syn_id
-        synapse_dict['pre_cell_id'] = self.pre_local_id
+        synapse_dict['pre_cell_id'] = self.pre_gid
         synapse_dict['post_cell_id'] = self.post_cell_id.id
         synapse_dict['syn_description'] = self.syn_description.to_dict()
         # if keys are enum make them str

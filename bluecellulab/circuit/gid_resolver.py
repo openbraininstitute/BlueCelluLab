@@ -20,4 +20,4 @@ class GidNamespace:
     pop_offset: dict[str, int]
 
     def global_gid(self, pop: str, local_id: int) -> int:
-        return int(self.pop_offset[pop]) + int(local_id) + 1  # 1-based indexing to mirror Neurodamus synapse seeding implementation
+        return int(self.pop_offset[pop]) + int(local_id)  # 0-based
