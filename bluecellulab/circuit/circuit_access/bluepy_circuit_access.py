@@ -360,6 +360,9 @@ class BluepyCircuitAccess(CircuitAccess):
     def emodel_path(self, cell_id: CellId) -> str:
         return os.path.join(self._emodels_dir, f"{self._fetch_emodel_name(cell_id)}.hoc")
 
+    def node_population_sizes(self):
+        raise NotImplementedError
+
     @property
     def _emodels_dir(self) -> str:
         return self.config.impl.Run['METypePath']
