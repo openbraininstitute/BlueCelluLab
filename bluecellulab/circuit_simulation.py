@@ -309,8 +309,6 @@ class CircuitSimulation:
         else:
             self.projections = add_projections
 
-        self._add_cells(cell_ids)
-
         need_gids = (
             add_synapses
             or (self.pc is not None)
@@ -322,6 +320,8 @@ class CircuitSimulation:
 
         if need_gids:
             self.gids = self._build_gid_namespace()
+
+        self._add_cells(cell_ids)
 
         self._apply_modifications()
         if add_synapses:
@@ -575,15 +575,12 @@ class CircuitSimulation:
                     syn_description["target_popid"],
                 )
 
-                post_gid = self.global_gid(cell_id.population_name, cell_id.id)
-
                 self._instantiate_synapse(
                     cell_id=cell_id,
                     syn_id=idx,  # type: ignore
                     syn_description=syn_description,
                     add_minis=add_minis,
                     popids=popids,
-                    post_gid=post_gid
 
                 )
             logger.info(f"Added {syn_descriptions} synapses for gid {cell_id}")
@@ -833,7 +830,9 @@ class CircuitSimulation:
         self.cells = CellDict()
 
         for cell_id in cell_ids:
-            self.cells[cell_id] = cell = self.create_cell_from_circuit(cell_id)
+            cell = self.create_cell_from_circuit(cell_id)
+            cell.post_gid = self.global_gid(cell_id.population_name, cell_id.id)
+            self.cells[cell_id] = cell
             if self.circuit_access.node_properties_available:
                 cell.connect_to_circuit(SonataProxy(cell_id, self.circuit_access))
 
@@ -847,7 +846,7 @@ class CircuitSimulation:
         if modifications:
             apply_modifications(self.cells, modifications, self.circuit_access)
 
-    def _instantiate_synapse(self, cell_id: CellId, syn_id: SynapseID, syn_description, post_gid: int,
+    def _instantiate_synapse(self, cell_id: CellId, syn_id: SynapseID, syn_description,
                              add_minis=False, popids=(0, 0)) -> None:
         """Instantiate one synapse for a given gid, syn_id and
         syn_description."""
@@ -865,8 +864,7 @@ class CircuitSimulation:
 
             self.cells[cell_id].add_replay_synapse(
                 syn_id, syn_description, syn_connection_parameters, condition_parameters,
-                popids=popids, extracellular_calcium=self.circuit_access.config.extracellular_calcium,
-                post_gid=post_gid)
+                popids=popids, extracellular_calcium=self.circuit_access.config.extracellular_calcium)
             if add_minis:
                 mini_frequencies = self.circuit_access.fetch_mini_frequencies(cell_id)
                 logger.debug(

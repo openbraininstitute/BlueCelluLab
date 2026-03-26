@@ -60,10 +60,11 @@ class TestSynapseFactory:
             'SpontMinis': 0.0,
             'SynapseConfigure': ['%s.Use = 1 %s.Use_GB = 1 %s.Use_p = 1 %s.gmax0_AMPA = gmax_p_AMPA %s.rho_GB = 1 %s.rho0_GB = 1 %s.gmax_AMPA = %s.gmax_p_AMPA']
         }
-        post_gid = 1
+
+        self.cell.post_gid = 0
 
         synapse = SynapseFactory.create_synapse(
-            self.cell, syn_id, self.syn_description, condition_parameters, popids, extracellular_calcium, connection_modifiers, post_gid
+            self.cell, syn_id, self.syn_description, condition_parameters, popids, extracellular_calcium, connection_modifiers
         )
         assert isinstance(synapse, GluSynapse)
         assert synapse.weight == connection_modifiers["Weight"]

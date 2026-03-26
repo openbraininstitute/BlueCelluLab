@@ -104,6 +104,7 @@ class Cell(InjectableMixin, PlottableMixin):
             cell_id = CellId("", Cell.last_id)
             Cell.last_id += 1
         self.cell_id = cell_id
+        self.post_gid: int | None = None
 
         # Load the template
         neuron_template = NeuronTemplate(template_path, morphology_path, template_format, emodel_properties)
@@ -395,8 +396,7 @@ class Cell(InjectableMixin, PlottableMixin):
                            connection_modifiers: dict,
                            condition_parameters: Conditions,
                            popids: tuple[int, int],
-                           extracellular_calcium: float | None,
-                           post_gid: int) -> None:
+                           extracellular_calcium: float | None) -> None:
         """Add synapse based on the syn_description to the cell."""
         synapse = SynapseFactory.create_synapse(
             cell=self,
@@ -405,8 +405,8 @@ class Cell(InjectableMixin, PlottableMixin):
             condition_parameters=condition_parameters,
             popids=popids,
             extracellular_calcium=extracellular_calcium,
-            connection_modifiers=connection_modifiers,
-            post_gid=post_gid)
+            connection_modifiers=connection_modifiers
+        )
 
         self.synapses[synapse_id] = synapse
 
