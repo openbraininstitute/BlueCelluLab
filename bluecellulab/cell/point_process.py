@@ -14,6 +14,7 @@ from bluecellulab.circuit.node_id import CellId
 
 logger = logging.getLogger(__name__)
 
+
 class BasePointProcessCell:
     """Base class for NEURON artificial point processes (IntFire1/2/...)."""
 
@@ -29,7 +30,6 @@ class BasePointProcessCell:
     @property
     def hoc_cell(self):
         return self.pointcell
-
 
     def init_callbacks(self):
         pass
@@ -47,7 +47,6 @@ class BasePointProcessCell:
 
         # Drop pointer to underlying NEURON object
         self.pointcell = None
-
 
     def get_spike_times(self) -> list[float]:
         return list(self._spike_times)
@@ -72,7 +71,6 @@ class BasePointProcessCell:
         self._spike_detector = h.NetCon(self.pointcell, None)
         self._spike_detector.threshold = threshold
         self._spike_detector.record(self._spike_times)
-
 
     def connect2target(self, target_pp=None) -> h.NetCon:
         """Neurodamus-like helper: NetCon from this cell to a target point process."""
@@ -166,6 +164,7 @@ class HocPointProcessCell(BasePointProcessCell):
                 f"to point neuron {self.cell_id}"
             )
 
+
 def mechanism_name_from_model_template(model_template: str) -> str:
     """Translate SONATA model_template into a NEURON mechanism name.
 
@@ -181,6 +180,7 @@ def mechanism_name_from_model_template(model_template: str) -> str:
         if prefix in ("hoc", "nrn"):
             return name
     return mt
+
 
 @dataclass
 class IntFire1Params:

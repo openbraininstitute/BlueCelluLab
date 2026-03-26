@@ -218,7 +218,7 @@ class SonataCircuitAccess(CircuitAccess):
 
                 # check for allen instance - replace the entire edge_properties list as appropriate
                 # properties for allen point/chemical neuron connection type edges
-                if not SynapseProperty.TYPE in edge_population.property_names:
+                if SynapseProperty.TYPE not in edge_population.property_names:
                     if all(
                         x in edge_population.property_names
                         for x in SynapseProperties.allen_point

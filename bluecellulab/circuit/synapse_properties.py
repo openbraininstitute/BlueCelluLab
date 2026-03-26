@@ -93,6 +93,7 @@ class SynapseProperties:
         "@source_node"
     )
 
+
 snap_to_synproperty = MappingProxyType({
     "@source_node": SynapseProperty.PRE_GID,
     "delay": SynapseProperty.AXONAL_DELAY,

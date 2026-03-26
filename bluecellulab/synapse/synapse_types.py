@@ -420,7 +420,8 @@ class AmpanmdaSynapse(Synapse):
         parent_dict = super().info_dict
         parent_dict['synapse_parameters']['tau_d_AMPA'] = self.hsynapse.tau_d_AMPA
         return parent_dict
-    
+
+
 class Exp2Syn(Synapse):
 
     def __init__(self, gid, hoc_args, syn_id, syn_description, popids, extracellular_calcium):

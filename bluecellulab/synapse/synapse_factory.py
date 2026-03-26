@@ -70,10 +70,10 @@ class SynapseFactory:
                                  popids, extracellular_calcium)
         elif syn_type == SynapseType.ALLEN_CHEMICAL:
             synapse = Exp2Syn(cell.cell_id, syn_hoc_args, syn_id, syn_description,
-                                 popids, extracellular_calcium)
+                              popids, extracellular_calcium)
         elif syn_type == SynapseType.ALLEN_POINT:
             synapse = Exp2Syn(cell.cell_id, syn_hoc_args, syn_id, syn_description,
-                                 popids, extracellular_calcium)
+                              popids, extracellular_calcium)
         synapse = cls.apply_connection_modifiers(connection_modifiers, synapse)
 
         return synapse
@@ -93,7 +93,7 @@ class SynapseFactory:
         syn_description: pd.Series,
     ) -> SynapseType:
         """Returns the type of synapse to be created."""
-        if not SynapseProperty.TYPE in syn_description:
+        if SynapseProperty.TYPE not in syn_description:
             return SynapseType.ALLEN_POINT
 
         is_inhibitory: bool = int(syn_description[SynapseProperty.TYPE]) < 100
