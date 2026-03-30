@@ -139,7 +139,7 @@ class SonataCircuitAccess(CircuitAccess):
         # edges whose source is a SONATA virtual node population
         proj = [n for n in all_names if getattr(edges[n].source, "type", None) == "virtual"]
 
-        if projections is False or None:
+        if projections is False or projections is None:
             return inner
 
         elif projections is True:
