@@ -86,21 +86,11 @@ class NeuronTemplate:
         morph_dir, morph_name, morph_ext = split_morphology_path(str(self.morph_filepath))
 
         # Reconstruct filename with extension (Neurodamus-style)
-        # For H5 containers: morph_dir ends with .h5, morph_ext might be wrong due to dots in cell name
-        # For single files: morph_name is "file" and morph_ext is ".h5"
-        if morph_dir.endswith('.h5'):
-            # This is an H5 container path - reconstruct the cell name and add .h5
-            # The cell name is everything after the container file
-            morph_fname = morph_name + morph_ext if morph_ext and not morph_ext.startswith('.') else morph_name + morph_ext
-            # Ensure it ends with .h5 for HOC template validation
-            if not morph_fname.endswith('.h5'):
-                morph_fname = morph_fname + '.h5'
-        elif morph_ext:
-            # Regular file with extension
-            morph_fname = morph_name + morph_ext
-        else:
-            # Fallback: add .h5 extension
-            morph_fname = morph_name + '.h5'
+        morph_fname = morph_name + morph_ext
+        # For H5 containers the cell name inside the archive may lack an
+        # extension; ensure it ends with .h5 for HOC template validation
+        if not morph_fname.endswith('.h5'):
+            morph_fname = morph_fname + '.h5'
 
         if self.template_format == "v6":
             attr_names = getattr(
@@ -170,41 +160,43 @@ class NeuronTemplate:
         return template_name
 
     def _is_valid_morphology_path(self, morph_filepath: str) -> bool:
-        """Check if morphology path is valid, handling H5 container paths."""
-        # Check if it's a regular file
-        if os.path.exists(morph_filepath):
+        """Check if morphology path is valid, handling H5 container paths.
+
+        Uses the same walk-up approach as neurodamus
+        ``split_morphology_path``: starting from the full path, repeatedly
+        call ``os.path.dirname`` until an existing filesystem entry is
+        found.  When the resolved path is an H5 file, the remainder of
+        the original path is treated as the cell name inside the
+        container.
+        """
+        # Regular file on disk — always valid
+        if os.path.isfile(morph_filepath):
             return True
 
-        # Check if it's an H5 container path (format: container.h5/CellName.h5)
-        if '/' in morph_filepath and '.h5' in morph_filepath:
-            # Split into container path and cell name
-            parts = morph_filepath.split('/')
-            if len(parts) >= 2:
-                # Find the part that ends with .h5 and is not the last part
-                # (last part is the cell name which also ends with .h5)
-                h5_index = -1
-                for i, part in enumerate(parts[:-1]):  # Exclude last part
-                    if part.endswith('.h5'):
-                        h5_index = i
-                        break
+        # Walk up via os.path.dirname (same as neurodamus split_morphology_path)
+        candidate = morph_filepath
+        while not os.path.exists(candidate):
+            parent = os.path.dirname(candidate)
+            if parent == candidate:
+                # Reached filesystem root without finding anything
+                return False
+            candidate = parent
 
-                if h5_index >= 0:
-                    # The container file is everything up to and including the .h5 part
-                    container_path = '/'.join(parts[:h5_index + 1])
-                    # Cell name is everything after, with .h5 extension removed
-                    cell_name_with_ext = '/'.join(parts[h5_index + 1:])
-                    # Remove .h5 extension from cell name for H5 container lookup
-                    cell_name = cell_name_with_ext.rsplit('.h5', 1)[0] if cell_name_with_ext.endswith('.h5') else cell_name_with_ext
-
-                    # Check if container file exists
-                    if os.path.exists(container_path):
-                        try:
-                            import h5py
-                            # Check if cell exists in the container
-                            with h5py.File(container_path, 'r') as f:
-                                return cell_name in f
-                        except Exception:
-                            return False
+        # If candidate is an H5 container file, validate the cell name inside
+        if os.path.isfile(candidate) and candidate.endswith('.h5'):
+            # Cell name is the relative path after the container.
+            # Strip trailing .h5 extension if present: circuit code (e.g.
+            # sonata_circuit_access) appends .h5 to match neurodamus
+            # convention, but h5py keys are bare names without extensions.
+            cell_name = os.path.relpath(morph_filepath, candidate)
+            if cell_name.endswith('.h5'):
+                cell_name = cell_name[:-3]
+            try:
+                import h5py
+                with h5py.File(candidate, 'r') as f:
+                    return cell_name in f
+            except Exception:
+                return False
 
         return False
 
