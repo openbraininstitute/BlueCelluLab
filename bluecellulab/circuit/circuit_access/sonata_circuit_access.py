@@ -309,6 +309,5 @@ class SonataCircuitAccess(CircuitAccess):
     def node_population_sizes(self) -> dict[str, int]:
         out: dict[str, int] = {}
         for pop_name, node_pop in self._circuit.nodes.items():
-            s = node_pop.size
-            out[str(pop_name)] = int(s() if callable(s) else s)
+            out[str(pop_name)] = node_pop.size
         return out
