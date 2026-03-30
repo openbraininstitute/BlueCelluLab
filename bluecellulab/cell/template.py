@@ -79,18 +79,35 @@ class NeuronTemplate:
 
     def get_cell(self, gid: Optional[int]) -> HocObjectType:
         """Returns the hoc object matching the template format."""
-        # Use split_morphology_path for consistent handling of all morphology types
-        # including H5 containers (similar to Neurodamus approach)
-        from bluecellulab.cell.morphio_wrapper import split_morphology_path
+        morph_filepath = str(self.morph_filepath)
 
-        morph_dir, morph_name, morph_ext = split_morphology_path(str(self.morph_filepath))
+        # Detect H5 container: walk up from morph_filepath until an existing
+        # filesystem entry is found (same as neurodamus split_morphology_path).
+        # If the resolved entry is an .h5 file, it is a container and the
+        # remainder of the path is the bare cell name inside it.
+        candidate = morph_filepath
+        while not os.path.exists(candidate):
+            parent = os.path.dirname(candidate)
+            if parent == candidate:
+                break
+            candidate = parent
 
-        # Reconstruct filename with extension (Neurodamus-style)
-        morph_fname = morph_name + morph_ext
-        # For H5 containers the cell name inside the archive may lack an
-        # extension; ensure it ends with .h5 for HOC template validation
-        if not morph_fname.endswith('.h5'):
-            morph_fname = morph_fname + '.h5'
+        if (os.path.isfile(candidate) and candidate.endswith('.h5')
+                and candidate != morph_filepath):
+            # H5 container: candidate is the container file and morph_filepath
+            # extends beyond it (i.e. contains a cell name inside the container).
+            # morph_fname must end with ".h5" so the HOC extension check
+            # (last 3 chars == ".h5") routes to morphio_read, which then calls
+            # MorphIOWrapper(container.h5/cell_name.h5) and correctly uses
+            # Collection(container, extensions=[".h5"]).load(cell_name).
+            morph_dir = candidate
+            cell_name = os.path.relpath(morph_filepath, candidate)
+            if cell_name.endswith('.h5'):
+                cell_name = cell_name[:-3]
+            morph_fname = cell_name + '.h5'
+        else:
+            morph_dir = os.path.dirname(morph_filepath)
+            morph_fname = os.path.basename(morph_filepath)
 
         if self.template_format == "v6":
             attr_names = getattr(
@@ -169,8 +186,8 @@ class NeuronTemplate:
         the original path is treated as the cell name inside the
         container.
         """
-        # Regular file on disk — always valid
-        if os.path.isfile(morph_filepath):
+        # Regular file or directory (v5-style templates receive a directory) — always valid
+        if os.path.isfile(morph_filepath) or os.path.isdir(morph_filepath):
             return True
 
         # Walk up via os.path.dirname (same as neurodamus split_morphology_path)
