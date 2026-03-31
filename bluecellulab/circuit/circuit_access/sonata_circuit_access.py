@@ -311,3 +311,10 @@ class SonataCircuitAccess(CircuitAccess):
         for pop_name, node_pop in self._circuit.nodes.items():
             out[str(pop_name)] = node_pop.size
         return out
+
+    def virtual_population_sizes(self) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for pop_name, node_pop in self._circuit.nodes.items():
+            if getattr(node_pop, "type", None) == "virtual":
+                out[str(pop_name)] = int(node_pop.size)
+        return out

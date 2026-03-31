@@ -363,6 +363,10 @@ class BluepyCircuitAccess(CircuitAccess):
     def node_population_sizes(self):
         raise NotImplementedError
 
+    def virtual_population_sizes(self) -> dict[str, int]:
+        """Return full sizes for virtual populations."""
+        raise NotImplementedError
+
     @property
     def _emodels_dir(self) -> str:
         return self.config.impl.Run['METypePath']

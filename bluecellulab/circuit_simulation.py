@@ -319,7 +319,7 @@ class CircuitSimulation:
         )
 
         if need_gids:
-            self.gids = self._build_gid_namespace()
+            self.gids = self._build_gid_namespace(cell_ids)
 
         self._add_cells(cell_ids)
 
@@ -1176,11 +1176,38 @@ class CircuitSimulation:
             raise RuntimeError("GID namespace not initialized yet.")
         return self.gids.global_gid(pop, local_id)
 
-    def _build_gid_namespace(self) -> GidNamespace:
-        sizes = self.circuit_access.node_population_sizes()
-        pops_sorted = sorted(sizes.keys())
-        max_raw = {p: max(0, int(n) - 1) for p, n in sizes.items()}
-        pop_offset = self._compute_offsets_from_max(pops_sorted, max_raw)
+    def _build_gid_namespace(self, cell_ids: list[CellId]) -> GidNamespace:
+        local_max_raw: dict[str, int] = {}
+
+        # real populations: local loaded max
+        for cell_id in cell_ids:
+            pop = cell_id.population_name
+            gid = int(cell_id.id)
+            local_max_raw[pop] = max(local_max_raw.get(pop, -1), gid)
+
+        # virtual populations: full size
+        for pop, size in self.circuit_access.virtual_population_sizes().items():
+            local_max_raw[pop] = max(local_max_raw.get(pop, -1), int(size) - 1)
+
+        if self.pc is not None:
+            gathered = self.pc.py_gather(local_max_raw, 0)
+
+            if int(self.pc.id()) == 0:
+                global_max_raw: dict[str, int] = {}
+                for d in gathered:
+                    for pop, gid in d.items():
+                        global_max_raw[pop] = max(global_max_raw.get(pop, -1), gid)
+
+                pops_sorted = sorted(global_max_raw.keys())
+                pop_offset = self._compute_offsets_from_max(pops_sorted, global_max_raw)
+            else:
+                pop_offset = None
+
+            pop_offset = self.pc.py_broadcast(pop_offset, 0)
+            return GidNamespace(pop_offset)
+
+        pops_sorted = sorted(local_max_raw.keys())
+        pop_offset = self._compute_offsets_from_max(pops_sorted, local_max_raw)
         return GidNamespace(pop_offset)
 
     def _register_gids_for_mpi(self) -> None:

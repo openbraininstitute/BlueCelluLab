@@ -21,18 +21,23 @@ from bluecellulab.circuit.config.sections import ConnectionOverrides
 
 class FakeSonataCircuitAccess:
     """Minimal SONATA CircuitAccess stub for GID namespace tests."""
-    def __init__(self, sizes: dict[str, int]):
+
+    def __init__(self, sizes: dict[str, int], virtual_sizes: dict[str, int] | None = None):
         self._sizes = dict(sizes)
+        self._virtual_sizes = dict(virtual_sizes or {})
 
     def node_population_sizes(self) -> dict[str, int]:
-        # pop -> N (count)
         return dict(self._sizes)
+
+    def virtual_population_sizes(self) -> dict[str, int]:
+        return dict(self._virtual_sizes)
 
 
 class FakePC:
-    def __init__(self, rank=0, gather_result=None):
+    def __init__(self, rank=0, gather_result=None, broadcast_result=None):
         self._rank = rank
         self.gather_result = gather_result
+        self.broadcast_result = broadcast_result
         self.set_gid2node_calls = []
         self.cell_calls = []
         self.broadcasted = None
@@ -43,11 +48,11 @@ class FakePC:
 
     def py_gather(self, data, root):
         self.gathered = (data, root)
-        return self.gather_result or [data]
+        return self.gather_result if self.gather_result is not None else [data]
 
     def py_broadcast(self, value, root):
         self.broadcasted = (value, root)
-        return value
+        return self.broadcast_result if self.broadcast_result is not None else value
 
     def set_gid2node(self, gid, node):
         self.set_gid2node_calls.append((gid, node))
@@ -78,10 +83,6 @@ class DummyCell:
 
 
 def make_sim(*, pc=None, circuit_access=None):
-    """
-    Create a CircuitSimulation instance without running __init__.
-    We only populate the fields used by the tested methods.
-    """
     sim = CircuitSimulation.__new__(CircuitSimulation)
 
     sim.pc = pc
@@ -91,7 +92,9 @@ def make_sim(*, pc=None, circuit_access=None):
     sim.gids = None
     sim.projections = False
     sim.circuit_format = circuit_simulation.CircuitFormat.SONATA
-    sim.circuit_access = circuit_access if circuit_access is not None else FakeSonataCircuitAccess({})
+    sim.circuit_access = (
+        circuit_access if circuit_access is not None else FakeSonataCircuitAccess({})
+    )
     sim.cells = {}
 
     return sim
@@ -127,11 +130,12 @@ def test_add_connections_skips_zero_weight_override(monkeypatch):
 
     sim.circuit_access = FakeCircuitAccess(overrides)
 
-    # If Connection is constructed, the test should fail
     monkeypatch.setattr(
         circuit_simulation.bluecellulab,
         "Connection",
-        lambda *a, **k: (_ for _ in ()).throw(AssertionError("Connection should not be created")),
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("Connection should not be created")
+        ),
     )
 
     sim._add_connections(interconnect_cells=False)
@@ -176,7 +180,7 @@ def test_add_connections_applies_last_matching_override(monkeypatch):
             self.config = type("cfg", (), {"connection_entries": lambda _self: self._ov})()
 
         def target_contains_cell(self, *_):
-            return True  # Everything matches for simplicity
+            return True
 
     sim.circuit_access = FakeCircuitAccess(overrides)
 
@@ -203,35 +207,41 @@ def test_add_connections_applies_last_matching_override(monkeypatch):
     assert conn.post_netcon_weight == pytest.approx(3.0)
 
 
-def test_gid_namespace_offsets_are_1000_blocked_and_1_based():
+def test_gid_namespace_offsets_are_1000_blocked_and_0_based():
     sim = make_sim(pc=None, circuit_access=FakeSonataCircuitAccess({"PopA": 3, "PopB": 2}))
-    sim.gids = sim._build_gid_namespace()
+    cell_ids = [CellId("PopA", 0), CellId("PopA", 2), CellId("PopB", 0), CellId("PopB", 1)]
+    sim.gids = sim._build_gid_namespace(cell_ids)
 
-    # PopA: offset 0, so gid = local_id
     assert sim.global_gid("PopA", 0) == 0
     assert sim.global_gid("PopA", 2) == 2
 
-    # PopB: should begin at the next 1000-block after PopA is filled
     assert sim.global_gid("PopB", 0) == 1000
     assert sim.global_gid("PopB", 1) == 1001
 
 
 def test_gid_namespace_does_not_depend_on_projections():
     sim = make_sim(pc=None, circuit_access=FakeSonataCircuitAccess({"PopA": 3, "PopB": 2}))
+    cell_ids = [CellId("PopA", 0), CellId("PopA", 2), CellId("PopB", 1)]
 
     sim.projections = False
-    gids1 = sim._build_gid_namespace()
+    gids1 = sim._build_gid_namespace(cell_ids)
 
     sim.projections = True
-    gids2 = sim._build_gid_namespace()
+    gids2 = sim._build_gid_namespace(cell_ids)
 
     assert gids1.pop_offset == gids2.pop_offset
 
 
 def test_register_gids_for_mpi_uses_gid_namespace():
-    pc = FakePC(rank=1)
+    cell_ids = [CellId("PopX", 0), CellId("PopX", 7)]
+
+    pc = FakePC(
+        rank=1,
+        gather_result=[{"PopX": 7}, {"PopX": 7}],
+        broadcast_result={"PopX": 0},
+    )
     sim = make_sim(pc=pc, circuit_access=FakeSonataCircuitAccess({"PopX": 10}))
-    sim.gids = sim._build_gid_namespace()
+    sim.gids = sim._build_gid_namespace(cell_ids)
 
     cell_id = CellId("PopX", 7)
     sim.cells = {cell_id: DummyCell()}

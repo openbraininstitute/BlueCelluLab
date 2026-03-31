@@ -125,3 +125,6 @@ class CircuitAccess(Protocol):
 
     def node_population_sizes(self) -> dict[str, int]:
         raise NotImplementedError
+
+    def virtual_population_sizes(self) -> dict[str, int]:
+        raise NotImplementedError
