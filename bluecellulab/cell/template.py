@@ -53,13 +53,54 @@ class TemplateParams(NamedTuple):
 
 
 class NeuronTemplate:
-    """NeuronTemplate representation."""
+    """Loads and manages a NEURON HOC cell template together with its
+    morphology.
+
+    Supports four morphology path formats:
+
+    - ``.asc`` / ``.swc``: individual morphology files.
+    - ``.h5`` single file: an individual HDF5 morphology file.
+    - ``.h5`` container: a path of the form ``container.h5/cell_name`` where
+      ``container.h5`` is an HDF5 morphologies container and
+      ``cell_name`` is the key of the morphology inside it
+      (with or without a trailing ``.h5`` suffix).
+    - v5-style directory: a directory path passed directly to legacy HOC
+      templates that locate the morphology file internally.
+    """
 
     def __init__(
         self, template_filepath: str | Path, morph_filepath: str | Path,
         template_format: str, emodel_properties: Optional[EmodelProperties]
     ) -> None:
-        """Load the hoc template and init object."""
+        """Load the HOC template and validate the morphology path.
+
+        The morphology path is validated with `_is_valid_morphology_path`
+        before the template is loaded into NEURON.  Four formats are accepted:
+
+        - ``/dir/cell.asc`` or ``/dir/cell.swc`` — plain morphology file.
+        - ``/dir/cell.h5`` — single HDF5 morphology file.
+        - ``/dir/merged.h5/cell_name`` — cell inside an HDF5 container
+          (``cell_name`` may optionally carry a ``.h5`` suffix as produced by
+          `bluecellulab.circuit.circuit_access.SonataCircuitAccess.morph_filepath`).
+        - ``/dir/morphologies/`` — directory, used by v5-style templates that
+          locate the morphology file themselves.
+
+        Args:
+            template_filepath: Path to the ``.hoc`` template file.
+            morph_filepath: Path to the morphology.  For H5 containers this is
+                ``<container.h5>/<cell_name>``; for v5 templates this is the
+                directory that contains the morphology file.
+            template_format: One of ``"v5"``, ``"v6"``, or ``"bluepyopt"``.
+                Controls how arguments are passed to the HOC constructor.
+            emodel_properties: Optional e-model parameters (threshold current,
+                holding current, AIS scaler).  Required for ``v6`` templates
+                whose HOC defines ``_NeededAttributes``.
+
+        Raises:
+            FileNotFoundError: If ``template_filepath`` does not exist on disk
+                or if ``morph_filepath`` cannot be resolved to a valid file,
+                directory, or HDF5 container entry.
+        """
         if isinstance(template_filepath, Path):
             template_filepath = str(template_filepath)
         if isinstance(morph_filepath, Path):
@@ -177,14 +218,34 @@ class NeuronTemplate:
         return template_name
 
     def _is_valid_morphology_path(self, morph_filepath: str) -> bool:
-        """Check if morphology path is valid, handling H5 container paths.
+        """Return True if *morph_filepath* points to a loadable morphology.
 
-        Uses the same walk-up approach as neurodamus
-        ``split_morphology_path``: starting from the full path, repeatedly
-        call ``os.path.dirname`` until an existing filesystem entry is
-        found.  When the resolved path is an H5 file, the remainder of
-        the original path is treated as the cell name inside the
-        container.
+        Accepts four cases:
+
+        1. **Regular file** (``.asc``, ``.swc``, ``.h5``): ``os.path.isfile``
+           returns True immediately.
+        2. **Directory** (v5-style templates): ``os.path.isdir`` returns True
+           immediately.
+        3. **H5 container** (``container.h5/cell_name``): the path does not
+           exist as a file, so the method walks up via ``os.path.dirname``
+           until it finds an existing ``.h5`` file.  It then opens that file
+           with ``h5py`` and checks that *cell_name* is a top-level key.
+           The cell name may carry a trailing ``.h5`` suffix (as appended by
+           ``SonataCircuitAccess``); that suffix is stripped before the lookup
+           because HDF5 keys are stored without extensions.
+        4. **Non-existent path**: returns False if the walk-up reaches the
+           filesystem root without finding any existing entry.
+
+        The walk-up strategy mirrors neurodamus ``split_morphology_path`` and
+        correctly handles cell names that contain dots (e.g.
+        ``cell_x1.000_y0.950_-_Clone_0``) without mis-splitting on the last
+        dot as ``os.path.splitext`` would.
+
+        Args:
+            morph_filepath: Morphology path string to validate.
+
+        Returns:
+            True if the path resolves to a valid morphology, False otherwise.
         """
         # Regular file or directory (v5-style templates receive a directory) — always valid
         if os.path.isfile(morph_filepath) or os.path.isdir(morph_filepath):
