@@ -122,3 +122,9 @@ class CircuitAccess(Protocol):
 
     def emodel_path(self, cell_id: CellId) -> str:
         raise NotImplementedError
+
+    def node_population_sizes(self) -> dict[str, int]:
+        raise NotImplementedError
+
+    def virtual_population_sizes(self) -> dict[str, int]:
+        raise NotImplementedError
