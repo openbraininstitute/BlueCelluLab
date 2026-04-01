@@ -16,6 +16,7 @@ classifiers = [
     "Operating System :: POSIX",
     "Topic :: Scientific/Engineering",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Utilities",
 ]
 keywords = [
@@ -29,7 +30,7 @@ keywords = [
 ]
 dependencies = [
     "NEURON>=8.0.2",
-    "numpy>=2.0.0,<2.4",
+    "numpy>=2.0.0,<2.5",
     "matplotlib>=3.0.0,<4.0.0",
     "pandas>=1.0.0,<3.0.0",
     "bluepysnap>=3.0.0,<4.0.0",

@@ -141,7 +141,7 @@ class SonataCircuitAccess(CircuitAccess):
         # edges whose source is a SONATA virtual node population
         proj = [n for n in all_names if getattr(edges[n].source, "type", None) == "virtual"]
 
-        if projections is False:
+        if projections is False or projections is None:
             return inner
 
         elif projections is True:
@@ -182,10 +182,7 @@ class SonataCircuitAccess(CircuitAccess):
     def extract_synapses(
         self, cell_id: CellId, projections: Optional[list[str] | str]
     ) -> pd.DataFrame:
-        """Extract the synapses.
-
-        If projections is None, all the synapses are extracted.
-        """
+        """Extract the synapses."""
         snap_node_id = CircuitNodeId(cell_id.population_name, cell_id.id)
         edges = self._circuit.edges
 
@@ -362,3 +359,16 @@ class SonataCircuitAccess(CircuitAccess):
                     return str(Path(models_dir) / f"{template_name}.hoc")
 
             raise BluepySnapError(f"Could not determine emodel path for cell {cell_id}")
+
+    def node_population_sizes(self) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for pop_name, node_pop in self._circuit.nodes.items():
+            out[str(pop_name)] = node_pop.size
+        return out
+
+    def virtual_population_sizes(self) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for pop_name, node_pop in self._circuit.nodes.items():
+            if getattr(node_pop, "type", None) == "virtual":
+                out[str(pop_name)] = int(node_pop.size)
+        return out
