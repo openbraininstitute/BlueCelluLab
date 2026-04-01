@@ -1,7 +1,11 @@
-"""A wrapper for MorphIO objects.
+"""Morphology loader and HOC code generator built on top of MorphIO.
 
-Provides additional neuron features on top of MorphIO basic morphology
-handling. Adapted from neurodamus/morphio_wrapper.py
+Provides soma-geometry helpers that mirror NEURON's ``import3d_gui.hoc``
+logic, plus :class:`MorphIOWrapper` which loads a morphology from disk
+(or from an H5 container), adjusts the soma geometry, and produces the
+HOC commands needed to instantiate the cell in NEURON.
+
+Adapted from ``neurodamus/morphio_wrapper.py``.
 """
 
 import logging
@@ -14,16 +18,37 @@ from numpy.linalg import eig, norm
 from bluecellulab.exceptions import BluecellulabError
 
 logger = logging.getLogger(__name__)
-"""[START] Implementations retrieved from nse/morph-tool (!= hpc/morpho-tool
-!!!) These functions are needed for soma points computation (a la import3d).
 
-TODO: Once we have something stable, integrate nse/morph-tool
-"""
+# These helpers compute soma geometry the same way NEURON's import3d does.
 X, Y, R = 0, 1, 3
 
 
 def split_morphology_path(morphology_path):
-    """Split `{collection_path}/{morph_name}.{ext}`"""
+    """Split a morphology path into collection directory, name, and extension.
+
+    Handles two cases:
+
+    - **Regular file on disk** (path exists): uses ``os.path.dirname`` for
+      the collection directory and ``os.path.splitext`` for the name and
+      extension.
+    - **H5 container entry** (path does not exist on disk): walks up via
+      ``os.path.dirname`` until an existing filesystem entry (the container)
+      is found, then derives the cell name and extension relative to it.
+
+    Args:
+        morphology_path: Path to a morphology file, or to a cell entry
+            inside an H5 container (e.g. ``/data/merged.h5/cell_name.h5``).
+
+    Returns:
+        A tuple ``(collection_dir, morph_name, morph_ext)`` where
+        *collection_dir* is the directory or container path, *morph_name*
+        is the bare name without extension, and *morph_ext* is the
+        file extension (e.g. ``".h5"``).
+
+    Raises:
+        BluecellulabError: If no existing filesystem entry is found
+            while walking up the path.
+    """
     if os.path.exists(morphology_path):
         collection_path = os.path.dirname(morphology_path)
         morph_name, morph_ext = os.path.splitext(os.path.basename(morphology_path))
@@ -41,7 +66,21 @@ def split_morphology_path(morphology_path):
 
 
 def contourcenter(xyz):
-    """Python implementation of NEURON code: lib/hoc/import3d/import3d_sec.hoc"""
+    """Resample a soma contour and return its centroid.
+
+    Python port of ``contourcenter`` in
+    ``lib/hoc/import3d/import3d_sec.hoc``.  Resamples the contour to
+    101 evenly-spaced points along its perimeter using linear
+    interpolation and returns both the centroid and the resampled points.
+
+    Args:
+        xyz: ``(N, 3)`` array of soma contour point coordinates.
+
+    Returns:
+        A tuple ``(mean, new_xyz)`` where *mean* is the ``(3,)`` centroid
+        of the resampled contour and *new_xyz* is the ``(101, 3)`` array
+        of resampled points.
+    """
     POINTS = 101
 
     points = np.vstack((np.diff(xyz[:, [X, Y]], axis=0), xyz[0, [X, Y]]))
@@ -58,11 +97,23 @@ def contourcenter(xyz):
 
 
 def get_sides(points, major, minor):
-    """Circular permutation of the points so that the point with the largest
-    coordinate along the major axis becomes the last point tobj =
-    major.c.mul(d.x[i])  ###### uneeded?
+    """Split a centred contour into two sides along the major axis.
 
-    line 1191
+    Rotates the point array so the maximum major-axis coordinate is last,
+    then splits at the minimum into a left and right side (each in
+    ascending major-axis order).  Corresponds to line 1191 of
+    ``lib/hoc/import3d/import3d_gui.hoc``.
+
+    Args:
+        points: ``(N, 2)`` array of contour points centred at the origin.
+        major: Unit vector of the major (longest) axis of the ellipsoid
+            fitted to the soma contour.
+        minor: Unit vector of the minor axis (constrained to the XY plane).
+
+    Returns:
+        A tuple ``(sides, rads)`` where each is a length-2 list containing
+        the major-axis coordinates and the minor-axis (radial) coordinates
+        of the two sides respectively.
     """
     major_coord, minor_coord = np.dot(points, major), np.dot(points, minor)
 
@@ -78,16 +129,25 @@ def get_sides(points, major, minor):
 
 
 def make_convex(sides, rads):
-    """Keep only points that make path convex."""
+    """Remove non-convex points from both sides of the contour.
+
+    Enforces monotonicity on each side so that the resulting outline is
+    convex.  Points that break convexity are discarded together with
+    their corresponding radial values.
+
+    Args:
+        sides: Length-2 list of major-axis coordinate arrays for the two
+            contour sides, as returned by :func:`get_sides`.
+        rads: Length-2 list of minor-axis (radial) coordinate arrays,
+            parallel to *sides*.
+
+    Returns:
+        ``(sides, rads)`` with non-convex points removed.
+    """
 
     def convex_idx(m):
-        """Return index to elements of m that make it convex.
-
-        Note: not efficient at the moment
-        # now we have the two sides without the min and max points (rads[0]=0)
-        # we hope both sides now monotonically increase, i.e. convex
-        # make it convex
-        """
+        """Return a boolean mask selecting elements of *m* that keep it
+        convex."""
         idx = np.ones_like(m, dtype=bool)
         last_val = m[-1]
         for i in range(len(m) - 2, -1, -1):
@@ -105,9 +165,29 @@ def make_convex(sides, rads):
 
 
 def contour2centroid(mean, points):
-    """This follows the function in lib/hoc/import3d/import3d_gui.hoc most of
-    the comments are from there, so if you want to follow along, it should
-    break up the function the same way."""
+    """Convert a soma contour into a stack of cylinders.
+
+    Python port of ``contour2centroid`` in
+    ``lib/hoc/import3d/import3d_gui.hoc``.  The algorithm:
+
+    1. Fits an ellipsoid to the centred contour to find the major and
+       minor axes via eigen-decomposition.
+    2. Splits the contour into two sides along the major axis and
+       enforces convexity.
+    3. Resamples both sides to 21 evenly-spaced points along the major
+       axis and computes cylinder diameters from the two radial profiles.
+
+    Args:
+        mean: ``(3,)`` centroid of the contour as returned by
+            :func:`contourcenter`.
+        points: ``(101, 3)`` resampled contour points (second element
+            returned by :func:`contourcenter`).
+
+    Returns:
+        A tuple ``(points, diameters)`` where *points* is a ``(21, 3)``
+        array of cylinder centre positions along the major axis and
+        *diameters* is a ``(21,)`` array of cylinder diameters.
+    """
     logging.debug("Converting soma contour into a stack of cylinders")
 
     # find the major axis of the ellipsoid that best fits the shape
@@ -145,8 +225,15 @@ def contour2centroid(mean, points):
 
 
 def _to_sphere(neuron):
-    """Convert a 3-pts cylinder or a 1-pt sphere into a circular contour that
-    represents the same sphere."""
+    """Replace the soma with a circular contour of equivalent radius.
+
+    Generates 20 evenly-spaced contour points on a circle of the same
+    radius as the original soma, centred on the original soma point in
+    the XY plane.  Mutates *neuron* in place.
+
+    Args:
+        neuron: Mutable MorphIO morphology whose soma will be replaced.
+    """
     radius = neuron.soma.diameters[0] / 2.0
     N = 20
     points = np.zeros((N, 3))
@@ -159,17 +246,20 @@ def _to_sphere(neuron):
 
 
 def single_point_sphere_to_circular_contour(neuron):
-    """Transform a single point soma that represents a sphere into a circular
-    contour that represents the same sphere."""
+    """Convert a single-point sphere soma to an equivalent circular contour.
+
+    NEURON's ``import3d_gui.hoc`` converts single-point sphere somas to
+    circular contours so that :func:`contour2centroid` can process them
+    uniformly.  This function applies the same transformation.
+
+    Args:
+        neuron: Mutable MorphIO morphology with a single-point sphere
+            soma.  Modified in place.
+    """
     logging.debug(
         "Converting 1-point soma (sperical soma) to circular contour representing the same sphere"
     )
     _to_sphere(neuron)
-
-
-"""
-    [END] Implementations retrieved from nse/morph-tool (!= hpc/morpho-tool !!!)
-"""
 
 
 @dataclass
@@ -200,12 +290,36 @@ class SectionName:
 
 
 class MorphIOWrapper:
-    """A class that wraps a MorphIO object and gets everything ready for HOC
-    usage."""
+    """Load a MorphIO morphology and generate HOC instantiation commands.
+
+    Given a morphology path (plain file or H5-container entry of the form
+    ``container.h5/cell_name``), this class:
+
+    1. Resolves the path via :func:`split_morphology_path`.
+    2. Loads the morphology through ``morphio.Collection`` with
+       ``Option.nrn_order`` to match NEURON's section ordering.
+    3. Adjusts the soma geometry to match ``import3d_gui.hoc``:
+       sphere → circular contour; contour → stack of cylinders.
+    4. Builds the section-name list and type-ID distribution used to
+       emit HOC commands.
+
+    The main entry point is :meth:`morph_as_hoc`, which returns the list
+    of HOC commands needed to instantiate the cell in NEURON.
+    """
 
     morph = property(lambda self: self._morph)
 
     def __init__(self, input_file, options=0):
+        """Load and prepare a morphology for HOC usage.
+
+        Args:
+            input_file: Path to the morphology.  Either a plain file
+                (``cell.asc``, ``cell.swc``, ``cell.h5``) or an H5-container
+                entry (``merged.h5/cell_name`` or
+                ``merged.h5/cell_name.h5``).
+            options: Additional ``morphio.Option`` flags OR-ed into
+                ``Option.nrn_order`` when loading.  Defaults to ``0``.
+        """
         self._collection_dir, self._morph_name, self._morph_ext = split_morphology_path(input_file)
         self._options = options
         self._build_morph()
@@ -217,8 +331,20 @@ class MorphIOWrapper:
         self._build_sec_typeid_distrib()
 
     def _build_morph(self):
-        """Build immutable morphology, going trough mutable and applying neuron
-        adjustemnts."""
+        """Load and finalise the morphology with NEURON-compatible soma
+        geometry.
+
+        Loads via ``morphio.Collection`` with ``Option.nrn_order``, then
+        recomputes soma points to match ``import3d_gui.hoc``:
+
+        - **Single-point sphere**: converted to a circular contour via
+          :func:`single_point_sphere_to_circular_contour`.
+        - **Simple contour**: resampled and converted to a cylinder stack
+          via :func:`contourcenter` and :func:`contour2centroid`.
+
+        Stores the resulting immutable ``morphio.Morphology`` in
+        ``self._morph``.
+        """
         try:
             # Lazy import morphio since it has an issue with execl
             from morphio import Collection, Morphology, Option, SomaType
@@ -242,26 +368,30 @@ class MorphIOWrapper:
         )
 
         if self._morph.soma_type == SomaType.SOMA_SINGLE_POINT:
-            """ See NRN import3d_gui.hoc -> instantiate()
-                            -> sphere_rep(xx, yy, zz, dd) """
+            # See NRN import3d_gui.hoc -> instantiate() -> sphere_rep()
             single_point_sphere_to_circular_contour(self._morph)
         elif self._morph.soma_type == SomaType.SOMA_SIMPLE_CONTOUR:
-            """ See NRN import3d_gui.hoc -> instantiate()
-                            -> contour2centroid(xx, yy, zz, dd, sec) """
+            # See NRN import3d_gui.hoc -> instantiate() -> contour2centroid()
             mean, new_xyz = contourcenter(self._morph.soma.points)
             self._morph.soma.points, self._morph.soma.diameters = contour2centroid(mean, new_xyz)
 
         self._morph = Morphology(self._morph)
 
     def _get_section_names(self) -> list[SectionName]:
-        """Returns a list of SectioName.
+        """Build the ordered list of section names for HOC command generation.
 
-        Relative_index is the index of the section within its type
-        group, as expected by the NEURON simulator. NEURON organizes
-        mechanisms and pointers (e.g., for synapses or diffusion) into
-        arrays grouped by section type (e.g., axon, dendrite), so this
-        relative index identifies the section position within its group.
-        The list starts with ('soma', 0).
+        Returns :class:`SectionName` objects in NEURON section order
+        (``Option.nrn_order``).  The first entry is always
+        ``SectionName("soma", 0)``.
+
+        Each subsequent entry records the section type name (e.g.
+        ``"dend"``, ``"axon"``) and its index *within that type group*,
+        which is how NEURON addresses sections (e.g. ``dend[0]``,
+        ``dend[1]``).
+
+        Returns:
+            Ordered list of :class:`SectionName` starting with
+            ``SectionName("soma", 0)``.
         """
         result = [SectionName("soma", 0)]
 
@@ -281,27 +411,22 @@ class MorphIOWrapper:
         return result
 
     def _build_sec_typeid_distrib(self):
-        """Build typeid distribution on top of MorphIO section_types."""
-        """This will hold np.array that will map the different type ids to the
-        start id wrt to section_types and their count. For example, axon
-        type(2) starts at section.id 0 and and totals 2724 sections.
+        """Build a structured array mapping section type IDs to start index and
+        count.
 
-                | type_id | start_id  |   count   |
-                | ------- | --------- | --------- |
-                |      2  |        0  |     2724  |
-                |      3  |     2724  |       75  |
+        Computes the run-length encoding of ``self._morph.section_types``
+        and stores it as a NumPy structured array in
+        ``self._sec_typeid_distrib`` with fields ``type_id``, ``start_id``,
+        and ``count``.  A synthetic soma row
+        ``(type_id=1, start_id=-1, count=1)`` is prepended.
 
+        Example for a morphology with 2724 axon sections then 75 dendrites::
 
-            >>> _sec_typeid_distrib
-            array([[(2,    0, 2724)],
+            array([[(1,   -1,    1)],
+                   [(2,    0, 2724)],
                    [(3, 2724,   75)]],
-                  dtype=[('type_id', '<i8'), ('start_id', '<i8'), ('count', '<i8')])
-
-            Then use it like this:
-            >>> _sec_typeid_distrib[['type_id', 'start_id']]
-            array([[(2,    0)],
-                   [(3, 2724)]],
-                  dtype={'names':['type_id','start_id'],....}
+                  dtype=[('type_id', '<i8'), ('start_id', '<i8'),
+                         ('count', '<i8')])
         """
         self._sec_typeid_distrib = np.dstack(
             np.unique(self._morph.section_types, return_counts=True, return_index=True)
@@ -310,15 +435,25 @@ class MorphIOWrapper:
         self._sec_typeid_distrib.dtype = [("type_id", "<i8"), ("start_id", "<i8"), ("count", "<i8")]
 
     def morph_as_hoc(self):
-        """Uses morphio object to read and generate hoc commands just like
-        import3d_gui.hoc."""
-        cmds = []
-        """We need to get the number of sections for each type in order to
-        generate the create commands.
+        """Generate HOC commands to instantiate the cell in NEURON.
 
-        E.g.: ( soma , 1  ) ( dend , 52 ) ( axon , 23 ) ( apic , 5  )
+        Produces the same output as NEURON's ``import3d_gui.hoc``,
+        covering:
+
+        1. ``create`` commands for each section type and its SectionList
+           subset (``somatic``, ``axonal``, ``basal``, ``apical``).
+        2. ``forall all.append`` to populate the global ``all`` SectionList.
+        3. ``pt3dadd`` calls for soma points (in reverse order to match
+           NEURON's convention).
+        4. ``connect`` and ``pt3dadd`` calls for every other section.
+
+        Returns:
+            List of HOC command strings, each executable via
+            ``neuron.h(cmd)`` or joinable into a single block.
         """
-        # generate create commands
+        cmds = []
+        # Generate create commands for each section type.
+        # E.g.: ( soma , 1  ) ( dend , 52 ) ( axon , 23 ) ( apic , 5  )
         for [(type_id, count)] in self._sec_typeid_distrib[["type_id", "count"]]:
             tstr = self.type2name(type_id)
             tstr1 = f"create {tstr}[{count}]"
@@ -368,21 +503,23 @@ class MorphIOWrapper:
 
         return cmds
 
-    """
-         [START] Python versions of import3d_gui.hoc helper functions
-         Note: nrn function names will be kept for reference
-    """
+    # [START] Python equivalents of import3d_gui.hoc helper functions.
+    # Original HOC function names are kept for cross-reference.
 
     _type2name_dict = {1: "soma", 2: "axon", 3: "dend", 4: "apic"}
 
     @classmethod
     def type2name(cls, type_id):
-        """:param type_id: id of section type
-        :return: name representation of the section type.
+        """Return the HOC section-name string for a MorphIO type ID.
 
-        If not found in _type2name_dict, then default is:
-        if (type < 0): "minus_{}".format(-type)
-        else: "dend_{}".format(type)
+        Args:
+            type_id: Integer section-type identifier
+                (1 = soma, 2 = axon, 3 = dend, 4 = apic).
+
+        Returns:
+            Section-name string from the standard mapping, or
+            ``"minus_<n>"`` for negative type IDs and
+            ``"dend_<n>"`` for unknown positive ones.
         """
         return cls._type2name_dict.get(type_id) or (
             f"minus_{-type_id}" if type_id < 0 else f"dend_{type_id}"
@@ -392,9 +529,17 @@ class MorphIOWrapper:
 
     @classmethod
     def mksubset(cls, type_id, type_name):
-        """:param type_id: id of section type
-        :param type_name: the name of the section type
-        :return: command to append section type to subset
+        """Return the HOC command that appends sections to their subset list.
+
+        Args:
+            type_id: Integer section-type identifier
+                (1 = soma, 2 = axon, 3 = dend, 4 = apic).
+            type_name: HOC section-name string as returned by
+                :meth:`type2name`.
+
+        Returns:
+            HOC command string of the form
+            ``'forsec "<type_name>" <subset>.append'``.
         """
         tstr = cls._mksubset_dict.get(type_id) or (
             f"minus_{-type_id}set" if type_id < 0 else f"dendritic_{type_id}"
