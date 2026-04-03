@@ -59,6 +59,7 @@ def import_hoc(neuron: ModuleType) -> None:
         "Cell.hoc",  # ND
         "TDistFunc.hoc",  # ND, test dependency
         "TStim.hoc",  # ND
+        "MorphIO.hoc",  # H5 morphology support (loaded after Cell.hoc)
     ]
 
     for hoc_file in hoc_files:
