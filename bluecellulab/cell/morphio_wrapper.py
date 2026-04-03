@@ -83,6 +83,10 @@ def contourcenter(xyz):
     """
     POINTS = 101
 
+    # np.diff gives N-1 displacement vectors; appending xyz[0] closes the
+    # contour by adding the vector from the last point back to the first.
+    # The cumulative sum then gives perimeter distances for all N points,
+    # and [:-1] drops the duplicate of the starting point (distance 0).
     points = np.vstack((np.diff(xyz[:, [X, Y]], axis=0), xyz[0, [X, Y]]))
     perim = np.cumsum(np.hstack(((0,), norm(points, axis=1))))[:-1]
 

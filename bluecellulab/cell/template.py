@@ -25,6 +25,7 @@ import uuid
 
 import neuron
 
+from bluecellulab.cell.morphio_wrapper import split_morphology_path
 from bluecellulab.circuit import EmodelProperties
 from bluecellulab.exceptions import BluecellulabError
 from bluecellulab.type_aliases import HocObjectType
@@ -122,33 +123,21 @@ class NeuronTemplate:
         """Returns the hoc object matching the template format."""
         morph_filepath = str(self.morph_filepath)
 
-        # Detect H5 container: walk up from morph_filepath until an existing
-        # filesystem entry is found (same as neurodamus split_morphology_path).
-        # If the resolved entry is an .h5 file, it is a container and the
-        # remainder of the path is the bare cell name inside it.
-        candidate = morph_filepath
-        while not os.path.exists(candidate):
-            parent = os.path.dirname(candidate)
-            if parent == candidate:
-                break
-            candidate = parent
-
-        if (os.path.isfile(candidate) and candidate.endswith('.h5')
-                and candidate != morph_filepath):
-            # H5 container: candidate is the container file and morph_filepath
-            # extends beyond it (i.e. contains a cell name inside the container).
-            # morph_fname must end with ".h5" so the HOC extension check
-            # (last 3 chars == ".h5") routes to morphio_read, which then calls
-            # MorphIOWrapper(container.h5/cell_name.h5) and correctly uses
-            # Collection(container, extensions=[".h5"]).load(cell_name).
-            morph_dir = candidate
-            cell_name = os.path.relpath(morph_filepath, candidate)
-            if cell_name.endswith('.h5'):
-                cell_name = cell_name[:-3]
-            morph_fname = cell_name + '.h5'
+        # Use split_morphology_path to locate the collection directory.
+        # For H5 containers (morph_dir is an .h5 file), morph_fname must end
+        # with ".h5" so the HOC extension check routes to morphio_read.
+        # We cannot use morph_name + ".h5" here because split_morphology_path
+        # uses os.path.splitext, which splits on the LAST dot and therefore
+        # mangles cell names that contain dots (e.g. the Scale/Clone suffix).
+        # Instead, use os.path.relpath to recover the full bare cell name.
+        morph_dir, morph_name, morph_ext = split_morphology_path(morph_filepath)
+        if os.path.isfile(morph_dir) and morph_dir.endswith('.h5'):
+            bare_name = os.path.relpath(morph_filepath, morph_dir)
+            if bare_name.endswith('.h5'):
+                bare_name = bare_name[:-3]
+            morph_fname = bare_name + '.h5'
         else:
-            morph_dir = os.path.dirname(morph_filepath)
-            morph_fname = os.path.basename(morph_filepath)
+            morph_fname = morph_name + morph_ext
 
         if self.template_format == "v6":
             attr_names = getattr(

@@ -266,10 +266,14 @@ class SonataCircuitAccess(CircuitAccess):
         # "Invalid range: 0-0" errors when other populations are empty
         if isinstance(node_set_def, dict) and "population" in node_set_def:
             population = node_set_def["population"]
+            # Single-population query: ids() returns plain integer node IDs,
+            # so the population name is taken from the node_set definition.
             ids = self._circuit.nodes[population].ids(node_set_def)
             return {CellId(population, x) for x in ids}
         else:
-            # For node_sets without population filter, query all populations
+            # Multi-population query: circuit.nodes.ids() returns
+            # CircuitNodeId objects that carry both population and id,
+            # so we extract both fields from each result.
             ids = self._circuit.nodes.ids(node_set_def)
             return {CellId(x.population, x.id) for x in ids}
 
