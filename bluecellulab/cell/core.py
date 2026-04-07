@@ -87,7 +87,10 @@ class Cell(InjectableMixin, PlottableMixin):
 
         Args:
             template_path: Path to hoc template file.
-            morphology_path: Path to morphology file.
+            morphology_path: Path to morphology file. Supports .asc, .swc, .h5 and .h5 containers formats.
+                            If the morphology is in an H5 container, the path should be the
+                            path to the morphology file in the H5 container.
+                            For example: "merged-morphologies.h5/C4095O94"
             cell_id: ID of the cell, used in RNG seeds.
             record_dt: Timestep for the recordings.
             template_format: Cell template format such as 'v5' or 'v6_air_scaler'.
