@@ -850,19 +850,22 @@ class Cell(InjectableMixin, PlottableMixin):
 
         if not file_path.exists():
             raise FileNotFoundError(f"Spike file not found: {str(file_path)}")
-        synapse_spikes: dict = get_synapse_replay_spikes(str(file_path))
+
+        synapse_spikes: dict[CellId, np.ndarray] = get_synapse_replay_spikes(str(file_path))
+
         for synapse_id, synapse in self.synapses.items():
-            source_population = synapse.syn_description["source_population_name"]
-            pre_gid = CellId(
-                source_population, int(synapse.syn_description[SynapseProperty.PRE_GID])
+            pre_cell_id = CellId(
+                str(synapse.syn_description["source_population_name"]),
+                int(synapse.syn_description[SynapseProperty.PRE_GID]),
             )
-            if pre_gid.id in synapse_spikes:
-                spikes_of_interest = synapse_spikes[pre_gid.id]
-                # filter spikes of interest >=stimulus.delay, <=stimulus.duration
+
+            if pre_cell_id in synapse_spikes:
+                spikes_of_interest = synapse_spikes[pre_cell_id]
                 spikes_of_interest = spikes_of_interest[
                     (spikes_of_interest >= stimulus.delay)
                     & (spikes_of_interest <= stimulus.duration)
                 ]
+
                 connection = bluecellulab.Connection(
                     synapse,
                     pre_spiketrain=spikes_of_interest,
@@ -872,7 +875,7 @@ class Cell(InjectableMixin, PlottableMixin):
                     spike_location=spike_location,
                 )
                 logger.debug(
-                    f"Added synapse replay from {pre_gid} to {self.cell_id.id}, {synapse_id}"
+                    f"Added synapse replay from {pre_cell_id} to {self.cell_id.id}, {synapse_id}"
                 )
 
                 self.connections[synapse_id] = connection

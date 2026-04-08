@@ -171,17 +171,17 @@ class SonataSimulationAccess:
         return outdat.to_dict()
 
 
-def get_synapse_replay_spikes(f_name: str) -> dict:
+def get_synapse_replay_spikes(f_name: str) -> dict[CellId, np.ndarray]:
     """Read the .h5 file containing the spike replays.
 
     Args:
         f_name: Path to SONATA .h5 spike file.
 
     Returns:
-        Dictionary mapping node_id to np.array of spike times.
+        Dictionary mapping CellId(population, node_id) to np.array of spike times.
     """
     all_spikes = []
-    with h5py.File(f_name, 'r') as f:
+    with h5py.File(f_name, "r") as f:
         if "spikes" not in f:
             raise ValueError("spike file is missing required 'spikes' group.")
 
@@ -190,7 +190,13 @@ def get_synapse_replay_spikes(f_name: str) -> dict:
             timestamps = pop_group["timestamps"][:]
             node_ids = pop_group["node_ids"][:]
 
-            pop_spikes = pd.DataFrame({"t": timestamps, "node_id": node_ids})
+            pop_spikes = pd.DataFrame(
+                {
+                    "t": timestamps,
+                    "population": str(population),
+                    "node_id": node_ids,
+                }
+            )
             pop_spikes = pop_spikes.astype({"node_id": int})
             all_spikes.append(pop_spikes)
 
@@ -201,9 +207,10 @@ def get_synapse_replay_spikes(f_name: str) -> dict:
 
     if (spikes["t"] < 0).any():
         logger.warning("Found negative spike times... Clipping them to 0")
-        spikes["t"].clip(lower=0., inplace=True)
+        spikes["t"] = spikes["t"].clip(lower=0.0)
 
-    # Group spikes by node_id and ensure spike times are sorted in ascending order.
-    # This is critical because NEURON's VecStim requires monotonically increasing times per train.
-    grouped = spikes.groupby("node_id")["t"]
-    return {k: np.sort(np.asarray(v.values)) for k, v in grouped}
+    grouped = spikes.groupby(["population", "node_id"])["t"]
+    return {
+        CellId(str(population), int(node_id)): np.sort(np.asarray(times.values))
+        for (population, node_id), times in grouped
+    }
