@@ -209,6 +209,8 @@ def get_synapse_replay_spikes(f_name: str) -> dict[CellId, np.ndarray]:
         logger.warning("Found negative spike times... Clipping them to 0")
         spikes["t"] = spikes["t"].clip(lower=0.0)
 
+    # Group spikes by CellId (population, node_id) and sort each spike train,
+    # since NEURON VecStim requires monotonically increasing times.
     grouped = spikes.groupby(["population", "node_id"])["t"]
     return {
         CellId(str(population), int(node_id)): np.sort(np.asarray(times.values))
