@@ -295,3 +295,72 @@ def test_init_instantiated_cells_mpi_non_root_receives_broadcast():
     assert pc.gathered == ([local_cell], 0)
     assert pc.broadcasted == (None, 0)
     assert sim._instantiated_cells_mpi == expected
+
+
+def test_add_connections_mpi_non_instantiated_precell_uses_replay(monkeypatch):
+    sim = make_sim(pc=FakePC(rank=1))
+
+    post_id = CellId("PostPop", 5)
+    pre_id = CellId("PrePop", 3)
+
+    syn = DummySynapse(source_pop="PrePop", pre_gid=3)
+    post_cell = DummyCell(synapses={"syn1": syn})
+    sim.cells = {post_id: post_cell}
+    sim._instantiated_cells_mpi = {post_id}
+
+    class FakeSimulationAccess:
+        def get_spikes(self):
+            return {pre_id: [1.0, 2.0, 3.0]}
+
+    sim.simulation_access = FakeSimulationAccess()
+
+    class FakeCircuitAccess:
+        def __init__(self):
+            self.config = type("cfg", (), {"connection_entries": lambda _self: []})()
+
+    sim.circuit_access = FakeCircuitAccess()
+
+    def fail_global_gid(*args, **kwargs):
+        raise AssertionError("global_gid should not be called for replay connections")
+
+    sim.global_gid = fail_global_gid
+
+    created = []
+
+    class FakeConnection:
+        def __init__(
+            self,
+            synapse,
+            pre_spiketrain=None,
+            pre_cell=None,
+            stim_dt=None,
+            parallel_context=None,
+            spike_threshold=None,
+            spike_location=None,
+            pre_gid=None,
+        ):
+            self.synapse = synapse
+            self.pre_spiketrain = pre_spiketrain
+            self.pre_cell = pre_cell
+            self.parallel_context = parallel_context
+            self.pre_gid = pre_gid
+            self.weight = 1.0
+            self.post_netcon_weight = 1.0
+            created.append(self)
+
+        def set_weight_scalar(self, scalar: float):
+            self.post_netcon_weight = self.weight * scalar
+
+        def set_netcon_delay(self, delay: float):
+            return None
+
+    monkeypatch.setattr(circuit_simulation.bluecellulab, "Connection", FakeConnection)
+
+    sim._add_connections(add_replay=True, interconnect_cells=True)
+
+    assert len(created) == 1
+    assert created[0].parallel_context is None
+    assert created[0].pre_gid is None
+    assert created[0].pre_cell is None
+    assert created[0].pre_spiketrain.tolist() == [1.0, 2.0, 3.0]
+    assert post_cell.connections["syn1"] is created[0]
