@@ -18,7 +18,7 @@ import hashlib
 from functools import lru_cache
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Mapping, Optional
 
 from bluepysnap.bbp import Cell as SnapCell
 from bluepysnap.circuit_ids import CircuitNodeId, CircuitEdgeIds
@@ -258,15 +258,14 @@ class SonataCircuitAccess(CircuitAccess):
 
     @lru_cache(maxsize=16)
     def get_target_cell_ids(self, target: str) -> set[CellId]:
-        """Resolve a node set name into a set of CellIds.
-        """
+        """Resolve a node set name into a set of CellIds."""
         node_sets = self.config.get_node_sets()
         return self._resolve_node_set_to_cell_ids(target, node_sets)
 
     def _resolve_node_set_to_cell_ids(
         self,
         target: str,
-        node_sets: dict[str, object],
+        node_sets: Mapping[str, object],
     ) -> set[CellId]:
         if target not in node_sets:
             raise KeyError(f"Unknown node set: {target}")
