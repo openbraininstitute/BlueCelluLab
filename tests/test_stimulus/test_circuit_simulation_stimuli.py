@@ -18,7 +18,7 @@ from bluecellulab.circuit.config.sonata_simulation_config import SonataSimulatio
 import pytest
 
 from bluecellulab.circuit_simulation import CircuitSimulation
-from bluecellulab.stimulus.circuit_stimulus_definitions import Noise, Pulse
+from bluecellulab.stimulus.circuit_stimulus_definitions import Noise, Pulse, SubThreshold
 
 
 class FakeCell:
@@ -41,6 +41,9 @@ class FakeCell:
 
     def add_pulse(self, stimulus, section=None, segx=0.5):
         self.calls.append(("pulse", section, segx, stimulus))
+
+    def add_replay_subthreshold(self, stimulus, section=None, segx=0.5):
+        self.calls.append(("subthreshold", section, segx, stimulus))
 
 
 class FakeConfig:
@@ -446,3 +449,31 @@ def test_compartment_set_applied_only_to_matching_population():
     assert cell_a.calls[0][0] == "noise"
 
     assert cell_b.calls == []
+
+
+def test_subthreshold_stimulus_dispatched_to_cell():
+    """SubThreshold stimulus should be dispatched via add_replay_subthreshold."""
+    subthreshold = SubThreshold(
+        target="node_set_A",
+        delay=0.0,
+        duration=1000.0,
+        percent_less=20.0,
+        node_set="node_set_A",
+    )
+
+    cfg = FakeConfig([subthreshold], compartment_sets={})
+    access = FakeCircuitAccess(cfg, target_map={"node_set_A": [1]})
+
+    cell = FakeCell(1)
+    cells = {1: cell}
+
+    sim = make_dummy_sim(access, cells)
+
+    CircuitSimulation._add_stimuli(sim, add_subthreshold_stimuli=True)
+
+    assert len(cell.calls) == 1
+    call = cell.calls[0]
+    assert call[0] == "subthreshold"
+    assert call[1] == cell.soma
+    assert call[2] == 0.5
+    assert call[3].percent_less == 20.0
