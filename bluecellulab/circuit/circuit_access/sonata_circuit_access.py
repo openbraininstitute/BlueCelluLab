@@ -18,7 +18,7 @@ import hashlib
 from functools import lru_cache
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Mapping, Optional
 
 from bluepysnap.bbp import Cell as SnapCell
 from bluepysnap.circuit_ids import CircuitNodeId, CircuitEdgeIds
@@ -258,24 +258,41 @@ class SonataCircuitAccess(CircuitAccess):
 
     @lru_cache(maxsize=16)
     def get_target_cell_ids(self, target: str) -> set[CellId]:
-        # Use merged node_sets from simulation config (includes both circuit and simulation node_sets)
+        """Resolve a node set name into a set of CellIds."""
         node_sets = self.config.get_node_sets()
+        return self._resolve_node_set_to_cell_ids(target, node_sets)
+
+    def _resolve_node_set_to_cell_ids(
+        self,
+        target: str,
+        node_sets: Mapping[str, object],
+    ) -> set[CellId]:
+        if target not in node_sets:
+            raise KeyError(f"Unknown node set: {target}")
+
         node_set_def = node_sets[target]
 
-        # If node_set specifies a population, query only that population to avoid
-        # "Invalid range: 0-0" errors when other populations are empty
+        # Alias/composite node set, e.g. "All": ["L4_SBC", "L5_TPC:B", ...]
+        if isinstance(node_set_def, list):
+            result: set[CellId] = set()
+            for item in node_set_def:
+                if isinstance(item, str) and item in node_sets:
+                    result.update(self._resolve_node_set_to_cell_ids(item, node_sets))
+                else:
+                    raise ValueError(
+                        f"Unsupported composite node set entry {item!r} in node set {target!r}"
+                    )
+            return result
+
+        # Concrete single-population node set
         if isinstance(node_set_def, dict) and "population" in node_set_def:
-            population = node_set_def["population"]
-            # Single-population query: ids() returns plain integer node IDs,
-            # so the population name is taken from the node_set definition.
+            population = str(node_set_def["population"])
             ids = self._circuit.nodes[population].ids(node_set_def)
-            return {CellId(population, x) for x in ids}
-        else:
-            # Multi-population query: circuit.nodes.ids() returns
-            # CircuitNodeId objects that carry both population and id,
-            # so we extract both fields from each result.
-            ids = self._circuit.nodes.ids(node_set_def)
-            return {CellId(x.population, x.id) for x in ids}
+            return {CellId(population, int(x)) for x in ids}
+
+        # Fallback: let BluePySnap resolve it
+        ids = self._circuit.nodes.ids(node_set_def)
+        return {CellId(x.population, x.id) for x in ids}
 
     @lru_cache(maxsize=100)
     def fetch_cell_info(self, cell_id: CellId) -> pd.Series:

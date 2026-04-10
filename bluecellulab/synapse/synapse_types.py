@@ -52,12 +52,12 @@ class Synapse:
             syn_id: tuple[str, int],
             syn_description: pd.Series,
             popids: tuple[int, int],
-            post_gid: int,
+            post_gid: int | None,
             extracellular_calcium: float | None = None):
         """Constructor.
 
         Args:
-            gid: The post-synaptic cell gid.
+            cell_id: Identifier of the postsynaptic cell.
             hoc_args: The synapse location and section in hoc.
             syn_id: A tuple containing a synapse identifier, where the string is
                 the projection name and int is the synapse id. An empty string
@@ -65,8 +65,11 @@ class Synapse:
             syn_description: Parameters of the synapse.
             popids: A tuple containing source and target popids used by the random
                 number generation.
-            extracellular_calcium: The extracellular calcium concentration. Optional
-                and defaults to None.
+            post_gid: Global postsynaptic gid used for RNG seeding and synapse
+                initialization. If None, falls back to cell_id.id for backward
+                compatibility with standalone Cell usage.
+            extracellular_calcium: The extracellular calcium concentration.
+                Optional and defaults to None.
         """
         self.persistent: list[HocObjectType] = []
         self.synapseconfigure_cmds: list[str] = []
@@ -82,7 +85,7 @@ class Synapse:
         self.source_popid, self.target_popid = popids
 
         self.pre_gid = int(self.syn_description[SynapseProperty.PRE_GID])
-        self.post_gid = int(post_gid)
+        self.post_gid = int(cell_id.id if post_gid is None else post_gid)
 
         self.hoc_args = hoc_args
         self.mech_name: str = "not-yet-defined"

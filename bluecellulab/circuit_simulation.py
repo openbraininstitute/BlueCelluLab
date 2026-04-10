@@ -156,7 +156,8 @@ class CircuitSimulation:
         condition_parameters = self.circuit_access.config.condition_parameters()
         set_global_condition_parameters(condition_parameters)
 
-        self.gid_resolver: Optional[GidNamespace] = None
+        self.gids: Optional[GidNamespace] = None
+        self._instantiated_cells_mpi: set[CellId] | None = None
 
     def instantiate_gids(
         self,
@@ -335,6 +336,7 @@ class CircuitSimulation:
                     "add_replay option can not be used if add_synapses is False"
                 )
             if self.pc is not None:
+                self._init_instantiated_cells_mpi()
                 self._register_gids_for_mpi()
                 self.pc.barrier()
                 self.pc.setup_transfer()
@@ -737,9 +739,14 @@ class CircuitSimulation:
                     continue
 
                 if self.pc is None:
-                    real_synapse_connection = bool(interconnect_cells) and (pre_local_id in self.cells)
+                    real_synapse_connection = bool(interconnect_cells) and (
+                        pre_local_id in self.cells
+                    )
                 else:
-                    real_synapse_connection = bool(interconnect_cells)
+                    real_synapse_connection = bool(interconnect_cells) and (
+                        self._instantiated_cells_mpi is not None
+                        and pre_local_id in self._instantiated_cells_mpi
+                    )
 
                 if real_synapse_connection:
                     if (
@@ -1234,3 +1241,20 @@ class CircuitSimulation:
             prev = p
 
         return pop_offset
+
+    def _init_instantiated_cells_mpi(self) -> None:
+        """Build the global set of instantiated CellIds across all MPI
+        ranks."""
+        assert self.pc is not None
+
+        local_cells = list(self.cells.keys())
+        gathered = self.pc.py_gather(local_cells, 0)
+
+        if int(self.pc.id()) == 0:
+            all_cells = set()
+            for cell_list in gathered:
+                all_cells.update(cell_list)
+        else:
+            all_cells = None
+
+        self._instantiated_cells_mpi = self.pc.py_broadcast(all_cells, 0)

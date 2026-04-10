@@ -91,6 +91,61 @@ class TestSynapseFactory:
         res = SynapseFactory.synlocation_to_segx(section, ipt, syn_offset=-1.0)
         assert res == pytest.approx(0.9999999)
 
+    def test_create_synapse_without_post_gid_uses_cell_id_fallback(self):
+        syn_id = ("a", 0)
+        condition_parameters = Conditions.init_empty()
+        popids = (0, 0)
+        extracellular_calcium = 2.0
+        connection_modifiers = {
+            "Weight": 1.15143,
+            "SpontMinis": 0.0,
+            "SynapseConfigure": [
+                "%s.Use = 1 %s.Use_GB = 1 %s.Use_p = 1 %s.gmax0_AMPA = gmax_p_AMPA %s.rho_GB = 1 %s.rho0_GB = 1 %s.gmax_AMPA = %s.gmax_p_AMPA"
+            ],
+        }
+
+        self.cell.post_gid = None
+
+        synapse = SynapseFactory.create_synapse(
+            self.cell,
+            syn_id,
+            self.syn_description,
+            condition_parameters,
+            popids,
+            extracellular_calcium,
+            connection_modifiers,
+        )
+
+        assert isinstance(synapse, GluSynapse)
+        assert synapse.post_gid == self.cell.cell_id.id
+
+    def test_add_replay_synapse_without_post_gid_uses_cell_id_fallback(self):
+        syn_id = ("a", 0)
+        condition_parameters = Conditions.init_empty()
+        popids = (0, 0)
+        extracellular_calcium = 2.0
+        connection_modifiers = {
+            "Weight": 1.15143,
+            "SpontMinis": 0.0,
+            "SynapseConfigure": [
+                "%s.Use = 1 %s.Use_GB = 1 %s.Use_p = 1 %s.gmax0_AMPA = gmax_p_AMPA %s.rho_GB = 1 %s.rho0_GB = 1 %s.gmax_AMPA = %s.gmax_p_AMPA"
+            ],
+        }
+
+        self.cell.post_gid = None
+
+        self.cell.add_replay_synapse(
+            synapse_id=syn_id,
+            syn_description=self.syn_description,
+            connection_modifiers=connection_modifiers,
+            condition_parameters=condition_parameters,
+            popids=popids,
+            extracellular_calcium=extracellular_calcium,
+        )
+
+        synapse = self.cell.synapses[syn_id]
+        assert synapse.post_gid == self.cell.cell_id.id
+
 
 def test_determine_synapse_type():
     # Mocking a pd.Series for syn_description
