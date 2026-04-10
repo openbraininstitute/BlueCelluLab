@@ -277,6 +277,45 @@ class SonataCircuitAccess(CircuitAccess):
             ids = self._circuit.nodes.ids(node_set_def)
             return {CellId(x.population, x.id) for x in ids}
 
+    @lru_cache(maxsize=16)
+    def get_target_cell_ids(self, target: str) -> set[CellId]:
+        """Resolve a node set name into a set of CellIds.
+        """
+        node_sets = self.config.get_node_sets()
+        return self._resolve_node_set_to_cell_ids(target, node_sets)
+
+    def _resolve_node_set_to_cell_ids(
+        self,
+        target: str,
+        node_sets: dict[str, object],
+    ) -> set[CellId]:
+        if target not in node_sets:
+            raise KeyError(f"Unknown node set: {target}")
+
+        node_set_def = node_sets[target]
+
+        # Alias/composite node set, e.g. "All": ["L4_SBC", "L5_TPC:B", ...]
+        if isinstance(node_set_def, list):
+            result: set[CellId] = set()
+            for item in node_set_def:
+                if isinstance(item, str) and item in node_sets:
+                    result.update(self._resolve_node_set_to_cell_ids(item, node_sets))
+                else:
+                    raise ValueError(
+                        f"Unsupported composite node set entry {item!r} in node set {target!r}"
+                    )
+            return result
+
+        # Concrete single-population node set
+        if isinstance(node_set_def, dict) and "population" in node_set_def:
+            population = str(node_set_def["population"])
+            ids = self._circuit.nodes[population].ids(node_set_def)
+            return {CellId(population, int(x)) for x in ids}
+
+        # Fallback: let BluePySnap resolve it
+        ids = self._circuit.nodes.ids(node_set_def)
+        return {CellId(x.population, x.id) for x in ids}
+
     @lru_cache(maxsize=100)
     def fetch_cell_info(self, cell_id: CellId) -> pd.Series:
         return self._circuit.nodes[cell_id.population_name].get(cell_id.id)

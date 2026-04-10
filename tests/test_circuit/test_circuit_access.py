@@ -270,6 +270,53 @@ def test_get_target_cell_ids_without_population_filter():
 
     assert result == {CellId("popA", 1), CellId("popB", 5)}
 
+def test_get_target_cell_ids_composite_node_set():
+    access = object.__new__(SonataCircuitAccess)
+    access.config = SimpleNamespace(
+        get_node_sets=lambda: {
+            "A": {"population": "popA", "node_id": [1, 2]},
+            "B": {"population": "popB", "node_id": [5]},
+            "All": ["A", "B"],
+        }
+    )
+    access._circuit = SimpleNamespace(
+        nodes={
+            "popA": SimpleNamespace(ids=lambda _: [1, 2]),
+            "popB": SimpleNamespace(ids=lambda _: [5]),
+        }
+    )
+
+    result = SonataCircuitAccess.get_target_cell_ids(access, "All")
+
+    assert result == {
+        CellId("popA", 1),
+        CellId("popA", 2),
+        CellId("popB", 5),
+    }
+
+def test_get_target_cell_ids_nested_composite_node_set():
+    access = object.__new__(SonataCircuitAccess)
+    access.config = SimpleNamespace(
+        get_node_sets=lambda: {
+            "A": {"population": "popA", "node_id": [1]},
+            "B": {"population": "popB", "node_id": [5]},
+            "AB": ["A", "B"],
+            "All": ["AB"],
+        }
+    )
+    access._circuit = SimpleNamespace(
+        nodes={
+            "popA": SimpleNamespace(ids=lambda _: [1]),
+            "popB": SimpleNamespace(ids=lambda _: [5]),
+        }
+    )
+
+    result = SonataCircuitAccess.get_target_cell_ids(access, "All")
+
+    assert result == {
+        CellId("popA", 1),
+        CellId("popB", 5),
+    }
 
 def test_morph_filepath_h5v1_container_path():
     access = object.__new__(SonataCircuitAccess)
