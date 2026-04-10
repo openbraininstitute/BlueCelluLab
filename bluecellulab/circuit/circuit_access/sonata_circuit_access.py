@@ -258,24 +258,10 @@ class SonataCircuitAccess(CircuitAccess):
 
     @lru_cache(maxsize=16)
     def get_target_cell_ids(self, target: str) -> set[CellId]:
-        # Use merged node_sets from simulation config (includes both circuit and simulation node_sets)
+        """Resolve a node set name into a set of CellIds.
+        """
         node_sets = self.config.get_node_sets()
-        node_set_def = node_sets[target]
-
-        # If node_set specifies a population, query only that population to avoid
-        # "Invalid range: 0-0" errors when other populations are empty
-        if isinstance(node_set_def, dict) and "population" in node_set_def:
-            population = node_set_def["population"]
-            # Single-population query: ids() returns plain integer node IDs,
-            # so the population name is taken from the node_set definition.
-            ids = self._circuit.nodes[population].ids(node_set_def)
-            return {CellId(population, x) for x in ids}
-        else:
-            # Multi-population query: circuit.nodes.ids() returns
-            # CircuitNodeId objects that carry both population and id,
-            # so we extract both fields from each result.
-            ids = self._circuit.nodes.ids(node_set_def)
-            return {CellId(x.population, x.id) for x in ids}
+        return self._resolve_node_set_to_cell_ids(target, node_sets)
 
     def _resolve_node_set_to_cell_ids(
         self,
