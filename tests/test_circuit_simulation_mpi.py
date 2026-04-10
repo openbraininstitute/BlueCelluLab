@@ -251,3 +251,47 @@ def test_register_gids_for_mpi_uses_gid_namespace():
     expected_gid = sim.global_gid("PopX", 7)
     assert pc.set_gid2node_calls == [(expected_gid, 1)]
     assert pc.cell_calls == [(expected_gid, "netcon")]
+
+
+def test_init_instantiated_cells_mpi_root_collects_union():
+    cell_a = CellId("PopA", 1)
+    cell_b = CellId("PopB", 2)
+    cell_c = CellId("PopA", 3)
+
+    pc = FakePC(
+        rank=0,
+        gather_result=[
+            [cell_a, cell_b],
+            [cell_c],
+        ],
+    )
+    sim = make_sim(pc=pc)
+    sim.cells = {
+        cell_a: DummyCell(),
+        cell_b: DummyCell(),
+    }
+
+    sim._init_instantiated_cells_mpi()
+
+    assert pc.gathered == ([cell_a, cell_b], 0)
+    assert pc.broadcasted == ({cell_a, cell_b, cell_c}, 0)
+    assert sim._instantiated_cells_mpi == {cell_a, cell_b, cell_c}
+
+
+def test_init_instantiated_cells_mpi_non_root_receives_broadcast():
+    local_cell = CellId("PopA", 1)
+    expected = {local_cell, CellId("PopB", 2)}
+
+    pc = FakePC(
+        rank=1,
+        gather_result=None,
+        broadcast_result=expected,
+    )
+    sim = make_sim(pc=pc)
+    sim.cells = {local_cell: DummyCell()}
+
+    sim._init_instantiated_cells_mpi()
+
+    assert pc.gathered == ([local_cell], 0)
+    assert pc.broadcasted == (None, 0)
+    assert sim._instantiated_cells_mpi == expected
