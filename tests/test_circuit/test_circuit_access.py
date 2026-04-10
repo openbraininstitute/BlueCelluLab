@@ -270,6 +270,7 @@ def test_get_target_cell_ids_without_population_filter():
 
     assert result == {CellId("popA", 1), CellId("popB", 5)}
 
+
 def test_get_target_cell_ids_composite_node_set():
     access = object.__new__(SonataCircuitAccess)
     access.config = SimpleNamespace(
@@ -294,6 +295,7 @@ def test_get_target_cell_ids_composite_node_set():
         CellId("popB", 5),
     }
 
+
 def test_get_target_cell_ids_nested_composite_node_set():
     access = object.__new__(SonataCircuitAccess)
     access.config = SimpleNamespace(
@@ -317,6 +319,7 @@ def test_get_target_cell_ids_nested_composite_node_set():
         CellId("popA", 1),
         CellId("popB", 5),
     }
+
 
 def test_morph_filepath_h5v1_container_path():
     access = object.__new__(SonataCircuitAccess)

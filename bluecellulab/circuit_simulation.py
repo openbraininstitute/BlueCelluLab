@@ -159,7 +159,6 @@ class CircuitSimulation:
         self.gids: Optional[GidNamespace] = None
         self._instantiated_cells_mpi: set[CellId] | None = None
 
-
     def instantiate_gids(
         self,
         cells: int | tuple[str, int] | list[int | tuple[str, int]],
@@ -745,7 +744,8 @@ class CircuitSimulation:
                     )
                 else:
                     real_synapse_connection = bool(interconnect_cells) and (
-                        pre_local_id in self._instantiated_cells_mpi
+                        self._instantiated_cells_mpi is not None
+                        and pre_local_id in self._instantiated_cells_mpi
                     )
 
                 if real_synapse_connection:
@@ -1243,7 +1243,8 @@ class CircuitSimulation:
         return pop_offset
 
     def _init_instantiated_cells_mpi(self) -> None:
-        """Build the global set of instantiated CellIds across all MPI ranks."""
+        """Build the global set of instantiated CellIds across all MPI
+        ranks."""
         assert self.pc is not None
 
         local_cells = list(self.cells.keys())
