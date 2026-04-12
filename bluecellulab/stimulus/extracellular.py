@@ -111,7 +111,7 @@ class ElectrodeSource:
 
     def apply_ramp(self, signal_vec, step):
         """Apply linear ramp up and down to signal.
-        
+
         Args:
             signal_vec: hoc Vector to apply ramp to
             step: time step in ms

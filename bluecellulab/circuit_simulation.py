@@ -159,6 +159,7 @@ class CircuitSimulation:
 
         self.gids: Optional[GidNamespace] = None
         self._instantiated_cells_mpi: set[CellId] | None = None
+        self._efield_sources: dict[CellId, ElectrodeSource] = {}
 
     def instantiate_gids(
         self,
@@ -182,6 +183,7 @@ class CircuitSimulation:
         add_sinusoidal_stimuli: bool = False,
         add_linear_stimuli: bool = False,
         add_seclamp_stimuli: bool = False,
+        add_extracellular_stimuli: bool = False,
     ):
         """Instantiate a list of cells.
 
@@ -368,6 +370,7 @@ class CircuitSimulation:
             or add_sinusoidal_stimuli
             or add_linear_stimuli
             or add_seclamp_stimuli
+            or add_extracellular_stimuli
         ):
             self._add_stimuli(
                 add_noise_stimuli=add_noise_stimuli,
@@ -379,8 +382,9 @@ class CircuitSimulation:
                 add_sinusoidal_stimuli=add_sinusoidal_stimuli,
                 add_linear_stimuli=add_linear_stimuli,
                 add_seclamp_stimuli=add_seclamp_stimuli,
+                add_extracellular_stimuli=add_extracellular_stimuli,
             )
-            
+
             if add_extracellular_stimuli:
                 self._apply_extracellular_stimuli()
 
@@ -409,6 +413,7 @@ class CircuitSimulation:
         add_sinusoidal_stimuli=False,
         add_linear_stimuli=False,
         add_seclamp_stimuli=False,
+        add_extracellular_stimuli=False,
     ) -> None:
         """Instantiate all the stimuli."""
         stimuli_entries = self.circuit_access.config.get_all_stimuli_entries()
@@ -549,6 +554,109 @@ class CircuitSimulation:
                 shotnoise_stim_count += 1
             elif isinstance(stimulus, (OrnsteinUhlenbeck, RelativeOrnsteinUhlenbeck)):
                 ornstein_uhlenbeck_stim_count += 1
+
+    def _add_extracellular_stimulus(
+        self,
+        stimulus: circuit_stimulus_definitions.SpatiallyUniformEField,
+        targets: list[tuple],
+    ) -> None:
+        """Process extracellular e-field stimulus and accumulate into ElectrodeSource per cell.
+
+        Args:
+            stimulus: SpatiallyUniformEField stimulus definition
+            targets: list of (cell_id, section, segx, section_name) tuples
+        """
+        cell_targets = {}
+        for cell_id, sec, segx, sec_name in targets:
+            if cell_id not in cell_targets:
+                cell_targets[cell_id] = []
+            cell_targets[cell_id].append((sec, segx))
+
+        for cell_id, seg_list in cell_targets.items():
+            cell = self.cells[cell_id]
+
+            if cell_id not in self._efield_sources:
+                es = ElectrodeSource(
+                    base_amp=0,
+                    delay=stimulus.delay,
+                    duration=stimulus.duration,
+                    fields=stimulus.fields,
+                    ramp_up_time=stimulus.ramp_up_time,
+                    ramp_down_time=stimulus.ramp_down_time,
+                    dt=self.dt,
+                )
+                self._efield_sources[cell_id] = es
+            else:
+                new_es = ElectrodeSource(
+                    base_amp=0,
+                    delay=stimulus.delay,
+                    duration=stimulus.duration,
+                    fields=stimulus.fields,
+                    ramp_up_time=stimulus.ramp_up_time,
+                    ramp_down_time=stimulus.ramp_down_time,
+                    dt=self.dt,
+                )
+                self._efield_sources[cell_id] += new_es
+
+            es = self._efield_sources[cell_id]
+            segment_coords = cell.compute_segment_coordinates()
+
+            soma_coords_all = segment_coords.get(cell.soma.name())
+            if soma_coords_all is None or len(soma_coords_all) == 0:
+                logger.warning(
+                    f"Cell {cell_id} soma has no 3D coordinates, "
+                    "cannot apply extracellular stimulus"
+                )
+                continue
+
+            soma_position = np.mean(soma_coords_all, axis=0)
+
+            for sec, segx in seg_list:
+                sec_coords = segment_coords.get(sec.name())
+                segment_position = None
+
+                if sec_coords is None or len(sec_coords) == 0:
+                    # Try axon/myelin interpolation for sections without 3D points
+                    if not sec.n3d():
+                        try:
+                            segment_position = cell.get_segment_position(
+                                np.array([]), soma_position, sec, segx, func_loc2glob=None
+                            )
+                        except ValueError:
+                            logger.warning(
+                                f"Section {sec.name()} has no 3D coordinates and "
+                                "could not interpolate, skipping"
+                            )
+                            continue
+                    else:
+                        logger.warning(
+                            f"Section {sec.name()} has no 3D coordinates, skipping"
+                        )
+                        continue
+                else:
+                    seg_idx = int(segx * sec.nseg)
+                    if seg_idx >= len(sec_coords):
+                        seg_idx = len(sec_coords) - 1
+                    segment_position = sec_coords[seg_idx]
+
+                if segment_position is None:
+                    continue
+
+                displacement_vec = (segment_position - soma_position) * 1e-6
+
+                segment = sec(segx)
+                es.segment_displacements[segment] = displacement_vec
+
+            logger.debug(
+                f"Added extracellular stimulus to cell {cell_id} "
+                f"with {len(seg_list)} target segments"
+            )
+
+    def _apply_extracellular_stimuli(self) -> None:
+        """Apply all accumulated extracellular field sources to segments."""
+        for cell_id, es in self._efield_sources.items():
+            es.apply_segment_potentials()
+            logger.debug(f"Applied extracellular potentials to cell {cell_id}")
 
     def _add_synapses(self, pre_gids=None, add_minis=False):
         """Instantiate all the synapses."""

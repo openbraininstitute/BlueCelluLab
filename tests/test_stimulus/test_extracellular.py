@@ -191,14 +191,78 @@ def test_iadd_combining_sources():
 def test_iadd_different_dt_raises():
     """Test that combining sources with different dt raises assertion error."""
     es1 = ElectrodeSource(
-        base_amp=0, delay=0, duration=10, fields=[], 
+        base_amp=0, delay=0, duration=10, fields=[],
         ramp_up_time=0, ramp_down_time=0, dt=1.0
     )
-    
+
     es2 = ElectrodeSource(
-        base_amp=0, delay=0, duration=10, fields=[], 
+        base_amp=0, delay=0, duration=10, fields=[],
         ramp_up_time=0, ramp_down_time=0, dt=0.5
     )
-    
+
     with pytest.raises(AssertionError, match="multiple extracellular stimuli must have common dt"):
         es1 += es2
+
+
+def test_interp_axon_positions():
+    """Test axon position interpolation."""
+    from bluecellulab.cell import Cell
+
+    soma_position = np.array([0.0, 0.0, 0.0])
+
+    # Test axon[0]
+    pos = Cell.interp_axon_positions(0.0, 0, soma_position)
+    np.testing.assert_allclose(pos, [0.0, 0.0, 0.0])
+
+    pos = Cell.interp_axon_positions(0.5, 0, soma_position)
+    np.testing.assert_allclose(pos, [0.0, -15.0, 0.0])
+
+    pos = Cell.interp_axon_positions(1.0, 0, soma_position)
+    np.testing.assert_allclose(pos, [0.0, -30.0, 0.0])
+
+    # Test axon[1]
+    pos = Cell.interp_axon_positions(0.0, 1, soma_position)
+    np.testing.assert_allclose(pos, [0.0, -30.0, 0.0])
+
+    pos = Cell.interp_axon_positions(0.5, 1, soma_position)
+    np.testing.assert_allclose(pos, [0.0, -45.0, 0.0])
+
+    pos = Cell.interp_axon_positions(1.0, 1, soma_position)
+    np.testing.assert_allclose(pos, [0.0, -60.0, 0.0])
+
+
+def test_interp_axon_positions_error():
+    """Test that more than 2 axon sections raises error."""
+    from bluecellulab.cell import Cell
+
+    soma_position = np.array([0.0, 0.0, 0.0])
+
+    with pytest.raises(ValueError, match="More than 2 axon sections exist"):
+        Cell.interp_axon_positions(0.5, 2, soma_position)
+
+
+def test_interp_myelin_positions():
+    """Test myelin position interpolation."""
+    from bluecellulab.cell import Cell
+
+    soma_position = np.array([0.0, 0.0, 0.0])
+
+    # Test myelin[0]
+    pos = Cell.interp_myelin_positions(0.0, 0, soma_position)
+    np.testing.assert_allclose(pos, [0.0, -60.0, 0.0])
+
+    pos = Cell.interp_myelin_positions(0.5, 0, soma_position)
+    np.testing.assert_allclose(pos, [0.0, -560.0, 0.0])
+
+    pos = Cell.interp_myelin_positions(1.0, 0, soma_position)
+    np.testing.assert_allclose(pos, [0.0, -1060.0, 0.0])
+
+
+def test_interp_myelin_positions_error():
+    """Test that more than 1 myelin section raises error."""
+    from bluecellulab.cell import Cell
+
+    soma_position = np.array([0.0, 0.0, 0.0])
+
+    with pytest.raises(ValueError, match="More than 1 myelin section exist"):
+        Cell.interp_myelin_positions(0.5, 1, soma_position)
