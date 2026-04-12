@@ -566,7 +566,7 @@ class CircuitSimulation:
             stimulus: SpatiallyUniformEField stimulus definition
             targets: list of (cell_id, section, segx, section_name) tuples
         """
-        cell_targets = {}
+        cell_targets: dict[CellId, list[tuple]] = {}
         for cell_id, sec, segx, sec_name in targets:
             if cell_id not in cell_targets:
                 cell_targets[cell_id] = []

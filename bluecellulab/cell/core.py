@@ -19,7 +19,7 @@ import logging
 
 from pathlib import Path
 import queue
-from typing import Iterable, List, Optional, Tuple
+from typing import Callable, Iterable, List, Optional, Tuple
 from typing_extensions import deprecated
 
 import neuron
@@ -564,8 +564,6 @@ class Cell(InjectableMixin, PlottableMixin):
         sid = synapse_id[1]
 
         weight = syn_description[SynapseProperty.G_SYNX]
-        # numpy int to int
-        post_sec_id = int(syn_description[SynapseProperty.POST_SECTION_ID])
 
         weight_scalar = connection_modifiers.get('Weight', 1.0)
         exc_mini_frequency, inh_mini_frequency = mini_frequencies \
@@ -888,8 +886,8 @@ class Cell(InjectableMixin, PlottableMixin):
         soma_local_position: np.ndarray,
         section: NeuronSection,
         x: float,
-        func_loc2glob: Optional[callable] = None,
-    ) -> np.ndarray:
+        func_loc2glob: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+    ) -> Optional[np.ndarray]:
         """Get the global coordinates of the segment.
         For axon and myelin, interpolate along the y-axis of the local soma coordinates,
         and then convert to global coordinates.
