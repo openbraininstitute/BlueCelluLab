@@ -20,6 +20,7 @@ autosummary_mock_imports = [  # these modules are not publicly available
     "efel",
     "neo",
     "quantities",
+    "morphio",
 ]
 
 suppress_warnings = [

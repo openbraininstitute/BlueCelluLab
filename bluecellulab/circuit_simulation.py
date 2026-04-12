@@ -21,7 +21,8 @@ from typing import Any, Optional
 import logging
 import warnings
 
-from bluecellulab.reports.utils import configure_all_reports
+from bluecellulab.circuit.gid_resolver import GidNamespace
+from bluecellulab.reports.utils import prepare_recordings_for_reports
 import neuron
 import numpy as np
 import pandas as pd
@@ -139,7 +140,9 @@ class CircuitSimulation:
 
         self.rng_settings = RNGSettings.get_instance()
         self.rng_settings.set_seeds(
-            rng_mode, self.circuit_access.config, base_seed=base_seed
+            rng_mode,
+            self.circuit_access.config,
+            base_seed=base_seed,
         )
 
         self.cells: CellDict = CellDict()
@@ -154,10 +157,8 @@ class CircuitSimulation:
         condition_parameters = self.circuit_access.config.condition_parameters()
         set_global_condition_parameters(condition_parameters)
 
-        self._gid_stride = 1_000_000  # must exceed the max node_id in any population
-        self._pop_index: dict[str, int] = {"": 0}
-        
-        self._efield_sources: dict[CellId, ElectrodeSource] = {}
+        self.gids: Optional[GidNamespace] = None
+        self._instantiated_cells_mpi: set[CellId] | None = None
 
     def instantiate_gids(
         self,
@@ -180,7 +181,7 @@ class CircuitSimulation:
         add_ornstein_uhlenbeck_stimuli: bool = False,
         add_sinusoidal_stimuli: bool = False,
         add_linear_stimuli: bool = False,
-        add_extracellular_stimuli: bool = False,
+        add_seclamp_stimuli: bool = False,
     ):
         """Instantiate a list of cells.
 
@@ -264,6 +265,11 @@ class CircuitSimulation:
                                 Setting add_stimuli=True,
                                 will automatically set this option to
                                 True.
+        add_seclamp_stimuli : Process the 'seclamp' stimuli
+                                blocks of the simulation config.
+                                Setting add_stimuli=True,
+                                will automatically set this option to
+                                True.
         """
         if not isinstance(cells, list):
             cells = [cells]
@@ -275,23 +281,22 @@ class CircuitSimulation:
         else:
             pre_gids = None
 
-        # if pre_spike_trains take int as key then convert to CellId
+        normalized_pre_spike_trains: dict[CellId, Iterable] | None = None
         if pre_spike_trains is not None:
-            if not isinstance(next(iter(pre_spike_trains.keys())), tuple):
-                pre_spike_trains = {
-                    create_cell_id(gid): pre_spike_trains[gid]  # type: ignore
-                    for gid in pre_spike_trains
-                }
+            normalized_pre_spike_trains = {
+                create_cell_id(gid): spikes
+                for gid, spikes in pre_spike_trains.items()
+            }
 
         if self.gids_instantiated:
             raise BluecellulabError(
                 "instantiate_gids() is called twice on the "
-                "same CircuitSimumation, this is not supported"
+                "same CircuitSimulation, this is not supported"
             )
         else:
             self.gids_instantiated = True
 
-        if pre_spike_trains or add_replay:
+        if normalized_pre_spike_trains or add_replay:
             if add_synapses is False:
                 raise BluecellulabError(
                     "You need to set add_synapses to True "
@@ -299,28 +304,40 @@ class CircuitSimulation:
                     "pre_spike_trains"
                 )
 
-        # legacy for backward compatibility
-        if add_projections is None:
-            add_projections = False
-
         if add_projections is True:
             self.projections = self.circuit_access.config.get_all_projection_names()
-        elif add_projections is False:
+        elif add_projections is None or add_projections is False:
             self.projections = None
         else:
             self.projections = add_projections
 
+        need_gids = (
+            add_synapses
+            or (self.pc is not None)
+            or add_replay
+            or interconnect_cells
+            or pre_spike_trains is not None
+            or self.print_cellstate
+        )
+
+        if need_gids:
+            self.gids = self._build_gid_namespace(cell_ids)
+
         self._add_cells(cell_ids)
+
         self._apply_modifications()
         if add_synapses:
-            self._add_synapses(pre_gids=pre_gids, add_minis=add_minis)
-        if add_replay or interconnect_cells or pre_spike_trains:
+            self._add_synapses(
+                pre_gids=pre_gids,
+                add_minis=add_minis,
+            )
+        if add_replay or interconnect_cells or normalized_pre_spike_trains:
             if add_replay and not add_synapses:
                 raise BluecellulabError(
                     "add_replay option can not be used if add_synapses is False"
                 )
             if self.pc is not None:
-                self._init_pop_index_mpi()
+                self._init_instantiated_cells_mpi()
                 self._register_gids_for_mpi()
                 self.pc.barrier()
                 self.pc.setup_transfer()
@@ -328,8 +345,8 @@ class CircuitSimulation:
             self._add_connections(
                 add_replay=add_replay,
                 interconnect_cells=interconnect_cells,
-                user_pre_spike_trains=pre_spike_trains,
-            )  # type: ignore
+                user_pre_spike_trains=normalized_pre_spike_trains,
+            )
         if add_stimuli:
             add_noise_stimuli = True
             add_hyperpolarizing_stimuli = True
@@ -339,6 +356,7 @@ class CircuitSimulation:
             add_shotnoise_stimuli = True
             add_ornstein_uhlenbeck_stimuli = True
             add_linear_stimuli = True
+            add_seclamp_stimuli = True
 
         if (
             add_noise_stimuli
@@ -349,7 +367,7 @@ class CircuitSimulation:
             or add_ornstein_uhlenbeck_stimuli
             or add_sinusoidal_stimuli
             or add_linear_stimuli
-            or add_extracellular_stimuli
+            or add_seclamp_stimuli
         ):
             self._add_stimuli(
                 add_noise_stimuli=add_noise_stimuli,
@@ -360,14 +378,15 @@ class CircuitSimulation:
                 add_ornstein_uhlenbeck_stimuli=add_ornstein_uhlenbeck_stimuli,
                 add_sinusoidal_stimuli=add_sinusoidal_stimuli,
                 add_linear_stimuli=add_linear_stimuli,
-                add_extracellular_stimuli=add_extracellular_stimuli,
+                add_seclamp_stimuli=add_seclamp_stimuli,
             )
             
             if add_extracellular_stimuli:
                 self._apply_extracellular_stimuli()
 
-        configure_all_reports(
-            cells=self.cells, simulation_config=self.circuit_access.config
+        self.recording_index, self.sites_index = prepare_recordings_for_reports(
+            cells=self.cells,
+            simulation_config=self.circuit_access.config,
         )
 
         # add spike recordings
@@ -389,7 +408,7 @@ class CircuitSimulation:
         add_ornstein_uhlenbeck_stimuli=False,
         add_sinusoidal_stimuli=False,
         add_linear_stimuli=False,
-        add_extracellular_stimuli=False,
+        add_seclamp_stimuli=False,
     ) -> None:
         """Instantiate all the stimuli."""
         stimuli_entries = self.circuit_access.config.get_all_stimuli_entries()
@@ -504,6 +523,9 @@ class CircuitSimulation:
                 elif isinstance(stimulus, circuit_stimulus_definitions.Sinusoidal):
                     if add_sinusoidal_stimuli:
                         self.cells[cell_id].add_sinusoidal(stimulus)
+                elif isinstance(stimulus, circuit_stimulus_definitions.SEClamp):  # sonata only
+                    if add_seclamp_stimuli:
+                        self.cells[cell_id].add_seclamp(stimulus, section=sec, segx=segx)
                 elif isinstance(
                     stimulus, circuit_stimulus_definitions.SynapseReplay
                 ):  # sonata only
@@ -528,95 +550,14 @@ class CircuitSimulation:
             elif isinstance(stimulus, (OrnsteinUhlenbeck, RelativeOrnsteinUhlenbeck)):
                 ornstein_uhlenbeck_stim_count += 1
 
-    def _add_extracellular_stimulus(
-        self,
-        stimulus: circuit_stimulus_definitions.SpatiallyUniformEField,
-        targets: list[tuple],
-    ) -> None:
-        """Process extracellular e-field stimulus and accumulate into ElectrodeSource per cell.
-        
-        Args:
-            stimulus: SpatiallyUniformEField stimulus definition
-            targets: list of (cell_id, section, segx, section_name) tuples
-        """
-        cell_targets = {}
-        for cell_id, sec, segx, sec_name in targets:
-            if cell_id not in cell_targets:
-                cell_targets[cell_id] = []
-            cell_targets[cell_id].append((sec, segx))
-        
-        for cell_id, seg_list in cell_targets.items():
-            cell = self.cells[cell_id]
-            
-            if cell_id not in self._efield_sources:
-                es = ElectrodeSource(
-                    base_amp=0,
-                    delay=stimulus.delay,
-                    duration=stimulus.duration,
-                    fields=stimulus.fields,
-                    ramp_up_time=stimulus.ramp_up_time,
-                    ramp_down_time=stimulus.ramp_down_time,
-                    dt=self.dt,
-                )
-                self._efield_sources[cell_id] = es
-            else:
-                new_es = ElectrodeSource(
-                    base_amp=0,
-                    delay=stimulus.delay,
-                    duration=stimulus.duration,
-                    fields=stimulus.fields,
-                    ramp_up_time=stimulus.ramp_up_time,
-                    ramp_down_time=stimulus.ramp_down_time,
-                    dt=self.dt,
-                )
-                self._efield_sources[cell_id] += new_es
-            
-            es = self._efield_sources[cell_id]
-            segment_coords = cell.compute_segment_coordinates()
-            
-            soma_coords_all = segment_coords.get(cell.soma.name())
-            if soma_coords_all is None or len(soma_coords_all) == 0:
-                logger.warning(
-                    f"Cell {cell_id} soma has no 3D coordinates, "
-                    "cannot apply extracellular stimulus"
-                )
-                continue
-            
-            soma_position = np.mean(soma_coords_all, axis=0)
-            
-            for sec, segx in seg_list:
-                sec_coords = segment_coords.get(sec.name())
-                if sec_coords is None or len(sec_coords) == 0:
-                    logger.warning(
-                        f"Section {sec.name()} has no 3D coordinates, skipping"
-                    )
-                    continue
-                
-                seg_idx = int(segx * sec.nseg)
-                if seg_idx >= len(sec_coords):
-                    seg_idx = len(sec_coords) - 1
-                
-                segment_position = sec_coords[seg_idx]
-                displacement_vec = (segment_position - soma_position) * 1e-6
-                
-                segment = sec(segx)
-                es.segment_displacements[segment] = displacement_vec
-            
-            logger.debug(
-                f"Added extracellular stimulus to cell {cell_id} "
-                f"with {len(seg_list)} target segments"
-            )
-
-    def _apply_extracellular_stimuli(self) -> None:
-        """Apply all accumulated extracellular field sources to segments."""
-        for cell_id, es in self._efield_sources.items():
-            es.apply_segment_potentials()
-            logger.debug(f"Applied extracellular potentials to cell {cell_id}")
-
     def _add_synapses(self, pre_gids=None, add_minis=False):
         """Instantiate all the synapses."""
         for cell_id in self.cells:
-            self._add_cell_synapses(cell_id, pre_gids=pre_gids, add_minis=add_minis)
+            self._add_cell_synapses(
+                cell_id,
+                pre_gids=pre_gids,
+                add_minis=add_minis,
+            )
 
     def _add_cell_synapses(
         self, cell_id: CellId, pre_gids=None, add_minis=False
@@ -644,12 +585,14 @@ class CircuitSimulation:
                     syn_description["source_popid"],
                     syn_description["target_popid"],
                 )
+
                 self._instantiate_synapse(
                     cell_id=cell_id,
                     syn_id=idx,  # type: ignore
                     syn_description=syn_description,
                     add_minis=add_minis,
                     popids=popids,
+
                 )
             logger.info(f"Added {syn_descriptions} synapses for gid {cell_id}")
             if add_minis:
@@ -777,7 +720,8 @@ class CircuitSimulation:
         """Instantiate the (replay and real) connections in the network."""
         pre_spike_trains = self.simulation_access.get_spikes() if add_replay else {}
         pre_spike_trains = self.merge_pre_spike_trains(
-            pre_spike_trains, user_pre_spike_trains
+            pre_spike_trains,
+            user_pre_spike_trains,
         )
 
         connections_overrides = (
@@ -792,34 +736,31 @@ class CircuitSimulation:
                 syn_description: pd.Series = synapse.syn_description
                 delay_weights = synapse.delay_weights
                 source_population = syn_description["source_population_name"]
-                pre_gid = CellId(
-                    source_population, int(syn_description[SynapseProperty.PRE_GID])
-                )
+                pre_local_id = CellId(source_population, int(syn_description[SynapseProperty.PRE_GID]))
 
-                ov = self._find_matching_override(
-                    connections_overrides, pre_gid, post_gid
-                )
+                ov = self._find_matching_override(connections_overrides, pre_local_id, post_gid)
 
                 if ov is not None and ov.weight == 0.0:
                     logger.debug(
                         "Skipping connection due to zero weight override: %s -> %s | syn_id=%s",
-                        pre_gid,
-                        post_gid,
-                        syn_id,
+                        pre_local_id, post_gid, syn_id
                     )
                     continue
 
                 if self.pc is None:
                     real_synapse_connection = bool(interconnect_cells) and (
-                        pre_gid in self.cells
+                        pre_local_id in self.cells
                     )
                 else:
-                    real_synapse_connection = bool(interconnect_cells)
+                    real_synapse_connection = bool(interconnect_cells) and (
+                        self._instantiated_cells_mpi is not None
+                        and pre_local_id in self._instantiated_cells_mpi
+                    )
 
                 if real_synapse_connection:
                     if (
                         user_pre_spike_trains is not None
-                        and pre_gid in user_pre_spike_trains
+                        and pre_local_id in user_pre_spike_trains
                     ):
                         raise BluecellulabError(
                             """Specifying prespike trains of real connections"""
@@ -829,18 +770,18 @@ class CircuitSimulation:
                         connection = bluecellulab.Connection(
                             self.cells[post_gid].synapses[syn_id],
                             pre_spiketrain=None,
-                            pre_cell=self.cells[pre_gid],
+                            pre_cell=self.cells[pre_local_id],
                             stim_dt=self.dt,
                             parallel_context=None,
                             spike_threshold=self.spike_threshold,
                             spike_location=self.spike_location,
                         )
                     else:  # MPI cross-rank
-                        pre_g = self.global_gid(pre_gid.population_name, pre_gid.id)
+                        pre_gid = self.global_gid(pre_local_id.population_name, pre_local_id.id)
                         connection = bluecellulab.Connection(
                             self.cells[post_gid].synapses[syn_id],
                             pre_spiketrain=None,
-                            pre_gid=pre_g,
+                            pre_gid=pre_gid,
                             pre_cell=None,
                             stim_dt=self.dt,
                             parallel_context=self.pc,
@@ -848,11 +789,9 @@ class CircuitSimulation:
                             spike_location=self.spike_location,
                         )
 
-                    logger.debug(
-                        f"Added real connection between {pre_gid} and {post_gid}, {syn_id}"
-                    )
+                    logger.debug(f"Added real connection between {pre_local_id} and {post_gid}, {syn_id}")
                 else:  # replay connection
-                    pre_spiketrain = pre_spike_trains.get(pre_gid, None)
+                    pre_spiketrain = pre_spike_trains.get(pre_local_id, None)
                     connection = bluecellulab.Connection(
                         self.cells[post_gid].synapses[syn_id],
                         pre_spiketrain=pre_spiketrain,
@@ -863,18 +802,12 @@ class CircuitSimulation:
                         spike_location=self.spike_location,
                     )
 
-                    logger.debug(
-                        f"Added replay connection from {pre_gid} to {post_gid}, {syn_id}"
-                    )
+                    logger.debug(f"Added replay connection from {pre_local_id} to {post_gid}, {syn_id}")
 
                 if ov is not None:
                     logger.debug(
                         "Override matched: %s -> %s | syn_id=%s | weight=%s delay=%s",
-                        pre_gid,
-                        post_gid,
-                        syn_id,
-                        ov.weight,
-                        ov.delay,
+                        pre_local_id, post_gid, syn_id, ov.weight, ov.delay
                     )
 
                     syn_delay = getattr(ov, "synapse_delay_override", None)
@@ -882,31 +815,21 @@ class CircuitSimulation:
                         connection.set_netcon_delay(float(syn_delay))
                         logger.debug(
                             "Applied synapse_delay_override %.4g ms to %s -> %s | syn_id=%s",
-                            syn_delay,
-                            pre_gid,
-                            post_gid,
-                            syn_id,
+                            syn_delay, pre_local_id, post_gid, syn_id
                         )
 
                     if ov.delay is not None:
                         logger.warning(
                             "SONATA override 'delay' (delayed weight activation) is not supported yet; "
                             "applying weight immediately. %s -> %s | syn_id=%s | delay=%s",
-                            pre_gid,
-                            post_gid,
-                            syn_id,
-                            ov.delay,
+                            pre_local_id, post_gid, syn_id, ov.delay
                         )
 
                     if ov.weight is not None:
                         connection.set_weight_scalar(float(ov.weight))
                         logger.debug(
                             "Applied weight override factor %.4g to %s -> %s | syn_id=%s | final_weight=%.4g",
-                            ov.weight,
-                            pre_gid,
-                            post_gid,
-                            syn_id,
-                            connection.post_netcon_weight,
+                            ov.weight, pre_local_id, post_gid, syn_id, connection.post_netcon_weight
                         )
 
                 self.cells[post_gid].connections[syn_id] = connection
@@ -923,12 +846,15 @@ class CircuitSimulation:
         self.cells = CellDict()
 
         for cell_id in cell_ids:
-            self.cells[cell_id] = cell = self.create_cell_from_circuit(cell_id)
+            cell = self.create_cell_from_circuit(cell_id)
+            cell.post_gid = self.global_gid(cell_id.population_name, cell_id.id)
+            self.cells[cell_id] = cell
             if self.circuit_access.node_properties_available:
                 cell.connect_to_circuit(SonataProxy(cell_id, self.circuit_access))
 
     def _apply_modifications(self) -> None:
-        """Apply condition modifications from the simulation config to cells."""
+        """Apply condition modifications from the simulation config to
+        cells."""
         try:
             modifications = self.circuit_access.config.get_modifications()
         except (NotImplementedError, AttributeError):
@@ -936,14 +862,8 @@ class CircuitSimulation:
         if modifications:
             apply_modifications(self.cells, modifications, self.circuit_access)
 
-    def _instantiate_synapse(
-        self,
-        cell_id: CellId,
-        syn_id: SynapseID,
-        syn_description,
-        add_minis=False,
-        popids=(0, 0),
-    ) -> None:
+    def _instantiate_synapse(self, cell_id: CellId, syn_id: SynapseID, syn_description,
+                             add_minis=False, popids=(0, 0)) -> None:
         """Instantiate one synapse for a given gid, syn_id and
         syn_description."""
         pre_cell_id = CellId(
@@ -951,7 +871,9 @@ class CircuitSimulation:
             int(syn_description[SynapseProperty.PRE_GID]),
         )
         syn_connection_parameters = get_synapse_connection_parameters(
-            circuit_access=self.circuit_access, pre_cell=pre_cell_id, post_cell=cell_id
+            circuit_access=self.circuit_access,
+            pre_cell=pre_cell_id,
+            post_cell=cell_id,
         )
         if syn_connection_parameters["add_synapse"]:
             condition_parameters = self.circuit_access.config.condition_parameters()
@@ -1251,76 +1173,102 @@ class CircuitSimulation:
             emodel_properties=cell_kwargs["emodel_properties"],
         )
 
-    def global_gid(self, pop: str, gid: int) -> int:
-        """Return a globally unique NEURON GID for a (population, node_id)
-        pair.
-
-        NEURON's ParallelContext requires presynaptic sources to be identified by a
-        single integer GID across all ranks. In SONATA circuits, node ids are only
-        unique *within* a population, so we combine (population_name, node_id) into a
-        single integer:
-
-            global_gid = pop_index[population] * STRIDE + node_id
-
-        Notes
-        -----
-        STRIDE must be larger than the maximum node_id in any population to avoid GID
-        collisions.
+    def global_gid(self, pop: str, local_id: int) -> int:
+        """Convert a population name and local ID to a global GID.
 
         Parameters
         ----------
         pop : str
-            SONATA population name (e.g. "S1nonbarrel_neurons", "POm", ...).
-        gid : int
-            Node id within that population.
+            Population name.
+        local_id : int
+            Local ID within the population.
 
         Returns
         -------
         int
-            Globally unique integer GID used with ParallelContext.
+            Global GID.
+
+        Raises
+        ------
+        RuntimeError
+            If GID namespace is not initialized.
         """
-        if pop not in self._pop_index:
-            raise KeyError(
-                f"Population '{pop}' missing from pop index. "
-                f"Known pops: {sorted(self._pop_index.keys())}"
-            )
-        return self._pop_index[pop] * self._gid_stride + int(gid)
+        if self.gids is None:
+            raise RuntimeError("GID namespace not initialized yet.")
+        return self.gids.global_gid(pop, local_id)
 
-    def _init_pop_index_mpi(self) -> None:
-        """Build a consistent pop->index mapping across ranks."""
-        assert self.pc is not None
+    def _build_gid_namespace(self, cell_ids: list[CellId]) -> GidNamespace:
+        local_max_raw: dict[str, int] = {}
 
-        local_pops = set()
-        for post_gid in self.cells:
-            local_pops.add(post_gid.population_name)
-            synapses = getattr(self.cells[post_gid], "synapses", None)
-            if synapses:
-                for syn in synapses.values():
-                    sd = syn.syn_description
-                    local_pops.add(sd["source_population_name"])
+        # real populations: local loaded max
+        for cell_id in cell_ids:
+            pop = cell_id.population_name
+            gid = int(cell_id.id)
+            local_max_raw[pop] = max(local_max_raw.get(pop, -1), gid)
 
-        gathered = self.pc.py_gather(sorted(local_pops), 0)
+        # virtual populations: full size
+        for pop, size in self.circuit_access.virtual_population_sizes().items():
+            local_max_raw[pop] = max(local_max_raw.get(pop, -1), int(size) - 1)
 
-        if int(self.pc.id()) == 0:
-            all_pops = set([""])
-            for lst in gathered:
-                all_pops.update(lst)
-            pops_sorted = sorted(all_pops)
-            pop_index = {p: i for i, p in enumerate(pops_sorted)}
-        else:
-            pop_index = None
+        if self.pc is not None:
+            gathered = self.pc.py_gather(local_max_raw, 0)
 
-        pop_index = self.pc.py_broadcast(pop_index, 0)
-        self._pop_index = pop_index
+            if int(self.pc.id()) == 0:
+                global_max_raw: dict[str, int] = {}
+                for d in gathered:
+                    for pop, gid in d.items():
+                        global_max_raw[pop] = max(global_max_raw.get(pop, -1), gid)
+
+                pops_sorted = sorted(global_max_raw.keys())
+                pop_offset = self._compute_offsets_from_max(pops_sorted, global_max_raw)
+            else:
+                pop_offset = None
+
+            pop_offset = self.pc.py_broadcast(pop_offset, 0)
+            return GidNamespace(pop_offset)
+
+        pops_sorted = sorted(local_max_raw.keys())
+        pop_offset = self._compute_offsets_from_max(pops_sorted, local_max_raw)
+        return GidNamespace(pop_offset)
 
     def _register_gids_for_mpi(self) -> None:
         assert self.pc is not None
+        assert self.gids is not None
 
         for cell_id, cell in self.cells.items():
             g = self.global_gid(cell_id.population_name, cell_id.id)
-
             self.pc.set_gid2node(g, int(self.pc.id()))
-            nc = cell.create_netcon_spikedetector(
-                None, location=self.spike_location, threshold=self.spike_threshold
-            )
+            nc = cell.create_netcon_spikedetector(None, location=self.spike_location, threshold=self.spike_threshold)
             self.pc.cell(g, nc)
+
+    def _compute_offsets_from_max(self, pops_sorted: list[str], max_raw: dict[str, int]) -> dict[str, int]:
+        pop_offset: dict[str, int] = {}
+        prev: str | None = None
+
+        for p in pops_sorted:
+            if prev is None:
+                pop_offset[p] = 0
+            else:
+                prev_count = int(max_raw[prev]) + 1
+                end_prev = pop_offset[prev] + prev_count
+                pop_offset[p] = ((end_prev + 999) // 1000) * 1000
+            prev = p
+
+        return pop_offset
+
+    def _init_instantiated_cells_mpi(self) -> None:
+        """Build the global set of instantiated CellIds across all MPI
+        ranks."""
+        assert self.pc is not None
+
+        local_cells = list(self.cells.keys())
+        gathered = self.pc.py_gather(local_cells, 0)
+
+        if int(self.pc.id()) == 0:
+            all_cells = set()
+            for cell_list in gathered:
+                all_cells.update(cell_list)
+        else:
+            all_cells = None
+
+        self._instantiated_cells_mpi = self.pc.py_broadcast(all_cells, 0)

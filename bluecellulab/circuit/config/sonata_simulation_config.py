@@ -185,6 +185,8 @@ class SonataSimulationConfig:
         Each key is a report name, and the value is its configuration.
         """
         reports = self.impl.config.get("reports", {})
+        if reports is None:
+            return {}
         if not isinstance(reports, dict):
             raise ValueError("Invalid format for 'reports' in SONATA config.")
         return reports

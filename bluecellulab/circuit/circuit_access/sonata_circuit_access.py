@@ -11,12 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Sonata circuit access implementation for BlueCelluLab."""
+
 from __future__ import annotations
 import hashlib
 from functools import lru_cache
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Mapping, Optional
 
 from bluepysnap.bbp import Cell as SnapCell
 from bluepysnap.circuit_ids import CircuitNodeId, CircuitEdgeIds
@@ -29,7 +31,7 @@ from bluecellulab.circuit.circuit_access.definition import CircuitAccess, Emodel
 from bluecellulab.circuit import CellId, SynapseProperty
 from bluecellulab.circuit.config import SimulationConfig
 from bluecellulab.circuit.synapse_properties import SynapseProperties
-from bluecellulab.circuit.config import SimulationConfig, SonataSimulationConfig
+from bluecellulab.circuit.config import SonataSimulationConfig
 from bluecellulab.circuit.synapse_properties import (
     properties_from_snap,
     properties_to_snap,
@@ -139,7 +141,7 @@ class SonataCircuitAccess(CircuitAccess):
         # edges whose source is a SONATA virtual node population
         proj = [n for n in all_names if getattr(edges[n].source, "type", None) == "virtual"]
 
-        if projections is False:
+        if projections is False or projections is None:
             return inner
 
         elif projections is True:
@@ -180,10 +182,7 @@ class SonataCircuitAccess(CircuitAccess):
     def extract_synapses(
         self, cell_id: CellId, projections: Optional[list[str] | str]
     ) -> pd.DataFrame:
-        """Extract the synapses.
-
-        If projections is None, all the synapses are extracted.
-        """
+        """Extract the synapses."""
         snap_node_id = CircuitNodeId(cell_id.population_name, cell_id.id)
         edges = self._circuit.edges
 
@@ -259,7 +258,40 @@ class SonataCircuitAccess(CircuitAccess):
 
     @lru_cache(maxsize=16)
     def get_target_cell_ids(self, target: str) -> set[CellId]:
-        ids = self._circuit.nodes.ids(self.config.impl.node_sets[target])
+        """Resolve a node set name into a set of CellIds."""
+        node_sets = self.config.get_node_sets()
+        return self._resolve_node_set_to_cell_ids(target, node_sets)
+
+    def _resolve_node_set_to_cell_ids(
+        self,
+        target: str,
+        node_sets: Mapping[str, object],
+    ) -> set[CellId]:
+        if target not in node_sets:
+            raise KeyError(f"Unknown node set: {target}")
+
+        node_set_def = node_sets[target]
+
+        # Alias/composite node set, e.g. "All": ["L4_SBC", "L5_TPC:B", ...]
+        if isinstance(node_set_def, list):
+            result: set[CellId] = set()
+            for item in node_set_def:
+                if isinstance(item, str) and item in node_sets:
+                    result.update(self._resolve_node_set_to_cell_ids(item, node_sets))
+                else:
+                    raise ValueError(
+                        f"Unsupported composite node set entry {item!r} in node set {target!r}"
+                    )
+            return result
+
+        # Concrete single-population node set
+        if isinstance(node_set_def, dict) and "population" in node_set_def:
+            population = str(node_set_def["population"])
+            ids = self._circuit.nodes[population].ids(node_set_def)
+            return {CellId(population, int(x)) for x in ids}
+
+        # Fallback: let BluePySnap resolve it
+        ids = self._circuit.nodes.ids(node_set_def)
         return {CellId(x.population, x.id) for x in ids}
 
     @lru_cache(maxsize=100)
@@ -297,14 +329,67 @@ class SonataCircuitAccess(CircuitAccess):
         return cell_ids
 
     def morph_filepath(self, cell_id: CellId) -> str:
-        """Returns the .asc morphology path from 'alternate_morphologies'."""
+        """Returns the morphology path from 'alternate_morphologies' based on
+        available formats."""
         node_population = self._circuit.nodes[cell_id.population_name]
+
+        # Get the alternate morphologies configuration
+        alternate_morphologies = node_population.config.get("alternate_morphologies")
+
+        # Check for H5v1 format first (highest priority for H5 containers)
+        if alternate_morphologies and "h5v1" in alternate_morphologies:
+            h5_container_path = alternate_morphologies["h5v1"]
+            # Get the morphology name for this cell
+            cell_properties = node_population.get(cell_id.id)
+            morphology_name = cell_properties.get("morphology", "")
+            if morphology_name:
+                # Return the H5 container path with cell name and .h5 extension
+                # This format works with os.path.split() in NeuronTemplate.get_cell()
+                # which splits it into (container.h5, CellName.h5) for the template
+                return f"{h5_container_path}/{morphology_name}.h5"
+
+        # Check for neurolucida-asc format
         try:  # if asc defined in alternate morphology
             return str(node_population.morph.get_filepath(cell_id.id, extension="asc"))
-        except BluepySnapError as e:
+        except BluepySnapError:
             logger.debug(f"No asc morphology found for {cell_id}, trying swc.")
+
+        # Fallback to default morphology handling
+        try:
             return str(node_population.morph.get_filepath(cell_id.id))
+        except BluepySnapError as e:
+            raise BluepySnapError(f"Could not determine morphology path for cell {cell_id}: {e}")
 
     def emodel_path(self, cell_id: CellId) -> str:
         node_population = self._circuit.nodes[cell_id.population_name]
-        return str(node_population.models.get_filepath(cell_id.id))
+
+        # Try to use the models helper if available
+        try:
+            return str(node_population.models.get_filepath(cell_id.id))
+        except BluepySnapError:
+            # If models helper is not available, construct path from model_template
+            # model_template format is typically "hoc:template_name"
+            cell_properties = node_population.get(cell_id.id)
+            model_template = cell_properties.get("model_template", "")
+
+            if model_template.startswith("hoc:"):
+                template_name = model_template.split(":", 1)[1]
+                # Get the biophysical_neuron_models_dir from config
+                models_dir = node_population.config.get("biophysical_neuron_models_dir", "")
+                if models_dir:
+                    return str(Path(models_dir) / f"{template_name}.hoc")
+
+            raise BluepySnapError(f"Could not determine emodel path for cell {cell_id}")
+
+    def node_population_sizes(self) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for pop_name, node_pop in self._circuit.nodes.items():
+            out[str(pop_name)] = node_pop.size
+        return out
+
+    def virtual_population_sizes(self) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for pop_name, node_pop in self._circuit.nodes.items():
+            if getattr(node_pop, "type", None) == "virtual":
+                out[str(pop_name)] = int(node_pop.size)
+        return out

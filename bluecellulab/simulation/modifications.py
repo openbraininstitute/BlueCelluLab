@@ -1,4 +1,5 @@
 # Copyright 2023-2024 Blue Brain Project / EPFL
+# Copyright 2025-2026 Open Brain Institute
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -55,7 +56,8 @@ SECTION_LIST_MAP: dict[str, str] = {
 
 
 class _AttributeCollector(ast.NodeVisitor):
-    """AST visitor that collects all attribute names referenced in an expression."""
+    """AST visitor that collects all attribute names referenced in an
+    expression."""
 
     def __init__(self):
         self.attrs: set[str] = set()
@@ -66,7 +68,8 @@ class _AttributeCollector(ast.NodeVisitor):
 
 
 def _validate_assignment(node) -> list:
-    """Return assignment targets from an AST node, raising on non-assignments."""
+    """Return assignment targets from an AST node, raising on non-
+    assignments."""
     if isinstance(node, ast.Assign):
         return node.targets
     if isinstance(node, ast.AugAssign):
@@ -79,9 +82,8 @@ def _validate_assignment(node) -> list:
 def parse_section_configure(
     config_str: str, placeholder: str = "%s"
 ) -> tuple[str, set[str]]:
-    """Parse a section_configure string, returning sanitized code and referenced attrs.
-
-    Follows neurodamus's ConfigureAllSections.parse_section_config() pattern.
+    """Parse a section_configure string, returning sanitized code and
+    referenced attrs.
 
     Args:
         config_str: The raw section_configure string (e.g. "%s.gbar = 0").
@@ -101,7 +103,7 @@ def parse_section_configure(
     for elem in tree.body:
         targets = _validate_assignment(elem)
         for tgt in targets:
-            if not isinstance(tgt, ast.Attribute) or tgt.value.id != "__sec_wildcard__":
+            if not isinstance(tgt, ast.Attribute) or not isinstance(tgt.value, ast.Name) or tgt.value.id != "__sec_wildcard__":
                 raise ValueError(
                     "section_configure only supports single assignments "
                     f"of attributes of the section wildcard {placeholder}"
@@ -144,7 +146,7 @@ def apply_modifications(
         elif isinstance(mod, ModificationCompartmentSet):
             _apply_compartment_set(cells, mod, circuit_access)
         else:
-            raise ValueError(f"Unknown modification type: {mod.type}")
+            raise ValueError(f"Unknown modification type: {type(mod).__name__}")
 
 
 def _resolve_target_cells(cells: dict, mod, circuit_access) -> list:
@@ -176,7 +178,8 @@ def _apply_ttx(cells: dict, mod: ModificationTTX, circuit_access) -> None:
 def _apply_configure_all_sections(
     cells: dict, mod: ModificationConfigureAllSections, circuit_access
 ) -> None:
-    """Apply configure_all_sections — exec section_configure on all sections."""
+    """Apply configure_all_sections — exec section_configure on all
+    sections."""
     logger.info(
         "Applying modification '%s' (type=configure_all_sections) to node_set '%s'",
         mod.name,
@@ -189,14 +192,14 @@ def _apply_configure_all_sections(
     n_sections = 0
     for cell_id in target_cell_ids:
         cell = cells[cell_id]
-        cell_applied = 0
+        sections_applied = 0
         for sec_name, section in cell.sections.items():
             if _exec_on_section(config, section, attrs):
-                cell_applied += 1
+                sections_applied += 1
                 logger.debug("  Applied to section '%s' of cell %s", sec_name, cell_id)
-        if cell_applied > 0:
+        if sections_applied > 0:
             n_cells += 1
-        n_sections += cell_applied
+        n_sections += sections_applied
 
     logger.info(
         "Modification '%s' applied to %d sections across %d cells",
@@ -231,6 +234,17 @@ def _apply_section_list(
             f"from section_configure '{mod.section_configure}'"
         )
     list_name = match.group(1)
+
+    # Validate that ALL attribute references use the same section list prefix
+    # Use a pattern that matches "identifier.identifier" to avoid matching
+    # numbers before decimal points (e.g. "1.5" should not match "1" as prefix)
+    all_prefixes = re.findall(r"([a-zA-Z_]\w*)\.(?=[a-zA-Z_])", mod.section_configure)
+    if not all(prefix == list_name for prefix in all_prefixes):
+        mixed_prefixes = set(all_prefixes)
+        raise ValueError(
+            f"section_list modification '{mod.name}': mixed section list prefixes detected "
+            f"{mixed_prefixes}. All statements must reference the same section list '{list_name}'."
+        )
 
     prop_name = SECTION_LIST_MAP.get(list_name)
     if prop_name is None:
@@ -274,15 +288,15 @@ def _apply_section_list(
             )
             continue
 
-        cell_applied = 0
+        sections_applied = 0
         for section in section_list:
             sec_name = section.name().split(".")[-1]
             if _exec_on_section(config_str, section, attrs):
-                cell_applied += 1
+                sections_applied += 1
                 logger.debug("  Applied to section '%s' of cell %s", sec_name, cell_id)
-        if cell_applied > 0:
+        if sections_applied > 0:
             n_cells += 1
-        n_sections += cell_applied
+        n_sections += sections_applied
 
     logger.info(
         "Modification '%s' applied to %d sections across %d cells",
@@ -307,8 +321,8 @@ def _apply_section(cells: dict, mod: ModificationSection, circuit_access) -> Non
     )
 
     # Extract section names from section_configure
-    # Format: "apic[10].gbar = 0; apic[10].gbar2 = 1" or "dend[3].x = 5"
-    # Find all unique "<name>[<idx>]." patterns
+    # Format: "apic[10].gbar = 0; apic[10].gbar2 = 1"
+    # Per SONATA spec, all statements must reference the same section
     section_names = list(
         dict.fromkeys(re.findall(r"(\w+\[\d+\])\.", mod.section_configure))
     )
@@ -318,45 +332,43 @@ def _apply_section(cells: dict, mod: ModificationSection, circuit_access) -> Non
             f"from section_configure '{mod.section_configure}'"
         )
 
-    # Build per-section config strings
-    # For each unique section name, replace "<name>[idx]." with "sec."
-    # and parse to get attrs
-    section_configs: dict[str, tuple[str, set[str]]] = {}
-    for sec_name in section_names:
-        escaped = re.escape(sec_name)
-        config_str = re.sub(escaped + r"\.", "sec.", mod.section_configure)
-        # Filter to only statements that reference this section
-        # (handle multi-section configs like "apic[10].x = 0; dend[3].y = 1")
-        collector = _AttributeCollector()
-        tree = ast.parse(config_str)
-        for elem in tree.body:
-            _validate_assignment(elem)
-            collector.visit(elem)
-        section_configs[sec_name] = (config_str, collector.attrs)
+    # Validate that ALL statements reference the same section (per SONATA spec)
+    if len(section_names) > 1:
+        raise ValueError(
+            f"section modification '{mod.name}': multiple sections detected "
+            f"{section_names}. All statements must reference the same section."
+        )
+
+    # Build config string by replacing the section name with "sec."
+    sec_name = section_names[0]
+    escaped = re.escape(sec_name)
+    config_str = re.sub(escaped + r"\.", "sec.", mod.section_configure)
+    collector = _AttributeCollector()
+    tree = ast.parse(config_str)
+    for elem in tree.body:
+        _validate_assignment(elem)
+        collector.visit(elem)
+    attrs = collector.attrs
 
     target_cell_ids = _resolve_target_cells(cells, mod, circuit_access)
     n_cells = 0
     n_sections = 0
     for cell_id in target_cell_ids:
         cell = cells[cell_id]
-        cell_applied = 0
-        for sec_name, (config_str, attrs) in section_configs.items():
-            try:
-                section = cell.get_section(sec_name)
-            except (ValueError, TypeError):
-                logger.warning(
-                    "section '%s': cell %s does not have section '%s', skipping",
-                    mod.name,
-                    cell_id,
-                    sec_name,
-                )
-                continue
-            if _exec_on_section(config_str, section, attrs):
-                cell_applied += 1
-                logger.debug("  Applied to section '%s' of cell %s", sec_name, cell_id)
-        if cell_applied > 0:
+        try:
+            section = cell.get_section(sec_name)
+        except (ValueError, TypeError):
+            logger.warning(
+                "section '%s': cell %s does not have section '%s', skipping",
+                mod.name,
+                cell_id,
+                sec_name,
+            )
+            continue
+        if _exec_on_section(config_str, section, attrs):
+            n_sections += 1
             n_cells += 1
-        n_sections += cell_applied
+            logger.debug("  Applied to section '%s' of cell %s", sec_name, cell_id)
 
     logger.info(
         "Modification '%s' applied to %d sections across %d cells",
@@ -403,16 +415,10 @@ def _apply_compartment_set(
     comp_nodes = comp_entry.get("compartment_set", [])
     population_name = comp_entry.get("population")
 
-    # Parse section_configure — bare format: "attr = value"
-    # Prefix with "seg." to make it executable
-    config_str = re.sub(r"(\b\w+)\s*=", r"seg.\1 =", mod.section_configure)
-    # But we need to be careful: only LHS identifiers should be prefixed.
-    # Better approach: use ast to parse and validate
-    # For compartment_set, the format is "attr = value [; attr = value ...]"
-    # We prefix each bare assignment target with "seg."
+    # Parse section_configure — bare format: "attr = value [; attr = value ...]"
+    # Prefix each bare assignment target with "seg." to make it executable
     statements = [s.strip() for s in mod.section_configure.split(";") if s.strip()]
     prefixed_parts = []
-    all_attrs: set[str] = set()
     for stmt in statements:
         prefixed = "seg." + stmt.strip()
         prefixed_parts.append(prefixed)
@@ -449,18 +455,18 @@ def _apply_compartment_set(
             )
             continue
 
-        cell_applied = 0
+        segments_applied = 0
         for section, sec_name, seg_x in resolved:
             segment = section(seg_x)
             if all(hasattr(segment, attr) for attr in all_attrs):
                 exec(config_str, {"__builtins__": None}, {"seg": segment})  # noqa: S102
-                cell_applied += 1
+                segments_applied += 1
                 logger.debug(
                     "  Applied to segment '%s(%s)' of cell %s", sec_name, seg_x, cell_id
                 )
-        if cell_applied > 0:
+        if segments_applied > 0:
             n_cells += 1
-        n_segments += cell_applied
+        n_segments += segments_applied
 
     logger.info(
         "Modification '%s' applied to %d segments across %d cells",

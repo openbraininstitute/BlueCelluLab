@@ -1,4 +1,5 @@
 # Copyright 2023-2024 Blue Brain Project / EPFL
+# Copyright 2025-2026 Open Brain Institute
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -149,7 +150,6 @@ class ModificationBase:
     """Base class for all modification types."""
 
     name: str
-    type: str
 
 
 @dataclass(frozen=True, config=dict(extra="forbid"))
@@ -161,9 +161,10 @@ class ModificationNodeSet(ModificationBase):
 
 @dataclass(frozen=True, config=dict(extra="forbid"))
 class ModificationTTX(ModificationNodeSet):
-    """TTX modification — blocks Na channels on all sections of target cells."""
+    """TTX modification — blocks Na channels on all sections of target
+    cells."""
 
-    pass
+    type: Literal["ttx"] = "ttx"
 
 
 @dataclass(frozen=True, config=dict(extra="forbid"))
@@ -171,6 +172,7 @@ class ModificationConfigureAllSections(ModificationNodeSet):
     """Applies section_configure to all sections of target cells."""
 
     section_configure: str
+    type: Literal["configure_all_sections"] = "configure_all_sections"
 
 
 @dataclass(frozen=True, config=dict(extra="forbid"))
@@ -178,6 +180,7 @@ class ModificationSectionList(ModificationNodeSet):
     """Applies section_configure to a named section list of target cells."""
 
     section_configure: str
+    type: Literal["section_list"] = "section_list"
 
 
 @dataclass(frozen=True, config=dict(extra="forbid"))
@@ -185,6 +188,7 @@ class ModificationSection(ModificationNodeSet):
     """Applies section_configure to specific named sections of target cells."""
 
     section_configure: str
+    type: Literal["section"] = "section"
 
 
 @dataclass(frozen=True, config=dict(extra="forbid"))
@@ -193,38 +197,35 @@ class ModificationCompartmentSet(ModificationBase):
 
     compartment_set: str
     section_configure: str
+    type: Literal["compartment_set"] = "compartment_set"
 
 
 def modification_from_libsonata(mod) -> ModificationBase:
     """Convert a libsonata modification object to a BlueCelluLab dataclass."""
-    type_name = mod.type.name  # e.g. "ttx", "configure_all_sections", etc.
+    type_name = mod.type.name.lower()  # e.g. "ttx", "configure_all_sections", etc.
     if type_name == "ttx":
-        return ModificationTTX(name=mod.name, type=type_name, node_set=mod.node_set)
+        return ModificationTTX(name=mod.name, node_set=mod.node_set)
     elif type_name == "configure_all_sections":
         return ModificationConfigureAllSections(
             name=mod.name,
-            type=type_name,
             node_set=mod.node_set,
             section_configure=mod.section_configure,
         )
     elif type_name == "section_list":
         return ModificationSectionList(
             name=mod.name,
-            type=type_name,
             node_set=mod.node_set,
             section_configure=mod.section_configure,
         )
     elif type_name == "section":
         return ModificationSection(
             name=mod.name,
-            type=type_name,
             node_set=mod.node_set,
             section_configure=mod.section_configure,
         )
     elif type_name == "compartment_set":
         return ModificationCompartmentSet(
             name=mod.name,
-            type=type_name,
             compartment_set=mod.compartment_set,
             section_configure=mod.section_configure,
         )

@@ -96,9 +96,36 @@ class TestSonataSimulationAccess:
 
 
 def test_get_synapse_replay_spikes():
-    """.Test get_synapse_replay_spikes."""
+    """Test get_synapse_replay_spikes."""
     res = get_synapse_replay_spikes(
         parent_dir / "data" / "synapse_replay_file" / "spikes.h5"
     )
-    assert set(res.keys()) == {5382}
-    assert res[5382].tolist() == [1500.0, 2000.0, 2500.0]
+    key = CellId("All", 5382)
+    assert set(res.keys()) == {key}
+    assert res[key].tolist() == [1500.0, 2000.0, 2500.0]
+
+
+def test_get_synapse_replay_spikes_keeps_population(tmp_path):
+    """Test get_synapse_replay_spikes keeps population in the key."""
+    import h5py
+
+    spike_file = tmp_path / "spikes.h5"
+    with h5py.File(spike_file, "w") as f:
+        spikes = f.create_group("spikes")
+
+        s1 = spikes.create_group("S1nonbarrel_neurons")
+        s1.create_dataset("timestamps", data=np.array([1.0, 2.0]))
+        s1.create_dataset("node_ids", data=np.array([1, 1]))
+
+        vpm = spikes.create_group("VPM")
+        vpm.create_dataset("timestamps", data=np.array([3.0]))
+        vpm.create_dataset("node_ids", data=np.array([1]))
+
+    res = get_synapse_replay_spikes(spike_file)
+
+    assert set(res.keys()) == {
+        CellId("S1nonbarrel_neurons", 1),
+        CellId("VPM", 1),
+    }
+    assert res[CellId("S1nonbarrel_neurons", 1)].tolist() == [1.0, 2.0]
+    assert res[CellId("VPM", 1)].tolist() == [3.0]

@@ -366,7 +366,7 @@ class TestApplyConfigureAllSectionsZeroMatch:
 class _CellWithoutApical:
     """Helper cell-like object that raises AttributeError for 'apical'."""
 
-    sections = {}
+    sections: dict[str, object] = {}
 
     @property
     def apical(self):
@@ -402,6 +402,53 @@ class TestApplySectionListAttributeError:
         )
         with pytest.raises(ValueError):
             _apply_section_list({}, mod, _make_circuit_access([]))
+
+
+class TestApplySectionListMixedPrefixes:
+    def test_float_values_not_treated_as_prefixes(self, caplog):
+        """Regression: 'somatic.cm *= 1.5' should NOT raise mixed prefix error."""
+        import logging
+
+        cell_id = mock.MagicMock()
+        sec = mock.MagicMock()
+        sec.name.return_value = "Cell.soma[0]"
+        cell = mock.MagicMock()
+        cell.somatic = [sec]
+        cells = {cell_id: cell}
+        mod = ModificationSectionList(
+            name="scale",
+            type="section_list",
+            node_set="target",
+            section_configure="somatic.cm *= 1.5",
+        )
+        ca = _make_circuit_access(target_cell_ids=[cell_id])
+        with caplog.at_level(logging.INFO):
+            _apply_section_list(cells, mod, ca)
+        assert "applied to" in caplog.text
+
+    def test_mixed_prefixes_raises(self):
+        """'apical.gbar = 0; basal.cm = 1' should raise mixed prefix error."""
+        mod = ModificationSectionList(
+            name="mixed",
+            type="section_list",
+            node_set="target",
+            section_configure="apical.gbar = 0; basal.cm = 1",
+        )
+        with pytest.raises(ValueError, match="mixed section list prefixes"):
+            _apply_section_list({}, mod, _make_circuit_access([]))
+
+
+class TestApplySectionMixedSections:
+    def test_mixed_sections_raises(self):
+        """'apic[10].x = 0; dend[3].y = 1' should raise multiple sections error."""
+        mod = ModificationSection(
+            name="mixed",
+            type="section",
+            node_set="target",
+            section_configure="apic[10].x = 0; dend[3].y = 1",
+        )
+        with pytest.raises(ValueError, match="multiple sections detected"):
+            _apply_section({}, mod, _make_circuit_access([]))
 
 
 class TestApplySectionEdgeCases:
@@ -701,7 +748,7 @@ class TestApplyModifications:
         assert seg.gbar == 0.5
 
     def test_unknown_type_raises(self):
-        mod = ModificationBase(name="bad", type="unknown")
+        mod = ModificationBase(name="bad")
         with pytest.raises(ValueError, match="Unknown modification type"):
             apply_modifications({}, [mod], mock.MagicMock())
 
@@ -719,12 +766,12 @@ modifications_conf_path = (
 
 
 def test_get_modifications_from_config():
-    """Test that SonataSimulationConfig.get_modifications() parses correctly."""
+    """Test that SonataSimulationConfig.get_modifications() parses all 5 types."""
     from bluecellulab.circuit.config import SonataSimulationConfig
 
     sim = SonataSimulationConfig(modifications_conf_path)
     mods = sim.get_modifications()
-    assert len(mods) == 2
+    assert len(mods) == 5
 
     assert isinstance(mods[0], ModificationTTX)
     assert mods[0].name == "TTX_block"
@@ -734,3 +781,16 @@ def test_get_modifications_from_config():
     assert isinstance(mods[1], ModificationConfigureAllSections)
     assert mods[1].name == "configure_all"
     assert mods[1].section_configure == "%s.cm = 2.0"
+
+    assert isinstance(mods[2], ModificationSectionList)
+    assert mods[2].name == "scale_soma"
+    assert mods[2].section_configure == "somatic.cm *= 1.5"
+
+    assert isinstance(mods[3], ModificationSection)
+    assert mods[3].name == "set_dend0"
+    assert mods[3].section_configure == "dend[0].cm = 5.0"
+
+    assert isinstance(mods[4], ModificationCompartmentSet)
+    assert mods[4].name == "set_compartment"
+    assert mods[4].compartment_set == "Mosaic_A"
+    assert mods[4].section_configure == "cm = 10.0"

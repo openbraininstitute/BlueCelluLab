@@ -16,6 +16,7 @@ classifiers = [
     "Operating System :: POSIX",
     "Topic :: Scientific/Engineering",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Utilities",
 ]
 keywords = [
@@ -28,8 +29,8 @@ keywords = [
     "Blue Brain Project",
 ]
 dependencies = [
-    "NEURON>=8.0.2,<9.0.0",
-    "numpy>=2.0.0,<2.4",
+    "NEURON>=8.0.2",
+    "numpy>=2.0.0,<2.5",
     "matplotlib>=3.0.0,<4.0.0",
     "pandas>=1.0.0,<3.0.0",
     "bluepysnap>=3.0.0,<4.0.0",
@@ -42,6 +43,7 @@ dependencies = [
     "efel>=5.7.19",
     "neo>=0.14.0",
     "quantities>=0.16.2",
+    "morphio>=3.0.0",
 ]
 requires-python = ">=3.10"
 

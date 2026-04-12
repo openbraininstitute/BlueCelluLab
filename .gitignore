@@ -10,6 +10,7 @@
 /doc/build
 /docs/build
 /docs/source/_autosummary
+/build
 .debug
 .profiling
 .vscode
@@ -31,3 +32,4 @@ cADpyr_L2TPC_dendrogram.png
 ex2_sonatagraph.pdf
 .venv
 bad_dendritic_fit.png
+/build

@@ -67,7 +67,7 @@ Main dependencies
 =================
 
 * `Python 3.10+ <https://www.python.org/downloads/release/python-390/>`_
-* `NEURON <=8.2.7 <https://pypi.org/project/NEURON/>`__
+* `NEURON >=8.0.2 <https://pypi.org/project/NEURON/>`__
 
 Installation
 ============

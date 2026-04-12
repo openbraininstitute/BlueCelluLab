@@ -20,6 +20,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 import uuid
 
+from bluecellulab.circuit.node_id import CellId
+from bluecellulab.circuit.synapse_properties import SynapseProperty
 import neuron
 import numpy as np
 import pytest
@@ -639,13 +641,14 @@ class TestCellV6:
         assert seg_1 == 0.25
 
     def test_configure_recording_success(self):
-        sites = [(None, "soma[0]", 0.5), (None, "dend[0]", 0.3)]
+        dend = MagicMock(name="dend_section")
+        sites = [(None, "soma[0]", 0.5), (dend, "dend[0]", 0.3)]
         self.cell.add_variable_recording = MagicMock()
 
         self.cell.configure_recording(sites, "v", "test_report")
 
         self.cell.add_variable_recording.assert_any_call(variable="v", section=None, segx=0.5)
-        self.cell.add_variable_recording.assert_any_call(variable="v", section=None, segx=0.3)
+        self.cell.add_variable_recording.assert_any_call(variable="v", section=dend, segx=0.3)
 
         # Optional: check number of total calls
         assert self.cell.add_variable_recording.call_count == 2
@@ -923,17 +926,62 @@ class TestCellCurrentsRecordings:
         assert "ina" in called
         assert "i_ExpSyn" in called
 
-    def test_compute_segment_coordinates(self):
-        """Cell: Test compute_segment_coordinates for extracellular stimuli."""
-        segment_coords = self.cell.compute_segment_coordinates()
-        
-        assert isinstance(segment_coords, dict)
-        assert len(segment_coords) > 0
-        
-        soma_name = self.cell.soma.name()
-        assert soma_name in segment_coords
-        
-        soma_coords = segment_coords[soma_name]
-        assert isinstance(soma_coords, np.ndarray)
-        assert soma_coords.shape[1] == 3
-        assert soma_coords.shape[0] == self.cell.soma.nseg + 1
+
+@pytest.mark.v6
+def test_add_synapse_replay_matches_population_and_node_id(monkeypatch, tmp_path):
+    """Cell: test add_synapse_replay matches using population and node_id."""
+    import h5py
+
+    spike_file = tmp_path / "spikes.h5"
+    with h5py.File(spike_file, "w") as f:
+        spikes = f.create_group("spikes")
+
+        vpm = spikes.create_group("VPM")
+        vpm.create_dataset("timestamps", data=np.array([10.0, 20.0]))
+        vpm.create_dataset("node_ids", data=np.array([14, 14]))
+
+    class DummyStimulus:
+        def __init__(self, spike_file):
+            self.spike_file = str(spike_file)
+            self.config_dir = None
+            self.delay = 0.0
+            self.duration = 100.0
+
+    class DummySynapse:
+        def __init__(self, source_population, pre_gid):
+            self.syn_description = {
+                "source_population_name": source_population,
+                SynapseProperty.PRE_GID: pre_gid,
+            }
+
+    class DummyConnection:
+        def __init__(
+            self,
+            synapse,
+            pre_spiketrain,
+            pre_cell,
+            stim_dt,
+            spike_threshold,
+            spike_location,
+        ):
+            self.synapse = synapse
+            self.pre_spiketrain = pre_spiketrain
+
+    monkeypatch.setattr(bluecellulab, "Connection", DummyConnection)
+
+    cell = Cell.__new__(Cell)
+    cell.sonata_proxy = object()
+    cell.cell_id = CellId("S1nonbarrel_neurons", 3)
+    cell.record_dt = 0.1
+    cell.connections = {}
+    cell.synapses = {
+        ("vpm", 0): DummySynapse("VPM", 14),
+        ("s1", 0): DummySynapse("S1nonbarrel_neurons", 14),
+    }
+
+    stimulus = DummyStimulus(spike_file)
+    Cell.add_synapse_replay(cell, stimulus, -20.0, "soma")
+
+    assert set(cell.connections.keys()) == {("vpm", 0)}
+    conn = cell.connections[("vpm", 0)]
+    assert np.allclose(conn.pre_spiketrain, [10.0, 20.0])
