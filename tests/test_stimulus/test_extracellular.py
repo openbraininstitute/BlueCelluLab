@@ -204,6 +204,110 @@ def test_iadd_different_dt_raises():
         es1 += es2
 
 
+def test_iadd_with_delay():
+    """Test combining sources with delay."""
+    es1 = ElectrodeSource(
+        base_amp=0,
+        delay=2,
+        duration=10,
+        fields=[{"Ex": 50, "Ey": -25, "Ez": 75, "frequency": 0}],
+        ramp_up_time=0,
+        ramp_down_time=0,
+        dt=1.0,
+    )
+
+    es2 = ElectrodeSource(
+        base_amp=0,
+        delay=5,
+        duration=10,
+        fields=[{"Ex": 100, "Ey": -50, "Ez": 50, "frequency": 0}],
+        ramp_up_time=0,
+        ramp_down_time=0,
+        dt=1.0,
+    )
+
+    es1 += es2
+
+    assert len(es1.time_vec) > 0
+    assert es1.time_vec[0] == 0
+
+
+def test_iadd_non_overlapping():
+    """Test combining sources with non-overlapping time ranges."""
+    es1 = ElectrodeSource(
+        base_amp=0,
+        delay=0,
+        duration=5,
+        fields=[{"Ex": 50, "Ey": -25, "Ez": 75, "frequency": 0}],
+        ramp_up_time=0,
+        ramp_down_time=0,
+        dt=1.0,
+    )
+
+    es2 = ElectrodeSource(
+        base_amp=0,
+        delay=10,
+        duration=5,
+        fields=[{"Ex": 100, "Ey": -50, "Ez": 50, "frequency": 0}],
+        ramp_up_time=0,
+        ramp_down_time=0,
+        dt=1.0,
+    )
+
+    es1 += es2
+
+    assert len(es1.time_vec) > 0
+
+
+def test_iadd_time_concatenation():
+    """Test combining sources with time vector concatenation edge case."""
+    es1 = ElectrodeSource(
+        base_amp=0,
+        delay=0,
+        duration=5,
+        fields=[{"Ex": 50, "Ey": -25, "Ez": 75, "frequency": 0}],
+        ramp_up_time=0,
+        ramp_down_time=0,
+        dt=1.0,
+    )
+
+    es2 = ElectrodeSource(
+        base_amp=0,
+        delay=5,
+        duration=5,
+        fields=[{"Ex": 100, "Ey": -50, "Ez": 50, "frequency": 0}],
+        ramp_up_time=0,
+        ramp_down_time=0,
+        dt=1.0,
+    )
+
+    es1 += es2
+
+    assert len(es1.time_vec) > 0
+    assert es1.time_vec[0] == 0
+
+
+def test_cleanup():
+    """Test that cleanup() clears references."""
+    es = ElectrodeSource(
+        base_amp=0,
+        delay=0,
+        duration=10,
+        fields=[{"Ex": 50, "Ey": -25, "Ez": 75, "frequency": 0}],
+        ramp_up_time=0,
+        ramp_down_time=0,
+        dt=1.0,
+    )
+
+    assert es.efields is not None
+    assert es.segment_displacements is not None
+
+    es.cleanup()
+
+    assert es.efields is None
+    assert es.segment_displacements is None
+
+
 def test_interp_axon_positions():
     """Test axon position interpolation."""
     from bluecellulab.cell import Cell
