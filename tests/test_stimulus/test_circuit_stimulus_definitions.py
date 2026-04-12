@@ -35,6 +35,7 @@ def test_pattern_from_sonata_valid():
         "relative_shot_noise": Pattern.RELATIVE_SHOT_NOISE,
         "ornstein_uhlenbeck": Pattern.ORNSTEIN_UHLENBECK,
         "relative_ornstein_uhlenbeck": Pattern.RELATIVE_ORNSTEIN_UHLENBECK,
+        "spatially_uniform_e_field": Pattern.SPATIALLY_UNIFORM_E_FIELD,
         "seclamp": Pattern.SECLAMP,
     }
 

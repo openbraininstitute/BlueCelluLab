@@ -560,7 +560,8 @@ class CircuitSimulation:
         stimulus: circuit_stimulus_definitions.SpatiallyUniformEField,
         targets: list[tuple],
     ) -> None:
-        """Process extracellular e-field stimulus and accumulate into ElectrodeSource per cell.
+        """Process extracellular e-field stimulus and accumulate into
+        ElectrodeSource per cell.
 
         Args:
             stimulus: SpatiallyUniformEField stimulus definition
