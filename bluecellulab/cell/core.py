@@ -19,7 +19,7 @@ import logging
 
 from pathlib import Path
 import queue
-from typing import Iterable, List, Optional, Tuple
+from typing import Callable, Iterable, List, Optional, Tuple
 from typing_extensions import deprecated
 
 import neuron
@@ -564,8 +564,6 @@ class Cell(InjectableMixin, PlottableMixin):
         sid = synapse_id[1]
 
         weight = syn_description[SynapseProperty.G_SYNX]
-        # numpy int to int
-        post_sec_id = int(syn_description[SynapseProperty.POST_SECTION_ID])
 
         weight_scalar = connection_modifiers.get('Weight', 1.0)
         exc_mini_frequency, inh_mini_frequency = mini_frequencies \
@@ -836,6 +834,146 @@ class Cell(InjectableMixin, PlottableMixin):
     def n_segments(self) -> int:
         """Get the number of segments in the cell."""
         return sum(section.nseg for section in self.sections.values())
+
+    def compute_segment_coordinates(self) -> dict[str, np.ndarray]:
+        """Compute 3D coordinates of segment endpoints for all sections.
+
+        Extracts 3D point data from NEURON sections and interpolates segment
+        boundary positions along the section axis. Used for extracellular
+        stimulus displacement calculations.
+
+        Returns:
+            Dictionary mapping section names to arrays of shape (nseg+1, 3)
+            containing [x, y, z] coordinates of segment endpoints in micrometers.
+            Sections without 3D point data return empty arrays.
+        """
+        segment_coords = {}
+
+        for section in self.sections.values():
+            n_pts = int(neuron.h.n3d(sec=section))
+
+            if n_pts == 0:
+                logger.warning(
+                    f"Section {section.name()} has no 3D points, "
+                    "cannot compute segment coordinates"
+                )
+                segment_coords[section.name()] = np.array([])
+                continue
+
+            arc_positions = np.array([neuron.h.arc3d(i, sec=section) for i in range(n_pts)])
+            x_coords = np.array([neuron.h.x3d(i, sec=section) for i in range(n_pts)])
+            y_coords = np.array([neuron.h.y3d(i, sec=section) for i in range(n_pts)])
+            z_coords = np.array([neuron.h.z3d(i, sec=section) for i in range(n_pts)])
+
+            if section.L > 0:
+                arc_normalized = arc_positions / section.L
+            else:
+                arc_normalized = arc_positions
+
+            seg_positions = np.linspace(0, 1, section.nseg + 1)
+
+            x_interp = np.interp(seg_positions, arc_normalized, x_coords)
+            y_interp = np.interp(seg_positions, arc_normalized, y_coords)
+            z_interp = np.interp(seg_positions, arc_normalized, z_coords)
+
+            segment_coords[section.name()] = np.column_stack((x_interp, y_interp, z_interp))
+
+        return segment_coords
+
+    @staticmethod
+    def get_segment_position(
+        sec_seg_points: np.ndarray,
+        soma_local_position: np.ndarray,
+        section: NeuronSection,
+        x: float,
+        func_loc2glob: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+    ) -> Optional[np.ndarray]:
+        """Get the global coordinates of the segment.
+        For axon and myelin, interpolate along the y-axis of the local soma coordinates,
+        and then convert to global coordinates.
+
+        Args:
+            sec_seg_points: segment global positions in the current section
+            soma_local_position: soma local position to interpolate axon and myelin position
+            section: hoc section
+            x: offset along the section, in [0, 1]
+            func_loc2glob: function to convert local coordinates to global ones for axon and myelin,
+                          return the local coordinates if None
+        Returns:
+            global coordinates [x, y, z], type np.array
+        """
+        if not section.n3d():  # Axonal segments don't have 3d points associated, so we guess
+            if "axon" in section.name():
+                pattern = r"axon\[(\d+)\]$"
+                if match := re.search(pattern, section.name()):
+                    axon_index = int(match.group(1))
+                    local_positions = Cell.interp_axon_positions(
+                        x, axon_index, soma_local_position
+                    )
+                    return func_loc2glob(local_positions) if func_loc2glob else local_positions
+            elif "myelin" in section.name():
+                pattern = r"myelin\[(\d+)\]$"
+                if match := re.search(pattern, section.name()):
+                    myelin_index = int(match.group(1))
+                    local_positions = Cell.interp_myelin_positions(
+                        x, myelin_index, soma_local_position
+                    )
+                    return func_loc2glob(local_positions) if func_loc2glob else local_positions
+            else:
+                raise ValueError(f"section {section.name()} has no 3d points defined")
+        else:
+            seg_index = int(np.floor((len(sec_seg_points) - 1) * x))
+            return sec_seg_points[seg_index]
+        return None
+
+    @staticmethod
+    def interp_axon_positions(x: float, axon_index: int, soma_position: np.ndarray) -> np.ndarray:
+        """Interpolate the coordinates of the axon segment for the given x,
+        because of no 3d point for the new axons.
+        Assume that the axon is oriented along the y-axis from soma, 30 um displaced for 1st axon,
+        60 um for 2nd axon, the same x- and z-coordinates as soma.
+        x=0 is soma, and x=1 is the end of the axon section.
+        """
+        if axon_index > 1:
+            raise ValueError("More than 2 axon sections exist!")
+        xpos = [soma_position[0], soma_position[0]]
+        ypos = [
+            soma_position[1] - 30 * int(axon_index),
+            soma_position[1] - 30 * int(axon_index + 1),
+        ]
+        zpos = [soma_position[2], soma_position[2]]
+        lens = [0, 1]
+
+        # Interpolate the coordinates for the given location x along the segment
+        seg_x = np.interp(x, lens, xpos)
+        seg_y = np.interp(x, lens, ypos)
+        seg_z = np.interp(x, lens, zpos)
+
+        return np.array([seg_x, seg_y, seg_z])
+
+    @staticmethod
+    def interp_myelin_positions(x: float, myelin_index: int, soma_position: np.ndarray) -> np.ndarray:
+        """Interpolate the coordinates of the myelin segment for the given x,
+        because of no 3d point for the new myelin section.
+        Assume that the myelin is oriented along the y-axis from soma,
+        1000 um displaced after the 2nd axon, i.e. [soma-60, soma-1000]
+        """
+        if myelin_index > 0:
+            raise ValueError("More than 1 myelin section exist!")
+        xpos = [soma_position[0], soma_position[0]]
+        ypos = [
+            (soma_position[1] - 60) - 1000 * int(myelin_index),
+            (soma_position[1] - 60) - 1000 * int(myelin_index + 1),
+        ]
+        zpos = [soma_position[2], soma_position[2]]
+        lens = [0, 1]
+
+        # Interpolate the coordinates for the given location x along the segment
+        seg_x = np.interp(x, lens, xpos)
+        seg_y = np.interp(x, lens, ypos)
+        seg_z = np.interp(x, lens, zpos)
+
+        return np.array([seg_x, seg_y, seg_z])
 
     def add_synapse_replay(
         self, stimulus: SynapseReplay, spike_threshold: float, spike_location: str

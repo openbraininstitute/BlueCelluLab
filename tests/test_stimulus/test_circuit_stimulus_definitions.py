@@ -14,7 +14,12 @@
 # limitations under the License.
 
 import pytest
-from bluecellulab.stimulus.circuit_stimulus_definitions import Noise, Pattern, Stimulus
+from bluecellulab.stimulus.circuit_stimulus_definitions import (
+    Noise, 
+    Pattern, 
+    Stimulus,
+    SpatiallyUniformEField,
+)
 
 
 def test_pattern_from_sonata_valid():
@@ -30,6 +35,7 @@ def test_pattern_from_sonata_valid():
         "relative_shot_noise": Pattern.RELATIVE_SHOT_NOISE,
         "ornstein_uhlenbeck": Pattern.ORNSTEIN_UHLENBECK,
         "relative_ornstein_uhlenbeck": Pattern.RELATIVE_ORNSTEIN_UHLENBECK,
+        "spatially_uniform_e_field": Pattern.SPATIALLY_UNIFORM_E_FIELD,
         "seclamp": Pattern.SECLAMP,
     }
 
@@ -41,6 +47,30 @@ def test_pattern_from_sonata_invalid():
     """Test that an invalid pattern raises a ValueError."""
     with pytest.raises(ValueError, match="Unknown pattern unknown_pattern"):
         Pattern.from_sonata("unknown_pattern")
+
+
+def test_pattern_from_blueconfig_valid():
+    """Test valid mappings from blueconfig strings to Pattern enum values."""
+    valid_patterns = {
+        "Noise": Pattern.NOISE,
+        "Hyperpolarizing": Pattern.HYPERPOLARIZING,
+        "Pulse": Pattern.PULSE,
+        "RelativeLinear": Pattern.RELATIVE_LINEAR,
+        "SynapseReplay": Pattern.SYNAPSE_REPLAY,
+        "ShotNoise": Pattern.SHOT_NOISE,
+        "RelativeShotNoise": Pattern.RELATIVE_SHOT_NOISE,
+        "OrnsteinUhlenbeck": Pattern.ORNSTEIN_UHLENBECK,
+        "RelativeOrnsteinUhlenbeck": Pattern.RELATIVE_ORNSTEIN_UHLENBECK,
+    }
+
+    for blueconfig_pattern, expected_enum in valid_patterns.items():
+        assert Pattern.from_blueconfig(blueconfig_pattern) == expected_enum
+
+
+def test_pattern_from_blueconfig_invalid():
+    """Test that an invalid blueconfig pattern raises a ValueError."""
+    with pytest.raises(ValueError, match="Unknown pattern unknown_pattern"):
+        Pattern.from_blueconfig("unknown_pattern")
 
 
 def test_noise_requires_exactly_one_mean_field():
@@ -73,3 +103,148 @@ def test_from_sonata_noise_requires_one_mean_field():
 
     with pytest.raises(ValueError, match="Noise input must contain exactly one of 'mean' or 'mean_percent'."):
         Stimulus.from_sonata({**base, "mean": 0.01, "mean_percent": 5.0})
+
+
+def test_pattern_spatially_uniform_e_field():
+    """Test that spatially_uniform_e_field maps correctly."""
+    assert Pattern.from_sonata("spatially_uniform_e_field") == Pattern.SPATIALLY_UNIFORM_E_FIELD
+
+
+def test_spatially_uniform_e_field_valid():
+    """Test valid SpatiallyUniformEField construction."""
+    stim = SpatiallyUniformEField(
+        target="T",
+        delay=0.0,
+        duration=10.0,
+        fields=[{"Ex": 100, "Ey": -50, "Ez": 75}],
+        ramp_up_time=2.0,
+        ramp_down_time=3.0,
+        node_set="T",
+        compartment_set=None,
+    )
+    assert stim.fields == [{"Ex": 100, "Ey": -50, "Ez": 75}]
+    assert stim.ramp_up_time == 2.0
+    assert stim.ramp_down_time == 3.0
+
+
+def test_spatially_uniform_e_field_empty_fields():
+    """Test that empty fields list raises validation error."""
+    with pytest.raises(ValueError, match="fields list cannot be empty"):
+        SpatiallyUniformEField(
+            target="T",
+            delay=0.0,
+            duration=10.0,
+            fields=[],
+            node_set="T",
+            compartment_set=None,
+        )
+
+
+def test_spatially_uniform_e_field_missing_components():
+    """Test that missing Ex/Ey/Ez raises validation error."""
+    with pytest.raises(ValueError, match="Field 0 must contain Ex, Ey, and Ez components"):
+        SpatiallyUniformEField(
+            target="T",
+            delay=0.0,
+            duration=10.0,
+            fields=[{"Ex": 100, "Ey": -50}],
+            node_set="T",
+            compartment_set=None,
+        )
+
+
+def test_spatially_uniform_e_field_negative_frequency():
+    """Test that negative frequency raises validation error."""
+    with pytest.raises(ValueError, match="Field 0 frequency must be non-negative"):
+        SpatiallyUniformEField(
+            target="T",
+            delay=0.0,
+            duration=10.0,
+            fields=[{"Ex": 100, "Ey": -50, "Ez": 75, "frequency": -10}],
+            node_set="T",
+            compartment_set=None,
+        )
+
+
+def test_from_sonata_spatially_uniform_e_field():
+    """Test parsing SONATA spatially_uniform_e_field stimulus."""
+    entry = {
+        "module": "spatially_uniform_e_field",
+        "delay": 0.0,
+        "duration": 10.0,
+        "node_set": "TestTarget",
+        "fields": [
+            {"Ex": 50, "Ey": -25, "Ez": 75, "frequency": 100},
+            {"Ex": 100, "Ey": -50, "Ez": 50, "frequency": 0},
+        ],
+        "ramp_up_time": 2.0,
+        "ramp_down_time": 3.0,
+    }
+    
+    stim = Stimulus.from_sonata(entry)
+    assert isinstance(stim, SpatiallyUniformEField)
+    assert stim.delay == 0.0
+    assert stim.duration == 10.0
+    assert stim.node_set == "TestTarget"
+    assert stim.compartment_set is None
+    assert len(stim.fields) == 2
+    assert stim.ramp_up_time == 2.0
+    assert stim.ramp_down_time == 3.0
+
+
+def test_from_sonata_spatially_uniform_e_field_defaults():
+    """Test parsing with default ramp times."""
+    entry = {
+        "module": "spatially_uniform_e_field",
+        "delay": 0.0,
+        "duration": 10.0,
+        "node_set": "TestTarget",
+        "fields": [{"Ex": 50, "Ey": -25, "Ez": 75}],
+    }
+
+    stim = Stimulus.from_sonata(entry)
+    assert isinstance(stim, SpatiallyUniformEField)
+    assert stim.ramp_up_time == 0.0
+    assert stim.ramp_down_time == 0.0
+
+
+def test_from_sonata_sinusoidal():
+    """Test parsing SONATA sinusoidal stimulus."""
+    from bluecellulab.stimulus.circuit_stimulus_definitions import Sinusoidal
+
+    entry = {
+        "module": "sinusoidal",
+        "delay": 0.0,
+        "duration": 10.0,
+        "node_set": "TestTarget",
+        "amp_start": 0.1,
+        "frequency": 10.0,
+    }
+
+    stim = Stimulus.from_sonata(entry)
+    assert isinstance(stim, Sinusoidal)
+    assert stim.delay == 0.0
+    assert stim.duration == 10.0
+    assert stim.amp_start == 0.1
+    assert stim.frequency == 10.0
+
+
+def test_from_sonata_seclamp():
+    """Test parsing SONATA seclamp stimulus."""
+    from bluecellulab.stimulus.circuit_stimulus_definitions import SEClamp
+
+    entry = {
+        "module": "seclamp",
+        "delay": 0.0,
+        "duration": 10.0,
+        "node_set": "TestTarget",
+        "voltage": -70.0,
+        "series_resistance": 0.02,
+    }
+
+    stim = Stimulus.from_sonata(entry)
+    assert isinstance(stim, SEClamp)
+    assert stim.delay == 0.0
+    assert stim.duration == 10.0
+    assert stim.voltage == -70.0
+    assert stim.series_resistance == 0.02
