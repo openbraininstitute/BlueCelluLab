@@ -21,10 +21,10 @@ import neuron
 
 class ElectrodeSource:
     """Constructs an extracellular potential field as the sum of multiple user-defined e-fields.
-    
+
     Applies the resulting signal to segment's e_extracellular reference.
     Adapted from Neurodamus stimuli.py for BlueCelluLab.
-    
+
     Args:
         base_amp: baseline amplitude when signal is inactive
         delay: start time delay in ms
@@ -45,11 +45,11 @@ class ElectrodeSource:
         self.dt = dt
         self.ramp_up_time = ramp_up_time
         self.ramp_down_time = ramp_down_time
-        
+
         if delay > 0:
             self.time_vec.append(self._cur_t)
             self._cur_t = delay
-        
+
         self.efields = self.add_cosines()
         self.segment_displacements = {}
         self.segment_potentials = []
@@ -61,7 +61,7 @@ class ElectrodeSource:
 
     def add_cosines(self):
         """Add multiple cosinusoidal signals.
-        
+
         Returns:
             numpy array of shape (3, n_timepoints) for Ex, Ey, Ez field components
         """
@@ -70,13 +70,13 @@ class ElectrodeSource:
         tvec.indgen(self._cur_t, self._cur_t + total_duration, self.dt)
         self.time_vec.append(tvec)
         self.delay_time(total_duration)
-        
+
         self.time_vec.append(self._cur_t + self.dt)
-        
+
         res_x = neuron.h.Vector(len(self.time_vec))
         res_y = neuron.h.Vector(len(self.time_vec))
         res_z = neuron.h.Vector(len(self.time_vec))
-        
+
         for field in self.fields:
             vec = neuron.h.Vector(len(tvec))
             freq = field.get("frequency", 0)
@@ -84,14 +84,14 @@ class ElectrodeSource:
             Ex = field["Ex"]
             Ey = field["Ey"]
             Ez = field["Ez"]
-            
+
             vec.sin(freq, phase + np.pi / 2, self.dt)
             self.apply_ramp(vec, self.dt)
-            
+
             if self._delay > 0:
                 vec.insrt(0, self._base_amp)
             vec.append(self._base_amp)
-            
+
             res_x.add(vec.c().mul(Ex))
             res_y.add(vec.c().mul(Ey))
             res_z.add(vec.c().mul(Ez))
@@ -100,10 +100,10 @@ class ElectrodeSource:
 
     def compute_potentials(self, displacement_vec):
         """Compute potential at a segment given displacement from reference point.
-        
+
         Args:
             displacement_vec: 3D displacement vector in meters [dx, dy, dz]
-            
+
         Returns:
             numpy array of potentials in mV over time
         """
@@ -134,10 +134,10 @@ class ElectrodeSource:
         for segment, displacement in self.segment_displacements.items():
             section = segment.sec
             e_ext_vec = neuron.h.Vector(self.compute_potentials(displacement))
-            
+
             if not section.has_membrane("extracellular"):
                 section.insert("extracellular")
-            
+
             e_ext_vec.play(segment.extracellular._ref_e, self.time_vec, 0)
             self.segment_potentials.append(e_ext_vec)
 
@@ -150,17 +150,17 @@ class ElectrodeSource:
 
     def __iadd__(self, other):
         """Combine with another ElectrodeSource object.
-        
+
         Merges time vectors and sums overlapping e-fields.
-        
+
         Args:
             other: another ElectrodeSource instance
-            
+
         Returns:
             self with combined time vector and e-fields
         """
         assert np.isclose(self.dt, other.dt), "multiple extracellular stimuli must have common dt"
-        
+
         combined_time_vec, self.efields = self._combine_time_efields(
             self.time_vec.as_numpy(),
             self.efields,
@@ -176,13 +176,13 @@ class ElectrodeSource:
     @staticmethod
     def _combine_time_efields(t1_vec, efields1, t2_vec, efields2, is_delay1, is_delay2, dt):
         """Combine time and efields vectors from 2 ElectrodeSource objects.
-        
+
         Args:
             t1_vec, t2_vec: numpy arrays of time points
             efields1, efields2: arrays of shape (3, n_timepoints) for Ex, Ey, Ez
             is_delay1, is_delay2: whether stimuli have delays
             dt: time step
-            
+
         Returns:
             tuple of (combined_time_vec, combined_efields)
         """
@@ -198,11 +198,11 @@ class ElectrodeSource:
 
         if not (t1_ticks[-1] < t2_ticks[0] or t2_ticks[-1] < t1_ticks[0]):
             combined_time_ticks = np.union1d(t1_ticks, t2_ticks)
-            
+
             idx1_left = np.searchsorted(t1_ticks, combined_time_ticks, side="right") - 1
             idx1_right = np.searchsorted(t1_ticks, combined_time_ticks, side="left")
             mask1 = idx1_left == idx1_right
-            
+
             idx2_left = np.searchsorted(t2_ticks, combined_time_ticks, side="right") - 1
             idx2_right = np.searchsorted(t2_ticks, combined_time_ticks, side="left")
             mask2 = idx2_left == idx2_right

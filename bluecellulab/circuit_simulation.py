@@ -458,7 +458,7 @@ class CircuitSimulation:
                 if add_extracellular_stimuli:
                     self._add_extracellular_stimulus(stimulus, targets)
                 continue
-            
+
             for cell_id, sec, segx, sec_name in targets:
                 if isinstance(stimulus, circuit_stimulus_definitions.Noise):
                     if add_noise_stimuli:

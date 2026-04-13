@@ -561,19 +561,19 @@ class SpatiallyUniformEField(Stimulus):
     def validate_fields(cls, v):
         if not v:
             raise ValueError("fields list cannot be empty")
-        
+
         for i, field_dict in enumerate(v):
             if "Ex" not in field_dict or "Ey" not in field_dict or "Ez" not in field_dict:
                 raise ValueError(
                     f"Field {i} must contain Ex, Ey, and Ez components"
                 )
-            
+
             frequency = field_dict.get("frequency", 0.0)
             if frequency < 0:
                 raise ValueError(f"Field {i} frequency must be non-negative")
-            
+
             phase = field_dict.get("phase", 0.0)
             if not isinstance(phase, (int, float)):
                 raise ValueError(f"Field {i} phase must be a number")
-        
+
         return v
