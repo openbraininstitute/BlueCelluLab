@@ -51,6 +51,7 @@ class Pattern(Enum):
     RELATIVE_ORNSTEIN_UHLENBECK = "relative_ornstein_uhlenbeck"
     SINUSOIDAL = "sinusoidal"
     SECLAMP = "seclamp"
+    SUBTHRESHOLD = "subthreshold"
 
     @classmethod
     def from_blueconfig(cls, pattern: str) -> Pattern:
@@ -72,6 +73,8 @@ class Pattern(Enum):
             return Pattern.ORNSTEIN_UHLENBECK
         elif pattern == "RelativeOrnsteinUhlenbeck":
             return Pattern.RELATIVE_ORNSTEIN_UHLENBECK
+        elif pattern == "SubThreshold":
+            return Pattern.SUBTHRESHOLD
         else:
             raise ValueError(f"Unknown pattern {pattern}")
 
@@ -101,6 +104,8 @@ class Pattern(Enum):
             return Pattern.SINUSOIDAL
         elif pattern == "seclamp":
             return Pattern.SECLAMP
+        elif pattern == "subthreshold":
+            return Pattern.SUBTHRESHOLD
         else:
             raise ValueError(f"Unknown pattern {pattern}")
 
@@ -227,6 +232,15 @@ class Stimulus:
                 seed=stimulus_entry.get("Seed", None),
                 mode=mode,
                 reversal=stimulus_entry.get("Reversal", 0.0),
+                node_set=stimulus_entry["Target"],
+                compartment_set=None,
+            )
+        elif pattern == Pattern.SUBTHRESHOLD:
+            return SubThreshold(
+                target=stimulus_entry["Target"],
+                delay=stimulus_entry["Delay"],
+                duration=stimulus_entry["Duration"],
+                percent_less=stimulus_entry["PercentLess"],
                 node_set=stimulus_entry["Target"],
                 compartment_set=None,
             )
@@ -395,6 +409,15 @@ class Stimulus:
                 node_set=node_set,
                 compartment_set=compartment_set,
             )
+        elif pattern == Pattern.SUBTHRESHOLD:
+            return SubThreshold(
+                target=target_name,
+                delay=stimulus_entry["delay"],
+                duration=stimulus_entry["duration"],
+                percent_less=stimulus_entry["percent_less"],
+                node_set=node_set,
+                compartment_set=compartment_set,
+            )
         else:
             raise ValueError(f"Unknown pattern {pattern}")
 
@@ -534,3 +557,9 @@ class SEClamp(Stimulus):
     durations: Optional[list[float]]
     voltages: Optional[list[float]]
     series_resistance: float
+
+
+@dataclass(frozen=True, config=dict(extra="forbid"))
+class SubThreshold(Stimulus):
+    """Injects a current step at some percent below a cell's threshold."""
+    percent_less: float

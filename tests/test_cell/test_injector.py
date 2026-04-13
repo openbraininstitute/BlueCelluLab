@@ -286,6 +286,20 @@ class TestInjector:
         assert tstim.stim.to_python() == [0.0, 0.0, percent_60, percent_100, 0.0, 0.0]
         assert tstim.tvec.to_python() == [0.0, 0.0, 0.0, 20.0, 20.0, 20.0]
 
+    def test_add_replay_subthreshold(self):
+        """Unit test for add_replay_subthreshold."""
+        from bluecellulab.stimulus.circuit_stimulus_definitions import SubThreshold
+
+        stimulus = SubThreshold(
+            target="single-cell",
+            delay=5, duration=15, percent_less=20)
+        tstim = self.cell.add_replay_subthreshold(stimulus)
+
+        # Expected amplitude: threshold * (100 - 20) / 100 = threshold * 0.8
+        expected_amp = self.cell.threshold * 0.8
+        assert tstim.stim.to_python() == approx([0.0, expected_amp, expected_amp, 0.0, 0.0])
+        assert tstim.tvec.to_python() == approx([5.0, 5.0, 20.0, 20.0, 20.0])
+
     def test_get_ornstein_uhlenbeck_rand(self):
         """Unit test to check RNG generated for ornstein_uhlenbeck."""
         rng = self.cell._get_ornstein_uhlenbeck_rand(0, 144)
