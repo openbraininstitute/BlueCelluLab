@@ -1,11 +1,11 @@
 # Copyright 2025 Open Brain Institute
-
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
-
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -19,24 +19,40 @@ from bluecellulab.circuit import CellId, SynapseProperty
 from bluecellulab.circuit.config.sections import ConnectionOverrides
 
 
+class FakeSonataCircuitAccess:
+    """Minimal SONATA CircuitAccess stub for GID namespace tests."""
+
+    def __init__(self, sizes: dict[str, int], virtual_sizes: dict[str, int] | None = None):
+        self._sizes = dict(sizes)
+        self._virtual_sizes = dict(virtual_sizes or {})
+
+    def node_population_sizes(self) -> dict[str, int]:
+        return dict(self._sizes)
+
+    def virtual_population_sizes(self) -> dict[str, int]:
+        return dict(self._virtual_sizes)
+
+
 class FakePC:
-    def __init__(self, rank=0, gather_result=None):
+    def __init__(self, rank=0, gather_result=None, broadcast_result=None):
         self._rank = rank
         self.gather_result = gather_result
+        self.broadcast_result = broadcast_result
         self.set_gid2node_calls = []
         self.cell_calls = []
         self.broadcasted = None
+        self.gathered = None
 
     def id(self):
         return self._rank
 
     def py_gather(self, data, root):
         self.gathered = (data, root)
-        return self.gather_result or [data]
+        return self.gather_result if self.gather_result is not None else [data]
 
     def py_broadcast(self, value, root):
         self.broadcasted = (value, root)
-        return value
+        return self.broadcast_result if self.broadcast_result is not None else value
 
     def set_gid2node(self, gid, node):
         self.set_gid2node_calls.append((gid, node))
@@ -66,102 +82,22 @@ class DummyCell:
         return "netcon"
 
 
-def make_sim(pc=None):
+def make_sim(*, pc=None, circuit_access=None):
     sim = CircuitSimulation.__new__(CircuitSimulation)
+
     sim.pc = pc
-    sim._gid_stride = 1_000
-    sim._pop_index = {"": 0}
     sim.dt = 0.1
     sim.spike_threshold = -20.0
     sim.spike_location = "soma"
+    sim.gids = None
+    sim.projections = False
+    sim.circuit_format = circuit_simulation.CircuitFormat.SONATA
+    sim.circuit_access = (
+        circuit_access if circuit_access is not None else FakeSonataCircuitAccess({})
+    )
+    sim.cells = {}
+
     return sim
-
-
-def test_init_pop_index_mpi_collects_all_populations():
-    pc = FakePC(rank=0, gather_result=[["PostA", "SourceA"], ["PostB"]])
-    sim = make_sim(pc=pc)
-
-    syn_a = DummySynapse(source_pop="SourceA", pre_gid=1)
-    cell_a = DummyCell(synapses={"s0": syn_a})
-    cell_b = DummyCell(synapses={})
-
-    sim.cells = {
-        CellId("PostA", 10): cell_a,
-        CellId("PostB", 11): cell_b,
-    }
-
-    sim._init_pop_index_mpi()
-
-    assert sim._pop_index[""] == 0
-    assert sim._pop_index["PostA"] == 1
-    assert sim._pop_index["PostB"] == 2
-    assert sim._pop_index["SourceA"] == 3
-
-
-def test_register_gids_for_mpi_uses_global_mapping():
-    pc = FakePC(rank=1)
-    sim = make_sim(pc=pc)
-    sim._pop_index = {"": 0, "PopX": 2}
-
-    cell_id = CellId("PopX", 7)
-    sim.cells = {cell_id: DummyCell()}
-
-    sim._register_gids_for_mpi()
-
-    expected_gid = sim.global_gid("PopX", 7)
-    assert pc.set_gid2node_calls == [(expected_gid, 1)]
-    assert pc.cell_calls == [(expected_gid, "netcon")]
-
-
-def test_add_connections_mpi_uses_global_pre_gid(monkeypatch):
-    pc = FakePC(rank=0)
-    sim = make_sim(pc=pc)
-    sim._pop_index = {"": 0, "PrePop": 1, "PostPop": 2}
-
-    post_id = CellId("PostPop", 5)
-    syn = DummySynapse(source_pop="PrePop", pre_gid=3)
-    post_cell = DummyCell(synapses={"syn1": syn})
-    sim.cells = {post_id: post_cell}
-
-    created = []
-
-    class FakeConnection:
-        def __init__(self, synapse, pre_spiketrain, pre_gid=None, pre_cell=None,
-                     stim_dt=None, parallel_context=None, spike_threshold=None,
-                     spike_location=None):
-            self.synapse = synapse
-            self.pre_spiketrain = pre_spiketrain
-            self.pre_gid = pre_gid
-            self.pre_cell = pre_cell
-            self.parallel_context = parallel_context
-            self.weight = 1.0
-            created.append(self)
-
-    monkeypatch.setattr(circuit_simulation.bluecellulab, "Connection", FakeConnection)
-
-    sim._add_connections(interconnect_cells=True)
-
-    assert "syn1" in post_cell.connections
-    conn = post_cell.connections["syn1"]
-    assert conn is created[0]
-    assert conn.pre_cell is None
-    assert conn.parallel_context is pc
-    assert conn.pre_gid == sim.global_gid("PrePop", 3)
-
-
-def test_global_gid_uses_stride_and_pop_index():
-    sim = make_sim(pc=None)
-    sim._gid_stride = 1000
-    sim._pop_index = {"": 0, "PopA": 2}
-
-    assert sim.global_gid("PopA", 7) == 2 * 1000 + 7
-
-
-def test_global_gid_raises_for_unknown_population():
-    sim = make_sim(pc=None)
-    sim._pop_index = {"": 0}
-    with pytest.raises(KeyError):
-        sim.global_gid("UnknownPop", 1)
 
 
 def test_add_connections_skips_zero_weight_override(monkeypatch):
@@ -174,8 +110,13 @@ def test_add_connections_skips_zero_weight_override(monkeypatch):
 
     overrides = [
         ConnectionOverrides(
-            source="src", target="dst", delay=None, weight=0.0,
-            spont_minis=None, synapse_configure=None, mod_override=None,
+            source="src",
+            target="dst",
+            delay=None,
+            weight=0.0,
+            spont_minis=None,
+            synapse_configure=None,
+            mod_override=None,
         )
     ]
 
@@ -189,8 +130,13 @@ def test_add_connections_skips_zero_weight_override(monkeypatch):
 
     sim.circuit_access = FakeCircuitAccess(overrides)
 
-    # Monkeypatch Connection so it would raise if invoked
-    monkeypatch.setattr(circuit_simulation.bluecellulab, "Connection", lambda *a, **k: (_ for _ in ()).throw(AssertionError("Connection should not be created")))
+    monkeypatch.setattr(
+        circuit_simulation.bluecellulab,
+        "Connection",
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("Connection should not be created")
+        ),
+    )
 
     sim._add_connections(interconnect_cells=False)
 
@@ -207,12 +153,24 @@ def test_add_connections_applies_last_matching_override(monkeypatch):
 
     overrides = [
         ConnectionOverrides(
-            source="any", target="any", synapse_delay_override=1.5, delay=None, weight=2.0,
-            spont_minis=None, synapse_configure=None, mod_override=None,
+            source="any",
+            target="any",
+            synapse_delay_override=1.5,
+            delay=None,
+            weight=2.0,
+            spont_minis=None,
+            synapse_configure=None,
+            mod_override=None,
         ),
         ConnectionOverrides(
-            source="any", target="any", synapse_delay_override=4.0, delay=None, weight=3.0,
-            spont_minis=None, synapse_configure=None, mod_override=None,
+            source="any",
+            target="any",
+            synapse_delay_override=4.0,
+            delay=None,
+            weight=3.0,
+            spont_minis=None,
+            synapse_configure=None,
+            mod_override=None,
         ),
     ]
 
@@ -222,7 +180,7 @@ def test_add_connections_applies_last_matching_override(monkeypatch):
             self.config = type("cfg", (), {"connection_entries": lambda _self: self._ov})()
 
         def target_contains_cell(self, *_):
-            return True  # everything matches for simplicity
+            return True
 
     sim.circuit_access = FakeCircuitAccess(overrides)
 
@@ -247,3 +205,162 @@ def test_add_connections_applies_last_matching_override(monkeypatch):
     conn = post_cell.connections["synX"]
     assert conn.post_netcon_delay == pytest.approx(4.0)
     assert conn.post_netcon_weight == pytest.approx(3.0)
+
+
+def test_gid_namespace_offsets_are_1000_blocked_and_0_based():
+    sim = make_sim(pc=None, circuit_access=FakeSonataCircuitAccess({"PopA": 3, "PopB": 2}))
+    cell_ids = [CellId("PopA", 0), CellId("PopA", 2), CellId("PopB", 0), CellId("PopB", 1)]
+    sim.gids = sim._build_gid_namespace(cell_ids)
+
+    assert sim.global_gid("PopA", 0) == 0
+    assert sim.global_gid("PopA", 2) == 2
+
+    assert sim.global_gid("PopB", 0) == 1000
+    assert sim.global_gid("PopB", 1) == 1001
+
+
+def test_gid_namespace_does_not_depend_on_projections():
+    sim = make_sim(pc=None, circuit_access=FakeSonataCircuitAccess({"PopA": 3, "PopB": 2}))
+    cell_ids = [CellId("PopA", 0), CellId("PopA", 2), CellId("PopB", 1)]
+
+    sim.projections = False
+    gids1 = sim._build_gid_namespace(cell_ids)
+
+    sim.projections = True
+    gids2 = sim._build_gid_namespace(cell_ids)
+
+    assert gids1.pop_offset == gids2.pop_offset
+
+
+def test_register_gids_for_mpi_uses_gid_namespace():
+    cell_ids = [CellId("PopX", 0), CellId("PopX", 7)]
+
+    pc = FakePC(
+        rank=1,
+        gather_result=[{"PopX": 7}, {"PopX": 7}],
+        broadcast_result={"PopX": 0},
+    )
+    sim = make_sim(pc=pc, circuit_access=FakeSonataCircuitAccess({"PopX": 10}))
+    sim.gids = sim._build_gid_namespace(cell_ids)
+
+    cell_id = CellId("PopX", 7)
+    sim.cells = {cell_id: DummyCell()}
+
+    sim._register_gids_for_mpi()
+
+    expected_gid = sim.global_gid("PopX", 7)
+    assert pc.set_gid2node_calls == [(expected_gid, 1)]
+    assert pc.cell_calls == [(expected_gid, "netcon")]
+
+
+def test_init_instantiated_cells_mpi_root_collects_union():
+    cell_a = CellId("PopA", 1)
+    cell_b = CellId("PopB", 2)
+    cell_c = CellId("PopA", 3)
+
+    pc = FakePC(
+        rank=0,
+        gather_result=[
+            [cell_a, cell_b],
+            [cell_c],
+        ],
+    )
+    sim = make_sim(pc=pc)
+    sim.cells = {
+        cell_a: DummyCell(),
+        cell_b: DummyCell(),
+    }
+
+    sim._init_instantiated_cells_mpi()
+
+    assert pc.gathered == ([cell_a, cell_b], 0)
+    assert pc.broadcasted == ({cell_a, cell_b, cell_c}, 0)
+    assert sim._instantiated_cells_mpi == {cell_a, cell_b, cell_c}
+
+
+def test_init_instantiated_cells_mpi_non_root_receives_broadcast():
+    local_cell = CellId("PopA", 1)
+    expected = {local_cell, CellId("PopB", 2)}
+
+    pc = FakePC(
+        rank=1,
+        gather_result=None,
+        broadcast_result=expected,
+    )
+    sim = make_sim(pc=pc)
+    sim.cells = {local_cell: DummyCell()}
+
+    sim._init_instantiated_cells_mpi()
+
+    assert pc.gathered == ([local_cell], 0)
+    assert pc.broadcasted == (None, 0)
+    assert sim._instantiated_cells_mpi == expected
+
+
+def test_add_connections_mpi_non_instantiated_precell_uses_replay(monkeypatch):
+    sim = make_sim(pc=FakePC(rank=1))
+
+    post_id = CellId("PostPop", 5)
+    pre_id = CellId("PrePop", 3)
+
+    syn = DummySynapse(source_pop="PrePop", pre_gid=3)
+    post_cell = DummyCell(synapses={"syn1": syn})
+    sim.cells = {post_id: post_cell}
+    sim._instantiated_cells_mpi = {post_id}
+
+    class FakeSimulationAccess:
+        def get_spikes(self):
+            return {pre_id: [1.0, 2.0, 3.0]}
+
+    sim.simulation_access = FakeSimulationAccess()
+
+    class FakeCircuitAccess:
+        def __init__(self):
+            self.config = type("cfg", (), {"connection_entries": lambda _self: []})()
+
+    sim.circuit_access = FakeCircuitAccess()
+
+    def fail_global_gid(*args, **kwargs):
+        raise AssertionError("global_gid should not be called for replay connections")
+
+    sim.global_gid = fail_global_gid
+
+    created = []
+
+    class FakeConnection:
+        def __init__(
+            self,
+            synapse,
+            pre_spiketrain=None,
+            pre_cell=None,
+            stim_dt=None,
+            parallel_context=None,
+            spike_threshold=None,
+            spike_location=None,
+            pre_gid=None,
+        ):
+            self.synapse = synapse
+            self.pre_spiketrain = pre_spiketrain
+            self.pre_cell = pre_cell
+            self.parallel_context = parallel_context
+            self.pre_gid = pre_gid
+            self.weight = 1.0
+            self.post_netcon_weight = 1.0
+            created.append(self)
+
+        def set_weight_scalar(self, scalar: float):
+            self.post_netcon_weight = self.weight * scalar
+
+        def set_netcon_delay(self, delay: float):
+            return None
+
+    monkeypatch.setattr(circuit_simulation.bluecellulab, "Connection", FakeConnection)
+
+    sim._add_connections(add_replay=True, interconnect_cells=True)
+
+    assert len(created) == 1
+    assert created[0].parallel_context is None
+    assert created[0].pre_gid is None
+    assert created[0].pre_cell is None
+    assert created[0].pre_spiketrain.tolist() == [1.0, 2.0, 3.0]
+    assert post_cell.connections["syn1"] is created[0]

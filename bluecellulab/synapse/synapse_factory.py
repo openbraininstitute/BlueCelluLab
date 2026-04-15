@@ -61,19 +61,23 @@ class SynapseFactory:
             else:
                 randomize_gaba_risetime = True
             synapse = GabaabSynapse(cell.cell_id, syn_hoc_args, syn_id, syn_description,
-                                    popids, extracellular_calcium, randomize_gaba_risetime)
+                                    popids, cell.post_gid, extracellular_calcium, randomize_gaba_risetime)
         elif syn_type == SynapseType.AMPANMDA:
             synapse = AmpanmdaSynapse(cell.cell_id, syn_hoc_args, syn_id, syn_description,
-                                      popids, extracellular_calcium)
+                                      popids, cell.post_gid, extracellular_calcium)
         elif syn_type == SynapseType.GLUSYNAPSE:
             synapse = GluSynapse(cell.cell_id, syn_hoc_args, syn_id, syn_description,
-                                 popids, extracellular_calcium)
+                                 popids, cell.post_gid, extracellular_calcium)
         elif syn_type == SynapseType.ALLEN_CHEMICAL:
             synapse = Exp2Syn(cell.cell_id, syn_hoc_args, syn_id, syn_description,
-                              popids, extracellular_calcium)
+                              popids, cell.post_gid, extracellular_calcium)
         elif syn_type == SynapseType.ALLEN_POINT:
             synapse = Exp2Syn(cell.cell_id, syn_hoc_args, syn_id, syn_description,
-                              popids, extracellular_calcium)
+                              popids, cell.post_gid, extracellular_calcium)
+        else:
+            synapse = GluSynapse(cell.cell_id, syn_hoc_args, syn_id, syn_description,
+                                 popids, cell.post_gid, extracellular_calcium)
+
         synapse = cls.apply_connection_modifiers(connection_modifiers, synapse)
 
         return synapse

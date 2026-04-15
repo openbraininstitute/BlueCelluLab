@@ -14,7 +14,7 @@
 # limitations under the License.
 
 import pytest
-from bluecellulab.stimulus.circuit_stimulus_definitions import Noise, Pattern, Stimulus
+from bluecellulab.stimulus.circuit_stimulus_definitions import Noise, Pattern, Stimulus, SubThreshold
 
 
 def test_pattern_from_sonata_valid():
@@ -31,6 +31,7 @@ def test_pattern_from_sonata_valid():
         "ornstein_uhlenbeck": Pattern.ORNSTEIN_UHLENBECK,
         "relative_ornstein_uhlenbeck": Pattern.RELATIVE_ORNSTEIN_UHLENBECK,
         "seclamp": Pattern.SECLAMP,
+        "subthreshold": Pattern.SUBTHRESHOLD,
     }
 
     for sonata_pattern, expected_enum in valid_patterns.items():
@@ -73,3 +74,54 @@ def test_from_sonata_noise_requires_one_mean_field():
 
     with pytest.raises(ValueError, match="Noise input must contain exactly one of 'mean' or 'mean_percent'."):
         Stimulus.from_sonata({**base, "mean": 0.01, "mean_percent": 5.0})
+
+
+def test_pattern_from_blueconfig_subthreshold():
+    """Test SubThreshold mapping from BlueConfig."""
+    assert Pattern.from_blueconfig("SubThreshold") == Pattern.SUBTHRESHOLD
+
+
+def test_subthreshold_from_sonata():
+    """Test parsing SubThreshold stimulus from SONATA config."""
+    entry = {
+        "module": "subthreshold",
+        "delay": 10.0,
+        "duration": 500.0,
+        "percent_less": 20.0,
+        "node_set": "Excitatory",
+    }
+    stim = Stimulus.from_sonata(entry)
+    assert isinstance(stim, SubThreshold)
+    assert stim.percent_less == 20.0
+    assert stim.delay == 10.0
+    assert stim.duration == 500.0
+    assert stim.target == "Excitatory"
+
+
+def test_subthreshold_from_blueconfig():
+    """Test parsing SubThreshold stimulus from BlueConfig."""
+    entry = {
+        "Pattern": "SubThreshold",
+        "Target": "Mosaic",
+        "Delay": 0.0,
+        "Duration": 1000.0,
+        "PercentLess": 15.0,
+    }
+    stim = Stimulus.from_blueconfig(entry)
+    assert isinstance(stim, SubThreshold)
+    assert stim.percent_less == 15.0
+    assert stim.target == "Mosaic"
+
+
+def test_subthreshold_dataclass():
+    """Test SubThreshold dataclass creation."""
+    stim = SubThreshold(
+        target="All",
+        delay=0.0,
+        duration=100.0,
+        percent_less=10.0,
+        node_set="All",
+    )
+    assert stim.percent_less == 10.0
+    assert stim.delay == 0.0
+    assert stim.duration == 100.0

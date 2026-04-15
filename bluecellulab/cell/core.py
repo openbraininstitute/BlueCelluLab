@@ -87,7 +87,10 @@ class Cell(InjectableMixin, PlottableMixin):
 
         Args:
             template_path: Path to hoc template file.
-            morphology_path: Path to morphology file.
+            morphology_path: Path to morphology file. Supports .asc, .swc, .h5 and .h5 containers formats.
+                            If the morphology is in an H5 container, the path should be the
+                            path to the morphology file in the H5 container.
+                            For example: "merged-morphologies.h5/C4095O94"
             cell_id: ID of the cell, used in RNG seeds.
             record_dt: Timestep for the recordings.
             template_format: Cell template format such as 'v5' or 'v6_air_scaler'.
@@ -104,6 +107,7 @@ class Cell(InjectableMixin, PlottableMixin):
             cell_id = CellId("", Cell.last_id)
             Cell.last_id += 1
         self.cell_id = cell_id
+        self.post_gid: int | None = None
 
         # Load the template
         neuron_template = NeuronTemplate(template_path, morphology_path, template_format, emodel_properties)
@@ -404,7 +408,8 @@ class Cell(InjectableMixin, PlottableMixin):
             condition_parameters=condition_parameters,
             popids=popids,
             extracellular_calcium=extracellular_calcium,
-            connection_modifiers=connection_modifiers)
+            connection_modifiers=connection_modifiers
+        )
 
         self.synapses[synapse_id] = synapse
 
@@ -850,19 +855,22 @@ class Cell(InjectableMixin, PlottableMixin):
 
         if not file_path.exists():
             raise FileNotFoundError(f"Spike file not found: {str(file_path)}")
-        synapse_spikes: dict = get_synapse_replay_spikes(str(file_path))
+
+        synapse_spikes: dict[CellId, np.ndarray] = get_synapse_replay_spikes(str(file_path))
+
         for synapse_id, synapse in self.synapses.items():
-            source_population = synapse.syn_description["source_population_name"]
-            pre_gid = CellId(
-                source_population, int(synapse.syn_description[SynapseProperty.PRE_GID])
+            pre_cell_id = CellId(
+                str(synapse.syn_description["source_population_name"]),
+                int(synapse.syn_description[SynapseProperty.PRE_GID]),
             )
-            if pre_gid.id in synapse_spikes:
-                spikes_of_interest = synapse_spikes[pre_gid.id]
-                # filter spikes of interest >=stimulus.delay, <=stimulus.duration
+
+            if pre_cell_id in synapse_spikes:
+                spikes_of_interest = synapse_spikes[pre_cell_id]
                 spikes_of_interest = spikes_of_interest[
                     (spikes_of_interest >= stimulus.delay)
                     & (spikes_of_interest <= stimulus.duration)
                 ]
+
                 connection = bluecellulab.Connection(
                     synapse,
                     pre_spiketrain=spikes_of_interest,
@@ -872,7 +880,7 @@ class Cell(InjectableMixin, PlottableMixin):
                     spike_location=spike_location,
                 )
                 logger.debug(
-                    f"Added synapse replay from {pre_gid} to {self.cell_id.id}, {synapse_id}"
+                    f"Added synapse replay from {pre_cell_id} to {self.cell_id.id}, {synapse_id}"
                 )
 
                 self.connections[synapse_id] = connection
