@@ -57,7 +57,7 @@ class BasePointProcessCell:
         location=None,    # ignored for artificial cells
         threshold: float = 0.0,
     ) -> h.NetCon:
-        nc = h.NetCon(self.pointcell, None)
+        nc = h.NetCon(self.pointcell.pointcell, None)
         nc.threshold = threshold  # harmless for artificial cells
         return nc
 
@@ -68,13 +68,13 @@ class BasePointProcessCell:
         if self._spike_detector is not None:
             return
         self._spike_times = h.Vector()
-        self._spike_detector = h.NetCon(self.pointcell, None)
+        self._spike_detector = h.NetCon(self.pointcell.pointcell, None)
         self._spike_detector.threshold = threshold
         self._spike_detector.record(self._spike_times)
 
     def connect2target(self, target_pp=None) -> h.NetCon:
         """Neurodamus-like helper: NetCon from this cell to a target point process."""
-        return h.NetCon(self.pointcell, target_pp)
+        return h.NetCon(self.pointcell.pointcell, target_pp)
 
 
 class HocPointProcessCell(BasePointProcessCell):
@@ -98,7 +98,7 @@ class HocPointProcessCell(BasePointProcessCell):
                 "Make sure the mod/hoc files are compiled and loaded."
             ) from exc
 
-        point = mech_cls()
+        point = mech_cls(cell_id.id)
         if param_overrides:
             for name, value in param_overrides.items():
                 if hasattr(point, name):
@@ -149,7 +149,7 @@ class HocPointProcessCell(BasePointProcessCell):
             vs = h.VecStim()
             vs.play(vec)
 
-            nc = h.NetCon(vs, self.pointcell)
+            nc = h.NetCon(vs, self.pointcell.pointcell)
             # Use stimulus weight if available, otherwise default to 1.0
             weight = getattr(stimulus, "weight", 1.0)
             nc.weight[0] = weight
@@ -165,7 +165,7 @@ class HocPointProcessCell(BasePointProcessCell):
             )
 
 
-def mechanism_name_from_model_template(model_template: str) -> str:
+def mechanism_name_from_model_template(template_path: str, model_template: str) -> str:
     """Translate SONATA model_template into a NEURON mechanism name.
 
     Examples:
@@ -178,6 +178,7 @@ def mechanism_name_from_model_template(model_template: str) -> str:
         prefix, name = mt.split(":", 1)
         prefix = prefix.lower()
         if prefix in ("hoc", "nrn"):
+            h.load_file( template_path )
             return name
     return mt
 

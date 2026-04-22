@@ -1204,7 +1204,7 @@ class CircuitSimulation:
             model_template = str(info.get("model_template", ""))
 
             if model_type == "point_process":
-                mech_name = mechanism_name_from_model_template(model_template)
+                mech_name = mechanism_name_from_model_template(template_path=self.circuit_access.emodel_path(cell_id), model_template=model_template)
 
                 # TODO (later): parse dynamics_params and feed param_overrides
                 return HocPointProcessCell(

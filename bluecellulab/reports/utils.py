@@ -142,7 +142,10 @@ def prepare_recordings_for_reports(
                 cell.report_sites[report_name].append(entry)
 
     for cell_id, cell in cells.items():
-        sec = cell.soma
+        try:
+            sec = cell.soma
+        except Exception:
+            continue
         sec_name = sec.name().split(".")[-1]
         segx = 0.5
         rec_name = section_to_variable_recording_str(sec, segx, "v")
@@ -387,6 +390,10 @@ def collect_local_payload(
         cell_id = CellId(pop, gid)
         cell = cells.get(cell_id)
         if cell is None:
+            continue
+        try:
+            cell.get_time()
+        except Exception:
             continue
 
         recs: dict[str, list[float]] = {}
