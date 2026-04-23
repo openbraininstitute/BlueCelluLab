@@ -59,18 +59,42 @@ class TestMorphologyWrapper:
         assert morph_name == "cell_name"
         assert morph_ext == ""
 
-    def test_case_insensitive_morphology_path(tmp_path):
-        """Morphology loading should be case-insensitive."""
+    def test_case_insensitive_morphology_path(self, tmp_path):
         p = tmp_path / "cell.ASC"
         p.write_text("dummy")
 
-        wrong_case = tmp_path / "cell.asc"
+        with patch.object(MorphIOWrapper, "_build_morph"):
+            with patch.object(MorphIOWrapper, "_get_section_names", return_value=[]):
+                with patch.object(MorphIOWrapper, "_build_sec_typeid_distrib"):
+                    wrapper = MorphIOWrapper(str(tmp_path / "cell.asc"))
 
-        wrapper = MorphIOWrapper(str(wrong_case))
-
-        # Stronger checks
         assert wrapper._morph_name == "cell"
-        assert wrapper._morph_ext.lower() == ".asc"
+        assert wrapper._morph_ext == ".asc"
+
+    def test_case_insensitive_morphology_path_reverse(self, tmp_path):
+        """Should also work if file is lowercase and input is uppercase."""
+        p = tmp_path / "cell.asc"
+        p.write_text("dummy")
+
+        with patch.object(MorphIOWrapper, "_build_morph"):
+            with patch.object(MorphIOWrapper, "_get_section_names", return_value=[]):
+                with patch.object(MorphIOWrapper, "_build_sec_typeid_distrib"):
+                    wrapper = MorphIOWrapper(str(tmp_path / "cell.ASC"))
+
+        assert wrapper._morph_name == "cell"
+        assert wrapper._morph_ext == ".asc"
+
+    def test_extension_normalization(self, tmp_path):
+        """Extension should always be normalized to lowercase."""
+        p = tmp_path / "cell.SWC"
+        p.write_text("dummy")
+
+        with patch.object(MorphIOWrapper, "_build_morph"):
+            with patch.object(MorphIOWrapper, "_get_section_names", return_value=[]):
+                with patch.object(MorphIOWrapper, "_build_sec_typeid_distrib"):
+                    wrapper = MorphIOWrapper(str(p))
+
+        assert wrapper._morph_ext == ".swc"
 
     def test_morphology_wrapper_init_success(self):
         """Test successful MorphologyWrapper initialization with real H5 file."""

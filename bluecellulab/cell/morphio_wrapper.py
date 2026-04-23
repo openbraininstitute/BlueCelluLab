@@ -311,6 +311,17 @@ def resolve_case_insensitive_path(path: str) -> str:
     return path
 
 
+def is_h5_container_path(path: str) -> bool:
+    candidate = path
+    while not os.path.exists(candidate):
+        parent = os.path.dirname(candidate)
+        if parent == candidate:
+            return False
+        candidate = parent
+
+    return os.path.isfile(candidate) and candidate.lower().endswith(".h5")
+
+
 class MorphIOWrapper:
     """Load a MorphIO morphology and generate HOC instantiation commands.
 
@@ -342,7 +353,9 @@ class MorphIOWrapper:
             options: Additional ``morphio.Option`` flags OR-ed into
                 ``Option.nrn_order`` when loading.  Defaults to ``0``.
         """
-        input_file = resolve_case_insensitive_path(str(input_file))
+        input_file = str(input_file)
+        if not is_h5_container_path(input_file):
+            input_file = resolve_case_insensitive_path(input_file)
         self._collection_dir, self._morph_name, self._morph_ext = split_morphology_path(input_file)
         self._morph_ext = self._morph_ext.lower()
         self._options = options
