@@ -59,6 +59,19 @@ class TestMorphologyWrapper:
         assert morph_name == "cell_name"
         assert morph_ext == ""
 
+    def test_case_insensitive_morphology_path(tmp_path):
+        """Morphology loading should be case-insensitive."""
+        p = tmp_path / "cell.ASC"
+        p.write_text("dummy")
+
+        wrong_case = tmp_path / "cell.asc"
+
+        wrapper = MorphIOWrapper(str(wrong_case))
+
+        # Stronger checks
+        assert wrapper._morph_name == "cell"
+        assert wrapper._morph_ext.lower() == ".asc"
+
     def test_morphology_wrapper_init_success(self):
         """Test successful MorphologyWrapper initialization with real H5 file."""
         # Test with a real H5 file from BlueCelluLab test data
