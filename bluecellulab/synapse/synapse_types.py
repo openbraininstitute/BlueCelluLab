@@ -57,7 +57,7 @@ class Synapse:
         """Constructor.
 
         Args:
-            cell_id: Identifier of the postsynaptic cell.
+            gid: The post-synaptic cell gid.
             hoc_args: The synapse location and section in hoc.
             syn_id: A tuple containing a synapse identifier, where the string is
                 the projection name and int is the synapse id. An empty string
@@ -424,4 +424,48 @@ class AmpanmdaSynapse(Synapse):
     def info_dict(self):
         parent_dict = super().info_dict
         parent_dict['synapse_parameters']['tau_d_AMPA'] = self.hsynapse.tau_d_AMPA
+        return parent_dict
+
+
+class Exp2Syn(Synapse):
+
+    def __init__(self, gid, hoc_args, syn_id, syn_description, popids, post_gid, extracellular_calcium):
+        self.persistent: list[HocObjectType] = []
+        self.synapseconfigure_cmds: list[str] = []
+        self._delay_weights: list[tuple[float, float]] = []
+        self._weight: Optional[float] = None
+
+        self.post_cell_id = gid
+        self.syn_id = SynapseID(*syn_id)
+        self.syn_description = syn_description
+        self.hsynapse: Optional[HocObjectType] = None
+
+        self.source_popid, self.target_popid = popids
+
+        self.pre_gid = int(self.syn_description[SynapseProperty.PRE_GID])
+        self.post_gid = int(post_gid)
+
+        self.hoc_args = hoc_args
+        self.mech_name: str = "not-yet-defined"
+        self.use_exp2syn_helper()
+
+    def use_exp2syn_helper(self) -> None:
+        """Helper for creating an Exp2Syn synapse."""
+        self.mech_name = 'Exp2Syn'
+
+        self.hsynapse = neuron.h.Exp2Syn(
+            self.hoc_args.location,
+            sec=self.hoc_args.section
+        )
+
+        self.hsynapse.tau1 = self.syn_description["tau1"]
+        self.hsynapse.tau2 = self.syn_description["tau2"]
+        self.hsynapse.e = self.syn_description["erev"]
+
+    @property
+    def info_dict(self):
+        parent_dict = super().info_dict
+        parent_dict['synapse_parameters']['tau1'] = self.hsynapse.tau1
+        parent_dict['synapse_parameters']['tau2'] = self.hsynapse.tau2
+        parent_dict['synapse_parameters']['erev'] = self.hsynapse.e
         return parent_dict

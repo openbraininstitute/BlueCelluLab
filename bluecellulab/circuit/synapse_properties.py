@@ -29,6 +29,7 @@ class SynapseProperty(Enum):
     PRE_GID = "pre_gid"
     AXONAL_DELAY = "axonal_delay"
     POST_SECTION_ID = "post_section_id"
+    POST_SECTION_POS = "post_section_pos"
     POST_SEGMENT_ID = "post_segment_id"
     POST_SEGMENT_OFFSET = "post_segment_offset"
     G_SYNX = "g_synx"
@@ -82,6 +83,14 @@ class SynapseProperties:
     plasticity = (
         "volume_CR", "rho0_GB", "Use_d_TM", "Use_p_TM", "gmax_d_AMPA",
         "gmax_p_AMPA", "theta_d", "theta_p"
+    )
+    allen_chemical = (
+        "afferent_section_id", "afferent_section_pos", "conductance", "delay", "tau1", "tau2", "erev",
+        "@source_node"
+    )
+    allen_point = (
+        "afferent_section_id", "afferent_section_pos", "conductance", "delay",
+        "@source_node"
     )
 
 
