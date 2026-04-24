@@ -1,0 +1,64 @@
+{
+  "manifest": {
+    "$BASE_DIR": "."
+  },
+  "networks": {
+    "nodes": [
+      {
+        "nodes_file": "nodes_A.h5",
+        "populations": {
+          "RingA": {
+            "type": "biophysical",
+            "biophysical_neuron_models_dir": "$BASE_DIR/../ringtest/hoc",
+            "alternate_morphologies": {
+              "neurolucida-asc": "$BASE_DIR/../ringtest/morphologies/asc"
+            }
+          }
+        }
+      },
+      {
+        "nodes_file": "nodes_B.h5",
+        "populations": {
+          "RingB": {
+            "type": "point_process",
+            "biophysical_neuron_models_dir": "$BASE_DIR/hoc"
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "edges_file": "edges_A.h5",
+        "populations": {
+          "RingA__RingA__Exp2Syn_synapse": {
+            "type": "Exp2Syn_synapse"
+          }
+        }
+      },
+      {
+        "edges_file": "edges_B.h5",
+        "populations": {
+          "RingB__RingB__point_process": {
+            "type": "point_process"
+          }
+        }
+      },
+      {
+        "edges_file": "edges_AB.h5",
+        "populations": {
+          "RingA__RingB__point_process": {
+            "type": "point_process"
+          }
+        }
+      },
+      {
+        "edges_file": "edges_BA.h5",
+        "populations": {
+          "RingB__RingA__Exp2Syn_synapse": {
+            "type": "Exp2Syn_synapse"
+          }
+        }
+      }
+    ]
+  }
+}

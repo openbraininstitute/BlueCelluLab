@@ -1,0 +1,49 @@
+
+{load_file("stdrun.hoc")}
+{load_file("import3d.hoc")}
+
+begintemplate IntFire1_inh_1
+  public CellRef, pointcell
+  objref this, CellRef, pointcell
+
+proc init() {
+  CellRef = this
+  gid = $1
+  biophys()
+  channel_seed_set = 0
+  re_init_rng()
+}
+
+proc biophys() {
+    // https://nrn.readthedocs.io/en/latest/progref/modelspec/programmatic/mechanisms/mech.html#IntFire1
+    pointcell = new IntFire1()
+    pointcell.tau = 7.0
+    pointcell.refrac = 3.0
+}
+
+proc re_init_rng() {localobj sf
+    strdef full_str, name
+    sf = new StringFunctions()
+    if(numarg() == 1) {
+        // We received a third seed
+        channel_seed = $1
+        channel_seed_set = 1
+    } else {
+        channel_seed_set = 0
+    }
+}
+
+obfunc getCell(){
+        return this
+}
+
+proc setCCell(){
+       CellRef = $o1
+}
+
+proc clear() { localobj nil
+    CellRef = nil
+    pointcell = nil
+}
+
+endtemplate IntFire1_inh_1

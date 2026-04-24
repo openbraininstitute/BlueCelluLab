@@ -7,9 +7,7 @@ from typing import Any, Mapping, Optional
 
 from bluecellulab.circuit.simulation_access import get_synapse_replay_spikes
 from bluecellulab.exceptions import BluecellulabError
-from bluecellulab.synapse import SynapseFactory, Synapse
 from bluecellulab.circuit import SynapseProperty
-#from bluecellulab.point.point_connection import PointProcessConnection
 from neuron import h
 import numpy as np
 
@@ -168,18 +166,18 @@ class HocPointProcessCell(BasePointProcessCell):
             )
 
     def add_replay_synapse(self, syn_id, syn_description, syn_connection_parameters, condition_parameters,
-                    popids, extracellular_calcium):
+                           popids, extracellular_calcium):
         """ For Point Neurons, the replay simply queues events directly to the point obj
         """
         from bluecellulab.point.point_connection import PointProcessConnection
         from bluecellulab.point.connection_params import PointProcessConnParameters
 
         # syn_connection_parameters should only have 1 element, PointProcessConnection will confirm
-        point_params = PointProcessConnParameters( syn_description[SynapseProperty.PRE_GID], syn_description[SynapseProperty.PRE_GID],
-            syn_description[SynapseProperty.AXONAL_DELAY])
+        point_params = PointProcessConnParameters(syn_description[SynapseProperty.PRE_GID], syn_description[SynapseProperty.PRE_GID],
+                                                  syn_description[SynapseProperty.AXONAL_DELAY])
 
         self.pointConn = PointProcessConnection([point_params])
-        self.pointConn.finalize( self.pointcell )
+        self.pointConn.finalize(self.pointcell)
 
 
 def mechanism_name_from_model_template(template_path: str, model_template: str) -> str:
@@ -195,7 +193,7 @@ def mechanism_name_from_model_template(template_path: str, model_template: str) 
         prefix, name = mt.split(":", 1)
         prefix = prefix.lower()
         if prefix in ("hoc", "nrn"):
-            h.load_file( template_path )
+            h.load_file(template_path)
             return name
     return mt
 
