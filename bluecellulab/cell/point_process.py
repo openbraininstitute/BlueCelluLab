@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
+from bluecellulab.cell import Cell
 from bluecellulab.circuit.simulation_access import get_synapse_replay_spikes
 from bluecellulab.exceptions import BluecellulabError
 from bluecellulab.circuit import SynapseProperty
@@ -16,10 +17,12 @@ from bluecellulab.circuit.node_id import CellId
 logger = logging.getLogger(__name__)
 
 
-class BasePointProcessCell:
+class BasePointProcessCell(Cell):
     """Base class for NEURON artificial point processes (IntFire1/2/...)."""
 
     def __init__(self, cell_id: Optional[CellId]) -> None:
+        if cell_id is None:
+            raise ValueError("PointProcessCell requires valid cell_id")
         self.cell_id = cell_id
 
         self._spike_times = h.Vector()
@@ -58,6 +61,8 @@ class BasePointProcessCell:
         location=None,    # ignored for artificial cells
         threshold: float = 0.0,
     ) -> h.NetCon:
+        if self.pointcell is None:
+            raise ValueError("attempting to create netcon without valid pointprocess")
         nc = h.NetCon(self.pointcell.pointcell, None)
         nc.threshold = threshold  # harmless for artificial cells
         return nc
@@ -68,6 +73,8 @@ class BasePointProcessCell:
     def start_recording_spikes(self, sec, location=None, threshold: float = 0.0) -> None:
         if self._spike_detector is not None:
             return
+        if self.pointcell is None:
+            raise ValueError("attempting to record spikes without valid pointprocess")
         self._spike_times = h.Vector()
         self._spike_detector = h.NetCon(self.pointcell.pointcell, None)
         self._spike_detector.threshold = threshold
@@ -75,12 +82,13 @@ class BasePointProcessCell:
 
     def connect2target(self, target_pp=None) -> h.NetCon:
         """Neurodamus-like helper: NetCon from this cell to a target point process."""
+        if self.pointcell is None:
+            raise ValueError("call to connect2target without valid pointprocess")
         return h.NetCon(self.pointcell.pointcell, target_pp)
 
 
 class HocPointProcessCell(BasePointProcessCell):
-    """Point process that wraps an arbitrary HOC/mod artificial mechanism.
-    """
+    """Point process that wraps an arbitrary HOC/mod artificial mechanism."""
 
     def __init__(
         self,
@@ -99,6 +107,8 @@ class HocPointProcessCell(BasePointProcessCell):
                 "Make sure the mod/hoc files are compiled and loaded."
             ) from exc
 
+        if cell_id is None:
+            raise ValueError("call to create pointprocess mechanism without valid cell_id")
         point = mech_cls(cell_id.id)
         if param_overrides:
             for name, value in param_overrides.items():
@@ -111,9 +121,10 @@ class HocPointProcessCell(BasePointProcessCell):
     def add_synapse_replay(self, stimulus, spike_threshold: float, spike_location: str) -> None:
         """SONATA-style spike replay for point processes.
 
-        This is a simplified analogue of Cell.add_synapse_replay, but instead of
-        mapping spikes to individual synapses, we directly connect each presynaptic
-        node_id's spike train to this artificial cell via VecStim → NetCon.
+        This is a simplified analogue of Cell.add_synapse_replay, but
+        instead of mapping spikes to individual synapses, we directly
+        connect each presynaptic node_id's spike train to this
+        artificial cell via VecStim → NetCon.
         """
         file_path = Path(stimulus.spike_file).expanduser()
 
@@ -150,6 +161,8 @@ class HocPointProcessCell(BasePointProcessCell):
             vs = h.VecStim()
             vs.play(vec)
 
+            if self.pointcell is None:
+                raise ValueError("attempting to add replay spikes with valid pointprocess")
             nc = h.NetCon(vs, self.pointcell.pointcell)
             # Use stimulus weight if available, otherwise default to 1.0
             weight = getattr(stimulus, "weight", 1.0)
@@ -167,8 +180,8 @@ class HocPointProcessCell(BasePointProcessCell):
 
     def add_replay_synapse(self, syn_id, syn_description, syn_connection_parameters, condition_parameters,
                            popids, extracellular_calcium):
-        """ For Point Neurons, the replay simply queues events directly to the point obj
-        """
+        """For Point Neurons, the replay simply queues events directly to the
+        point obj."""
         from bluecellulab.point.point_connection import PointProcessConnection
         from bluecellulab.point.connection_params import PointProcessConnParameters
 

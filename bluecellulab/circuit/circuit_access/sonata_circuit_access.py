@@ -182,8 +182,8 @@ class SonataCircuitAccess(CircuitAccess):
     def extract_synapses(
         self, cell_id: CellId, projections: Optional[list[str] | str]
     ) -> pd.DataFrame:
-        """Extract the synapses. Checks available fields to determine which are present in
-        the edge file to determine the properties to extract.
+        """Extract the synapses. Checks available fields to determine which are
+        present in the edge file to determine the properties to extract.
 
         If projections is None, all the synapses are extracted.
         """
