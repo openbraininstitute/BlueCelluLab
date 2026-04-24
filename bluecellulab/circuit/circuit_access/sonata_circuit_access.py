@@ -224,7 +224,7 @@ class SonataCircuitAccess(CircuitAccess):
                     if all(
                         x in edge_population.property_names
                         for x in SynapseProperties.allen_point
-                    ) and len(edge_population.property_names) == len(SynapseProperties.allen_point):
+                    ):
                         edge_properties = list(SynapseProperties.allen_point)
                     if all(
                         x in edge_population.property_names

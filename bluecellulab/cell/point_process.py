@@ -7,6 +7,9 @@ from typing import Any, Mapping, Optional
 
 from bluecellulab.circuit.simulation_access import get_synapse_replay_spikes
 from bluecellulab.exceptions import BluecellulabError
+from bluecellulab.synapse import SynapseFactory, Synapse
+from bluecellulab.circuit import SynapseProperty
+#from bluecellulab.point.point_connection import PointProcessConnection
 from neuron import h
 import numpy as np
 
@@ -163,6 +166,20 @@ class HocPointProcessCell(BasePointProcessCell):
                 f"Added replay connection from pre_node_id={pre_node_id} "
                 f"to point neuron {self.cell_id}"
             )
+
+    def add_replay_synapse(self, syn_id, syn_description, syn_connection_parameters, condition_parameters,
+                    popids, extracellular_calcium):
+        """ For Point Neurons, the replay simply queues events directly to the point obj
+        """
+        from bluecellulab.point.point_connection import PointProcessConnection
+        from bluecellulab.point.connection_params import PointProcessConnParameters
+
+        # syn_connection_parameters should only have 1 element, PointProcessConnection will confirm
+        point_params = PointProcessConnParameters( syn_description[SynapseProperty.PRE_GID], syn_description[SynapseProperty.PRE_GID],
+            syn_description[SynapseProperty.AXONAL_DELAY])
+
+        self.pointConn = PointProcessConnection([point_params])
+        self.pointConn.finalize( self.pointcell )
 
 
 def mechanism_name_from_model_template(template_path: str, model_template: str) -> str:

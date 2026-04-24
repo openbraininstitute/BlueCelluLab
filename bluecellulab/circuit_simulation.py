@@ -614,21 +614,18 @@ class CircuitSimulation:
             logger.warning(
                 f"No presynaptic cells found for gid {cell_id}, no synapses added"
             )
-
         else:
             for idx, syn_description in syn_descriptions.iterrows():
                 popids = (
                     syn_description["source_popid"],
                     syn_description["target_popid"],
                 )
-
                 self._instantiate_synapse(
                     cell_id=cell_id,
                     syn_id=idx,  # type: ignore
                     syn_description=syn_description,
                     add_minis=add_minis,
                     popids=popids,
-
                 )
             logger.info(f"Added {syn_descriptions} synapses for gid {cell_id}")
             if add_minis:
