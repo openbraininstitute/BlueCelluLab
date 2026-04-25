@@ -65,6 +65,10 @@ from bluecellulab.simulation import (
 )
 from bluecellulab.simulation.modifications import apply_modifications
 from bluecellulab.synapse.synapse_types import SynapseID
+from bluecellulab.circuit.gap_junction_manager import (
+    ContinuousConnectionManager,
+    GapJunctionManager,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -323,6 +327,8 @@ class CircuitSimulation:
             or interconnect_cells
             or pre_spike_trains is not None
             or self.print_cellstate
+            or bool(self.circuit_access.config.gap_junctions())
+            or bool(self.circuit_access.config.continuous_connections())
         )
 
         if need_gids:
@@ -336,22 +342,41 @@ class CircuitSimulation:
                 pre_gids=pre_gids,
                 add_minis=add_minis,
             )
+        has_pointer_conns = bool(
+            self.circuit_access.config.gap_junctions()
+            or self.circuit_access.config.continuous_connections()
+        )
+        need_mpi_init = (
+            add_replay or interconnect_cells or normalized_pre_spike_trains
+            or has_pointer_conns
+        )
+        if need_mpi_init and self.pc is not None:
+            self._init_instantiated_cells_mpi()
+            self._register_gids_for_mpi()
+            self.pc.barrier()
+            self.pc.set_maxstep(1.0)
+
         if add_replay or interconnect_cells or normalized_pre_spike_trains:
             if add_replay and not add_synapses:
                 raise BluecellulabError(
                     "add_replay option can not be used if add_synapses is False"
                 )
-            if self.pc is not None:
-                self._init_instantiated_cells_mpi()
-                self._register_gids_for_mpi()
-                self.pc.barrier()
-                self.pc.setup_transfer()
-                self.pc.set_maxstep(1.0)
             self._add_connections(
                 add_replay=add_replay,
                 interconnect_cells=interconnect_cells,
                 user_pre_spike_trains=normalized_pre_spike_trains,
             )
+
+        # Gap junctions and continuous (graded) connections use
+        # pc.source_var / pc.target_var rather than NetCon. They must be
+        # registered BEFORE pc.setup_transfer().
+        if has_pointer_conns:
+            self._add_gap_junctions()
+            self._add_continuous_connections()
+
+        # setup_transfer must come AFTER all source_var/target_var registrations.
+        if need_mpi_init and self.pc is not None:
+            self.pc.setup_transfer()
         if add_stimuli:
             add_noise_stimuli = True
             add_hyperpolarizing_stimuli = True
@@ -846,6 +871,46 @@ class CircuitSimulation:
 
             if len(self.cells[post_gid].connections) > 0:
                 logger.debug(f"Added synaptic connections for target {post_gid}")
+
+    def _add_gap_junctions(self) -> None:
+        """Instantiate gap-junction blocks declared in simulation config."""
+        try:
+            blocks = self.circuit_access.config.gap_junctions()
+        except AttributeError:
+            return  # backend (e.g. bluepy) doesn't expose gap_junctions
+        if not blocks:
+            return
+        manager = GapJunctionManager(self)
+        for cfg in blocks:
+            try:
+                manager.add_block(cfg)
+            except Exception as exc:
+                logger.error(
+                    "Failed to add gap-junction block (edges='%s'): %s",
+                    cfg.edge_population, exc,
+                )
+                raise
+
+    def _add_continuous_connections(self) -> None:
+        """Instantiate continuous (graded) connection blocks from sim
+        config."""
+        try:
+            blocks = self.circuit_access.config.continuous_connections()
+        except AttributeError:
+            return
+        if not blocks:
+            return
+        manager = ContinuousConnectionManager(self)
+        for cfg in blocks:
+            try:
+                manager.add_block(cfg)
+            except Exception as exc:
+                logger.error(
+                    "Failed to add continuous-connection block '%s' "
+                    "(edges='%s'): %s",
+                    cfg.name, cfg.edge_population, exc,
+                )
+                raise
 
     def _add_cells(self, cell_ids: list[CellId]) -> None:
         """Instantiate cells from a gid list."""

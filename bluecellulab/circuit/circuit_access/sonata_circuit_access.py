@@ -111,6 +111,24 @@ class SonataCircuitAccess(CircuitAccess):
             source_population_name, target_population_name)
         return source_popid, target_popid
 
+    def _graded_edge_populations(self) -> set[str]:
+        """Return the set of edge populations handled by the gap_junctions and
+        continuous_connections blocks (and thus excluded from the spike-
+        mediated NetCon path)."""
+        names: set[str] = set()
+        cfg = self.config
+        try:
+            for gj_block in cfg.gap_junctions():
+                names.add(gj_block.edge_population)
+        except AttributeError:
+            pass
+        try:
+            for cc_block in cfg.continuous_connections():
+                names.add(cc_block.edge_population)
+        except AttributeError:
+            pass
+        return names
+
     def _select_edge_pop_names(self, projections) -> list[str]:
         """Select the SONATA edge populations to use for synapse extraction.
 
@@ -135,8 +153,14 @@ class SonataCircuitAccess(CircuitAccess):
         edges = self._circuit.edges
         all_names = list(edges.keys())
 
+        # Populations handled via gap_junctions / continuous_connections are
+        # wired through pc.source_var/target_var and must not go through the
+        # spike-mediated NetCon path here.
+        graded = self._graded_edge_populations()
+
         # intrinsic connectivity within the simulated circuit
-        inner = [n for n in all_names if n in self._inner_edge_pop_names]
+        inner = [n for n in all_names
+                 if n in self._inner_edge_pop_names and n not in graded]
 
         # edges whose source is a SONATA virtual node population
         proj = [n for n in all_names if getattr(edges[n].source, "type", None) == "virtual"]

@@ -17,6 +17,10 @@ from __future__ import annotations
 from typing import Optional, Protocol
 
 
+from bluecellulab.circuit.config.gap_junctions import (
+    ContinuousConnectionConfig,
+    GapJunctionConfig,
+)
 from bluecellulab.circuit.config.sections import (
     Conditions,
     ConnectionOverrides,
@@ -39,6 +43,14 @@ class SimulationConfig(Protocol):
 
     def connection_entries(self) -> list[ConnectionOverrides]:
         raise NotImplementedError
+
+    def gap_junctions(self) -> list[GapJunctionConfig]:
+        """Return list of gap-junction config blocks. Empty if not supported."""
+        return []
+
+    def continuous_connections(self) -> list[ContinuousConnectionConfig]:
+        """Return list of continuous-connection config blocks. Empty if not supported."""
+        return []
 
     def get_modifications(self) -> list[ModificationBase]:
         raise NotImplementedError
