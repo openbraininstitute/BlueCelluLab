@@ -25,6 +25,7 @@ import pandas as pd
 import bluecellulab
 from bluecellulab.exceptions import BluecellulabError
 from bluecellulab.synapse import Synapse, GabaabSynapse, AmpanmdaSynapse, GluSynapse
+from bluecellulab.synapse.synapse_types import GenericSpikeSynapse
 from bluecellulab.circuit.config.sections import Conditions
 from bluecellulab.circuit.synapse_properties import SynapseProperties, SynapseProperty
 from bluecellulab.synapse.synapse_types import SynapseHocArgs
@@ -51,10 +52,23 @@ class SynapseFactory:
         connection_modifiers: dict,
     ) -> Synapse:
         """Returns a Synapse object."""
-        syn_type = cls.determine_synapse_type(syn_description)
         syn_hoc_args = cls.determine_synapse_location(syn_description, cell)
 
+        # Neurodamus-style mod_override: if set, use a user-provided helper
+        # HOC ("<SUFFIX>Helper") to construct the synapse, bypassing the
+        # built-in GABAAB/AMPANMDA/GluSynapse classes.
         synapse: Synapse
+        mod_override = connection_modifiers.get("ModOverride")
+        if mod_override and mod_override not in ("GluSynapse",):
+            synapse = GenericSpikeSynapse(
+                cell.cell_id, syn_hoc_args, syn_id, syn_description,
+                popids, cell.post_gid, extracellular_calcium,
+                mod_suffix=mod_override,
+            )
+            synapse = cls.apply_connection_modifiers(connection_modifiers, synapse)
+            return synapse
+
+        syn_type = cls.determine_synapse_type(syn_description)
         if syn_type == SynapseType.GABAAB:
             if condition_parameters.randomize_gaba_rise_time is not None:
                 randomize_gaba_risetime = condition_parameters.randomize_gaba_rise_time

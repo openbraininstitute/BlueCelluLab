@@ -128,7 +128,8 @@ class Synapse:
                 syn_description[SynapseProperty.U_HILL_COEFFICIENT], self.extracellular_calcium)
         else:
             syn_description["u_scale_factor"] = 1.0
-        syn_description[SynapseProperty.U_SYN] *= syn_description["u_scale_factor"]
+        if SynapseProperty.U_SYN in syn_description:
+            syn_description[SynapseProperty.U_SYN] *= syn_description["u_scale_factor"]
         return syn_description
 
     def apply_hoc_configuration(self, hoc_configure_params: list[str]) -> None:
@@ -425,3 +426,118 @@ class AmpanmdaSynapse(Synapse):
         parent_dict = super().info_dict
         parent_dict['synapse_parameters']['tau_d_AMPA'] = self.hsynapse.tau_d_AMPA
         return parent_dict
+
+
+class GenericSpikeSynapse(Synapse):
+    """Spike-mediated synapse driven by a user-supplied helper HOC template.
+
+    Follows the neurodamus convention: ``mod_override = "<SUFFIX>"`` selects
+    a NMODL mechanism, and the companion HOC template ``<SUFFIX>Helper`` is
+    invoked to construct the point process. The helper is expected to expose
+    the resulting point process as a public objref ``synapse``.
+
+    Helper template signature (matching neurodamus):
+        ``<SUFFIX>Helper(post_gid, params, x, syn_id, base_seed, src_pop_id, dst_pop_id)``
+    where ``params`` is a Python object with attribute-style access to the
+    synapse parameters (e.g. ``params.weight``, ``params.U``).
+    """
+
+    def __init__(self, gid, hoc_args, syn_id, syn_description, popids,
+                 post_gid, extracellular_calcium, mod_suffix: str):
+        super().__init__(gid, hoc_args, syn_id, syn_description, popids,
+                         post_gid, extracellular_calcium)
+        self._build_via_helper(mod_suffix)
+
+    def update_syn_description(self, syn_description: pd.Series) -> pd.Series:
+        """Lightweight update: tolerate missing AMPANMDA-specific properties.
+
+        Only applies the U_SYN scaling if both U_SYN and U_HILL_COEFFICIENT
+        are present; otherwise leaves the description as-is.
+        """
+        for prop in [SynapseProperty.U_HILL_COEFFICIENT, SynapseProperty.NRRP]:
+            if prop in syn_description and pd.isna(syn_description[prop]):
+                syn_description.pop(prop)
+        if SynapseProperty.NRRP in syn_description:
+            try:
+                int(syn_description[SynapseProperty.NRRP])
+            except (TypeError, ValueError):
+                syn_description.pop(SynapseProperty.NRRP)
+
+        if (SynapseProperty.U_HILL_COEFFICIENT in syn_description
+                and SynapseProperty.U_SYN in syn_description):
+            syn_description["u_scale_factor"] = self.calc_u_scale_factor(
+                syn_description[SynapseProperty.U_HILL_COEFFICIENT],
+                self.extracellular_calcium)
+            syn_description[SynapseProperty.U_SYN] *= syn_description["u_scale_factor"]
+        else:
+            syn_description["u_scale_factor"] = 1.0
+        return syn_description
+
+    def _build_via_helper(self, mod_suffix: str) -> None:
+        """Load helper HOC and invoke it to construct ``self.hsynapse``."""
+        from bluecellulab.synapse.synapse_helpers import load_synapse_helper
+
+        helper_name = load_synapse_helper(mod_suffix)
+        helper_cls = getattr(neuron.h, helper_name)
+
+        rng_settings = RNGSettings.get_instance()
+        base_seed = rng_settings.base_seed
+
+        params = _SynParamsAdapter(self.syn_description)
+
+        # Match neurodamus calling convention. tgid+1 mirrors the legacy
+        # 1-based GID used by neurodamus seeding.
+        helper = helper_cls(
+            self.post_gid + 1,
+            params,
+            self.hoc_args.location,
+            self.syn_id.sid,
+            base_seed,
+            self.source_popid,
+            self.target_popid,
+        )
+        # Helper must expose the point process as ``synapse``.
+        if not hasattr(helper, "synapse"):
+            raise AttributeError(
+                f"Helper template '{helper_name}' does not expose a public "
+                "'synapse' objref."
+            )
+        self._helper = helper  # keep reference alive
+        self.hsynapse = helper.synapse
+        self.mech_name = mod_suffix
+        self.persistent.append(helper)
+
+
+class _SynParamsAdapter:
+    """Adapter that exposes a pandas Series as attributes for HOC consumption.
+
+    HOC templates access parameters via ``$o2.attr`` syntax. pandas Series
+    already supports attribute access for string column names but not for
+    SynapseProperty enum keys, so we build a flat namespace.
+    """
+
+    _ENUM_TO_ATTR = {
+        SynapseProperty.PRE_GID: "sgid",
+        SynapseProperty.AXONAL_DELAY: "delay",
+        SynapseProperty.POST_SECTION_ID: "isec",
+        SynapseProperty.POST_SEGMENT_ID: "ipt",
+        SynapseProperty.POST_SEGMENT_OFFSET: "offset",
+        SynapseProperty.G_SYNX: "weight",
+        SynapseProperty.U_SYN: "U",
+        SynapseProperty.D_SYN: "D",
+        SynapseProperty.F_SYN: "F",
+        SynapseProperty.DTC: "DTC",
+        SynapseProperty.NRRP: "Nrrp",
+        SynapseProperty.TYPE: "synType",
+        SynapseProperty.CONDUCTANCE_RATIO: "conductance_ratio",
+        SynapseProperty.U_HILL_COEFFICIENT: "u_hill_coefficient",
+        SynapseProperty.AFFERENT_SECTION_POS: "afferent_section_pos",
+    }
+
+    def __init__(self, syn_description: pd.Series):
+        for key, value in syn_description.items():
+            attr = self._ENUM_TO_ATTR.get(key, str(key) if not isinstance(key, str) else key)
+            try:
+                setattr(self, attr, value)
+            except (TypeError, AttributeError):
+                pass
