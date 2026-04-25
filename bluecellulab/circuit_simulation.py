@@ -65,6 +65,11 @@ from bluecellulab.simulation import (
 )
 from bluecellulab.simulation.modifications import apply_modifications
 from bluecellulab.synapse.synapse_types import SynapseID
+from bluecellulab.circuit.config.gap_junctions import GapJunctionConfig
+from bluecellulab.circuit.gap_junction_manager import (
+    ContinuousConnectionManager,
+    GapJunctionManager,
+)
 
 from bluecellulab.cell.point_process import BasePointProcessCell, HocPointProcessCell, mechanism_name_from_model_template
 
@@ -323,6 +328,10 @@ class CircuitSimulation:
         else:
             self.projections = add_projections
 
+        has_pointer_conns = bool(
+            self._gap_junction_populations()
+            or self.circuit_access.config.continuous_connections()
+        )
         need_gids = (
             add_synapses
             or (self.pc is not None)
@@ -330,6 +339,7 @@ class CircuitSimulation:
             or interconnect_cells
             or pre_spike_trains is not None
             or self.print_cellstate
+            or has_pointer_conns
         )
 
         if need_gids:
@@ -343,23 +353,38 @@ class CircuitSimulation:
                 pre_gids=pre_gids,
                 add_minis=add_minis,
             )
+        need_mpi_init = (
+            add_replay or interconnect_cells or normalized_pre_spike_trains
+            or has_pointer_conns
+        )
+        if need_mpi_init and self.pc is not None:
+            self._init_instantiated_cells_mpi()
+            self._gids_registered_mpi = True
+            self._register_gids_for_mpi()
+            self.pc.barrier()
+            self.pc.set_maxstep(1.0)
+
         if add_replay or interconnect_cells or normalized_pre_spike_trains:
             if add_replay and not add_synapses:
                 raise BluecellulabError(
                     "add_replay option can not be used if add_synapses is False"
                 )
-            if self.pc is not None:
-                self._init_instantiated_cells_mpi()
-                self._gids_registered_mpi = True
-                self._register_gids_for_mpi()
-                self.pc.barrier()
-                self.pc.setup_transfer()
-                self.pc.set_maxstep(1.0)
             self._add_connections(
                 add_replay=add_replay,
                 interconnect_cells=interconnect_cells,
                 user_pre_spike_trains=normalized_pre_spike_trains,
             )
+
+        # Gap junctions and continuous (graded) connections use
+        # pc.source_var / pc.target_var rather than NetCon. They must be
+        # registered BEFORE pc.setup_transfer().
+        if has_pointer_conns:
+            self._add_gap_junctions()
+            self._add_continuous_connections()
+
+        # setup_transfer must come AFTER all source_var/target_var registrations.
+        if need_mpi_init and self.pc is not None:
+            self.pc.setup_transfer()
         if add_stimuli:
             add_noise_stimuli = True
             add_hyperpolarizing_stimuli = True
@@ -930,6 +955,68 @@ class CircuitSimulation:
                 "replay sources."
             )
         return real_cell_ids
+
+    def _gap_junction_populations(self) -> list[str]:
+        """Edge populations to wire as gap junctions: every ``"type":
+        "electrical"`` population (neurodamus convention), plus any
+        population explicitly named by a ``gap_junctions`` config block.
+        """
+        electrical = getattr(
+            self.circuit_access, "electrical_edge_populations", None)
+        pops = set(electrical() if electrical is not None else [])
+        try:
+            pops.update(
+                cfg.edge_population
+                for cfg in self.circuit_access.config.gap_junctions()
+            )
+        except AttributeError:
+            pass  # backend (e.g. bluepy) doesn't expose gap_junctions
+        return sorted(pops)
+
+    def _add_gap_junctions(self) -> None:
+        """Wire all gap-junction edge populations (auto-detected electrical
+        populations plus ``gap_junctions`` config overrides)."""
+        pop_names = self._gap_junction_populations()
+        if not pop_names:
+            return
+        try:
+            overrides = {cfg.edge_population: cfg
+                         for cfg in self.circuit_access.config.gap_junctions()}
+        except AttributeError:
+            overrides = {}
+        manager = GapJunctionManager(self)
+        for pop_name in pop_names:
+            cfg = overrides.get(
+                pop_name, GapJunctionConfig(edge_population=pop_name))
+            try:
+                manager.add_block(cfg)
+            except Exception as exc:
+                logger.error(
+                    "Failed to add gap-junction population (edges='%s'): %s",
+                    cfg.edge_population, exc,
+                )
+                raise
+
+    def _add_continuous_connections(self) -> None:
+        """Instantiate continuous (graded) connection blocks from sim
+        config."""
+        try:
+            blocks = self.circuit_access.config.continuous_connections()
+        except AttributeError:
+            return
+        if not blocks:
+            return
+        manager = ContinuousConnectionManager(self)
+        for cfg in blocks:
+            try:
+                manager.add_block(cfg)
+            except Exception as exc:
+                logger.error(
+                    "Failed to add continuous-connection block '%s' "
+                    "(edges='%s'): %s",
+                    cfg.name, cfg.edge_population, exc,
+                )
+                raise
 
     def _add_cells(self, cell_ids: list[CellId]) -> None:
         """Instantiate cells from a gid list."""

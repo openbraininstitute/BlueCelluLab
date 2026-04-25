@@ -24,6 +24,10 @@ if BLUEPY_AVAILABLE:
     from bluepy_configfile.configfile import BlueConfig
     from bluepy.utils import open_utf8
 
+from bluecellulab.circuit.config.gap_junctions import (
+    ContinuousConnectionConfig,
+    GapJunctionConfig,
+)
 from bluecellulab.circuit.config.sections import Conditions, ConnectionOverrides
 from bluecellulab.stimulus.circuit_stimulus_definitions import Stimulus
 
@@ -86,6 +90,14 @@ class BluepySimulationConfig:
 
     def connection_entries(self) -> list[ConnectionOverrides]:
         return self._connection_entries() + self._connection_overrides
+
+    def gap_junctions(self) -> list[GapJunctionConfig]:
+        """BlueConfig does not support gap_junctions blocks."""
+        return []
+
+    def continuous_connections(self) -> list[ContinuousConnectionConfig]:
+        """BlueConfig does not support continuous_connections blocks."""
+        return []
 
     @property
     def base_seed(self) -> int:

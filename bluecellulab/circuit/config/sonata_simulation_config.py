@@ -25,6 +25,10 @@ from bluecellulab.circuit.config.sections import (
     ModificationBase,
     modification_from_libsonata,
 )
+from bluecellulab.circuit.config.gap_junctions import (
+    ContinuousConnectionConfig,
+    GapJunctionConfig,
+)
 from bluecellulab.stimulus.circuit_stimulus_definitions import Stimulus
 
 from bluepysnap import Simulation as SnapSimulation
@@ -193,6 +197,34 @@ class SonataSimulationConfig:
 
     def connection_entries(self) -> list[ConnectionOverrides]:
         return self._connection_entries() + self._connection_overrides
+
+    @lru_cache(maxsize=1)
+    def gap_junctions(self) -> list[GapJunctionConfig]:
+        """Return the list of gap-junction config blocks.
+
+        Reads the optional ``gap_junctions`` field from the simulation config.
+        Accepts either a single object or a list of objects.
+        """
+        raw = self.impl.config.get("gap_junctions")
+        if raw is None:
+            return []
+        if isinstance(raw, dict):
+            raw = [raw]
+        return [GapJunctionConfig(**entry) for entry in raw]
+
+    @lru_cache(maxsize=1)
+    def continuous_connections(self) -> list[ContinuousConnectionConfig]:
+        """Return the list of continuous (graded) connection blocks.
+
+        Reads the optional ``continuous_connections`` field from the
+        simulation config.
+        """
+        raw = self.impl.config.get("continuous_connections")
+        if raw is None:
+            return []
+        if isinstance(raw, dict):
+            raw = [raw]
+        return [ContinuousConnectionConfig(**entry) for entry in raw]
 
     def report_file_path(self, report_cfg: dict, report_key: str) -> Path:
         """Resolve the full path for the report output file."""
