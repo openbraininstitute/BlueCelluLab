@@ -16,6 +16,8 @@ import numpy as np
 from numpy.linalg import eig, norm
 
 from bluecellulab.exceptions import BluecellulabError
+from pathlib import Path
+
 
 logger = logging.getLogger(__name__)
 
@@ -293,6 +295,33 @@ class SectionName:
         return f"{self.name}[{self.id}]"
 
 
+def resolve_case_insensitive_path(path: str) -> str:
+    p = Path(path)
+    if p.exists():
+        return str(p)
+
+    parent = p.parent
+    if not parent.exists():
+        return path
+
+    for child in parent.iterdir():
+        if child.name.lower() == p.name.lower():
+            return str(child)
+
+    return path
+
+
+def is_h5_container_path(path: str) -> bool:
+    candidate = path
+    while not os.path.exists(candidate):
+        parent = os.path.dirname(candidate)
+        if parent == candidate:
+            return False
+        candidate = parent
+
+    return os.path.isfile(candidate) and candidate.lower().endswith(".h5")
+
+
 class MorphIOWrapper:
     """Load a MorphIO morphology and generate HOC instantiation commands.
 
@@ -324,7 +353,11 @@ class MorphIOWrapper:
             options: Additional ``morphio.Option`` flags OR-ed into
                 ``Option.nrn_order`` when loading.  Defaults to ``0``.
         """
+        input_file = str(input_file)
+        if not is_h5_container_path(input_file):
+            input_file = resolve_case_insensitive_path(input_file)
         self._collection_dir, self._morph_name, self._morph_ext = split_morphology_path(input_file)
+        self._morph_ext = self._morph_ext.lower()
         self._options = options
         self._build_morph()
         # This logic is similar to what's in BaseCell, but at this point we are still

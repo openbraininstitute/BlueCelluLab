@@ -38,6 +38,7 @@ from bluecellulab.stimulus.circuit_stimulus_definitions import (
     ShotNoise,
     RelativeOrnsteinUhlenbeck,
     RelativeShotNoise,
+    SubThreshold,
 )
 from bluecellulab.type_aliases import NeuronSection, TStim
 
@@ -329,6 +330,20 @@ class InjectableMixin:
         )
         self.persistent.append(tstim)  # type: ignore
 
+        return tstim
+
+    def add_replay_subthreshold(self, stimulus: SubThreshold, section=None, segx=0.5):
+        """Inject a current step at some percent below the cell's threshold.
+
+        The injected amplitude is: threshold * (100 - percent_less) / 100
+        This matches the Neurodamus SubThreshold implementation.
+        """
+        if section is None:
+            section = self.soma  # type: ignore
+        amp = self.threshold * (100 - stimulus.percent_less) / 100  # type: ignore
+        tstim = neuron.h.TStim(segx, sec=section)  # type: ignore
+        tstim.pulse(stimulus.delay, stimulus.duration, amp)
+        self.persistent.append(tstim)  # type: ignore
         return tstim
 
     def _get_ornstein_uhlenbeck_rand(self, stim_count, seed):
