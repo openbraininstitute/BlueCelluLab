@@ -627,45 +627,49 @@ class CircuitSimulation:
 
             soma_position = np.mean(soma_coords_all, axis=0)
 
-            for sec, segx in seg_list:
-                sec_coords = segment_coords.get(sec.name())
-                segment_position = None
+            n_segments = 0
+            for sec in cell.sections.values():
+                for seg in sec:
+                    segx = seg.x
+                    sec_coords = segment_coords.get(sec.name())
+                    segment_position = None
 
-                if sec_coords is None or len(sec_coords) == 0:
-                    # Try axon/myelin interpolation for sections without 3D points
-                    if not sec.n3d():
-                        try:
-                            segment_position = cell.get_segment_position(
-                                np.array([]), soma_position, sec, segx, func_loc2glob=None
-                            )
-                        except ValueError:
+                    if sec_coords is None or len(sec_coords) == 0:
+                        # Try axon/myelin interpolation for sections without 3D points
+                        if not sec.n3d():
+                            try:
+                                segment_position = cell.get_segment_position(
+                                    np.array([]), soma_position, sec, segx, func_loc2glob=None
+                                )
+                            except ValueError:
+                                logger.warning(
+                                    f"Section {sec.name()} has no 3D coordinates and "
+                                    "could not interpolate, skipping"
+                                )
+                                continue
+                        else:
                             logger.warning(
-                                f"Section {sec.name()} has no 3D coordinates and "
-                                "could not interpolate, skipping"
+                                f"Section {sec.name()} has no 3D coordinates, skipping"
                             )
                             continue
                     else:
-                        logger.warning(
-                            f"Section {sec.name()} has no 3D coordinates, skipping"
-                        )
+                        seg_idx = int(segx * sec.nseg)
+                        if seg_idx >= len(sec_coords):
+                            seg_idx = len(sec_coords) - 1
+                        segment_position = sec_coords[seg_idx]
+
+                    if segment_position is None:
                         continue
-                else:
-                    seg_idx = int(segx * sec.nseg)
-                    if seg_idx >= len(sec_coords):
-                        seg_idx = len(sec_coords) - 1
-                    segment_position = sec_coords[seg_idx]
 
-                if segment_position is None:
-                    continue
+                    displacement_vec = (segment_position - soma_position) * 1e-6
 
-                displacement_vec = (segment_position - soma_position) * 1e-6
-
-                segment = sec(segx)
-                es.segment_displacements[segment] = displacement_vec
+                    segment = sec(segx)
+                    es.segment_displacements[segment] = displacement_vec
+                    n_segments += 1
 
             logger.debug(
                 f"Added extracellular stimulus to cell {cell_id} "
-                f"with {len(seg_list)} target segments"
+                f"with {n_segments} target segments"
             )
 
     def _apply_extracellular_stimuli(self) -> None:
