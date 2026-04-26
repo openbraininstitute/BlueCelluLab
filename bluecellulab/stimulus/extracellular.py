@@ -20,7 +20,8 @@ import neuron
 
 
 class ElectrodeSource:
-    """Constructs an extracellular potential field as the sum of multiple user-defined e-fields.
+    """Constructs an extracellular potential field as the sum of multiple user-
+    defined e-fields.
 
     Applies the resulting signal to segment's e_extracellular reference.
     Adapted from Neurodamus stimuli.py for BlueCelluLab.
@@ -55,7 +56,8 @@ class ElectrodeSource:
         self.segment_potentials = []
 
     def delay_time(self, duration):
-        """Increments the ref time so that the next created signal is delayed."""
+        """Increments the ref time so that the next created signal is
+        delayed."""
         self._cur_t += duration
         return self
 
@@ -99,7 +101,8 @@ class ElectrodeSource:
         return np.array([res_x, res_y, res_z])
 
     def compute_potentials(self, displacement_vec):
-        """Compute potential at a segment given displacement from reference point.
+        """Compute potential at a segment given displacement from reference
+        point.
 
         Args:
             displacement_vec: 3D displacement vector in meters [dx, dy, dz]
@@ -130,7 +133,8 @@ class ElectrodeSource:
                 signal_vec[vec_len - ramp_down_number + i] *= ramp_down[i]
 
     def apply_segment_potentials(self):
-        """Apply potentials to segment.extracellular._ref_e for all segments."""
+        """Apply potentials to segment.extracellular._ref_e for all
+        segments."""
         for segment, displacement in self.segment_displacements.items():
             section = segment.sec
             e_ext_vec = neuron.h.Vector(self.compute_potentials(displacement))

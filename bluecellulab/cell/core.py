@@ -888,9 +888,9 @@ class Cell(InjectableMixin, PlottableMixin):
         x: float,
         func_loc2glob: Optional[Callable[[np.ndarray], np.ndarray]] = None,
     ) -> Optional[np.ndarray]:
-        """Get the global coordinates of the segment.
-        For axon and myelin, interpolate along the y-axis of the local soma coordinates,
-        and then convert to global coordinates.
+        """Get the global coordinates of the segment. For axon and myelin,
+        interpolate along the y-axis of the local soma coordinates, and then
+        convert to global coordinates.
 
         Args:
             sec_seg_points: segment global positions in the current section
@@ -930,9 +930,11 @@ class Cell(InjectableMixin, PlottableMixin):
     def interp_axon_positions(x: float, axon_index: int, soma_position: np.ndarray) -> np.ndarray:
         """Interpolate the coordinates of the axon segment for the given x,
         because of no 3d point for the new axons.
-        Assume that the axon is oriented along the y-axis from soma, 30 um displaced for 1st axon,
-        60 um for 2nd axon, the same x- and z-coordinates as soma.
-        x=0 is soma, and x=1 is the end of the axon section.
+
+        Assume that the axon is oriented along the y-axis from soma, 30
+        um displaced for 1st axon, 60 um for 2nd axon, the same x- and
+        z-coordinates as soma. x=0 is soma, and x=1 is the end of the
+        axon section.
         """
         if axon_index > 1:
             raise ValueError("More than 2 axon sections exist!")
@@ -955,6 +957,7 @@ class Cell(InjectableMixin, PlottableMixin):
     def interp_myelin_positions(x: float, myelin_index: int, soma_position: np.ndarray) -> np.ndarray:
         """Interpolate the coordinates of the myelin segment for the given x,
         because of no 3d point for the new myelin section.
+
         Assume that the myelin is oriented along the y-axis from soma,
         1000 um displaced after the 2nd axon, i.e. [soma-60, soma-1000]
         """

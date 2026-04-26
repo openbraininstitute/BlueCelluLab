@@ -37,54 +37,54 @@ def test_electrode_source_init():
 def test_apply_ramp_case1():
     """Test ramp application when ramp_up/down_time > dt and is multiple of dt."""
     import neuron
-    
+
     dt = 0.5
     ramp_up_time = 2.0
     ramp_down_time = 1.5
-    
+
     es = ElectrodeSource(0, 0, 100, [], ramp_up_time, ramp_down_time, dt)
     stim_vec = neuron.h.Vector(list(range(1, 11)))
-    
+
     assert np.isclose(es.ramp_up_time, ramp_up_time)
     assert np.isclose(es.ramp_down_time, ramp_down_time)
     assert np.isclose(es.dt, dt)
-    
+
     es.apply_ramp(stim_vec, es.dt)
-    
-    expected = [0, 2/3, 2, 4, 5, 6, 7, 8, 4.5, 0]
+
+    expected = [0, 2 / 3, 2, 4, 5, 6, 7, 8, 4.5, 0]
     np.testing.assert_allclose(stim_vec.as_numpy(), expected)
 
 
 def test_apply_ramp_case2():
     """Test ramp when ramp_up/down_time > dt but not multiple of dt."""
     import neuron
-    
+
     dt = 0.5
     ramp_up_time = 2.4
     ramp_down_time = 1.7
-    
+
     es = ElectrodeSource(0, 0, 100, [], ramp_up_time, ramp_down_time, dt)
     stim_vec = neuron.h.Vector(list(range(1, 11)))
-    
+
     es.apply_ramp(stim_vec, es.dt)
-    
-    expected = [0, 2/3, 2, 4, 5, 6, 7, 8, 4.5, 0]
+
+    expected = [0, 2 / 3, 2, 4, 5, 6, 7, 8, 4.5, 0]
     np.testing.assert_allclose(stim_vec.as_numpy(), expected)
 
 
 def test_apply_ramp_case3():
     """Test ramp when ramp_up/down_time < dt (no ramp applied)."""
     import neuron
-    
+
     dt = 0.5
     ramp_up_time = 0.3
     ramp_down_time = 0.4
-    
+
     es = ElectrodeSource(0, 0, 100, [], ramp_up_time, ramp_down_time, dt)
     stim_vec = neuron.h.Vector(list(range(1, 11)))
-    
+
     es.apply_ramp(stim_vec, es.dt)
-    
+
     expected = list(range(1, 11))
     np.testing.assert_allclose(stim_vec.as_numpy(), expected)
 
@@ -100,9 +100,9 @@ def test_dc_field():
         ramp_down_time=0,
         dt=1.0,
     )
-    
+
     assert es.efields.shape[0] == 3
-    
+
     for i in range(3):
         field_values = es.efields[i]
         assert np.all(field_values[1:-1] != 0)
@@ -119,7 +119,7 @@ def test_ac_field():
         ramp_down_time=0,
         dt=1.0,
     )
-    
+
     assert es.efields.shape[0] == 3
 
 
@@ -137,7 +137,7 @@ def test_multi_field_summation():
         ramp_down_time=0,
         dt=1.0,
     )
-    
+
     assert len(es.fields) == 2
     assert es.efields.shape[0] == 3
 
@@ -153,10 +153,10 @@ def test_compute_potentials():
         ramp_down_time=0,
         dt=1.0,
     )
-    
+
     displacement = np.array([1e-6, 2e-6, 3e-6])
     potentials = es.compute_potentials(displacement)
-    
+
     assert len(potentials) == len(es.time_vec)
 
 
@@ -171,7 +171,7 @@ def test_iadd_combining_sources():
         ramp_down_time=0,
         dt=1.0,
     )
-    
+
     es2 = ElectrodeSource(
         base_amp=0,
         delay=5,
@@ -181,10 +181,10 @@ def test_iadd_combining_sources():
         ramp_down_time=0,
         dt=1.0,
     )
-    
+
     original_len = len(es1.time_vec)
     es1 += es2
-    
+
     assert len(es1.time_vec) >= original_len
 
 
