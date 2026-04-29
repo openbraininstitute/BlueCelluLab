@@ -370,3 +370,43 @@ def test_interp_myelin_positions_error():
 
     with pytest.raises(ValueError, match="More than 1 myelin section exist"):
         Cell.interp_myelin_positions(0.5, 1, soma_position)
+
+
+def test_apply_segment_potentials_inserts_extracellular():
+    """Test that apply_segment_potentials inserts the extracellular mechanism."""
+    import neuron
+
+    es = ElectrodeSource(
+        base_amp=0,
+        delay=0,
+        duration=2,
+        fields=[{"Ex": 100, "Ey": 0, "Ez": 0, "frequency": 0}],
+        ramp_up_time=0,
+        ramp_down_time=0,
+        dt=1.0,
+    )
+    # Create a minimal section with one segment
+    sec = neuron.h.Section(name="testsec")
+    sec.nseg = 1
+    seg = sec(0.5)
+    assert not sec.has_membrane("extracellular")
+    es.segment_displacements[seg] = np.array([1e-6, 0.0, 0.0])
+    es.apply_segment_potentials()
+    assert sec.has_membrane("extracellular")
+
+
+def test_combine_time_efields_disjoint_reverse_order():
+    """Test _combine_time_efields when t1 is strictly after t2."""
+    dt = 1.0
+    t1 = np.array([5.0, 6.0, 7.0])
+    e1 = np.ones((3, 3))
+    t2 = np.array([0.0, 1.0, 2.0])
+    e2 = np.ones((3, 3)) * 2
+    combined_t, combined_e = ElectrodeSource._combine_time_efields(
+        t1, e1, t2, e2, False, False, dt
+    )
+    expected_t = np.array([0.0, 1.0, 2.0, 5.0, 6.0, 7.0])
+    np.testing.assert_allclose(combined_t, expected_t)
+    assert combined_e.shape == (3, 6)
+    np.testing.assert_allclose(combined_e[:, :3], e2)
+    np.testing.assert_allclose(combined_e[:, 3:], e1)

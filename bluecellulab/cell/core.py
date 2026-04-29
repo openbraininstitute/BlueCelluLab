@@ -162,6 +162,49 @@ class Cell(InjectableMixin, PlottableMixin):
         # Persistent objects, like clamps, that exist as long
         # as the object exists
         self.persistent: list[HocObjectType] = []
+        self._local_to_global_matrix: Optional[np.ndarray] = None
+
+    def set_local_to_global_matrix(
+        self, position: np.ndarray, quaternion: Optional[np.ndarray] = None
+    ) -> None:
+        """Set the local-to-global coordinate transform for this cell.
+
+        The transform is a 3x4 matrix [R | t] built from a unit
+        quaternion (w, x, y, z) and a 3D translation vector.  If
+        *quaternion* is None, only the translation is applied (identity
+        rotation).
+        """
+        matrix = np.eye(3, 4, dtype=np.float64)
+        if quaternion is not None:
+            w, x, y, z = quaternion
+            # Normalised quaternion → 3×3 rotation matrix
+            xx, yy, zz = x * x, y * y, z * z
+            xy, xz, yz = x * y, x * z, y * z
+            wx, wy, wz = w * x, w * y, w * z
+            r = np.array(
+                [
+                    [1.0 - 2 * (yy + zz), 2 * (xy - wz), 2 * (xz + wy)],
+                    [2 * (xy + wz), 1.0 - 2 * (xx + zz), 2 * (yz - wx)],
+                    [2 * (xz - wy), 2 * (yz + wx), 1.0 - 2 * (xx + yy)],
+                ],
+                dtype=np.float64,
+            )
+            matrix[:, :3] = r
+        matrix[:, 3] = position
+        self._local_to_global_matrix = matrix
+
+    def local_to_global_coord_mapping(self, points: np.ndarray) -> np.ndarray:
+        """Apply the local-to-global coordinate transform to *points*.
+
+        Args:
+            points: array of shape (N, 3) with local coordinates.
+
+        Returns:
+            Array of shape (N, 3) with global coordinates.
+        """
+        if self._local_to_global_matrix is None:
+            return points
+        return points @ self._local_to_global_matrix[:, :3].T + self._local_to_global_matrix[:, 3]
 
     def _init_psections(self) -> None:
         """Initialize the psections of the cell."""
@@ -483,7 +526,6 @@ class Cell(InjectableMixin, PlottableMixin):
 
                 - The position is out of bounds (e.g., negative or greater than 1.0).
         """
-
         if location == "soma":
             sec = public_hoc_cell(self.cell).soma[0]
             source = sec(1)._ref_v
@@ -785,7 +827,6 @@ class Cell(InjectableMixin, PlottableMixin):
             segx: Segment position between 0 and 1.
             dt: Optional recording time step.
         """
-
         if section is None:
             section = self.soma
 
@@ -835,8 +876,8 @@ class Cell(InjectableMixin, PlottableMixin):
         """Get the number of segments in the cell."""
         return sum(section.nseg for section in self.sections.values())
 
-    def compute_segment_coordinates(self) -> dict[str, np.ndarray]:
-        """Compute 3D coordinates of segment endpoints for all sections.
+    def compute_segment_local_coordinates(self) -> dict[str, np.ndarray]:
+        """Compute local 3D coordinates of segment endpoints for all sections.
 
         Extracts 3D point data from NEURON sections and interpolates segment
         boundary positions along the section axis. Used for extracellular
@@ -880,6 +921,29 @@ class Cell(InjectableMixin, PlottableMixin):
 
         return segment_coords
 
+    compute_segment_coordinates = compute_segment_local_coordinates
+
+    def compute_segment_global_coordinates(self) -> dict[str, np.ndarray]:
+        """Compute global 3D coordinates of segment endpoints for all sections.
+
+        Same as :meth:`compute_segment_local_coordinates` but with the
+        local-to-global transform applied (if set via
+        :meth:`set_local_to_global_matrix`).
+
+        Returns:
+            Dictionary mapping section names to arrays of shape (nseg+1, 3)
+            containing [x, y, z] global coordinates in micrometers.
+            Sections without 3D point data return empty arrays.
+        """
+        local_coords = self.compute_segment_local_coordinates()
+        global_coords = {}
+        for sec_name, coords in local_coords.items():
+            if len(coords) == 0:
+                global_coords[sec_name] = coords
+            else:
+                global_coords[sec_name] = self.local_to_global_coord_mapping(coords)
+        return global_coords
+
     @staticmethod
     def get_segment_position(
         sec_seg_points: np.ndarray,
@@ -888,8 +952,9 @@ class Cell(InjectableMixin, PlottableMixin):
         x: float,
         func_loc2glob: Optional[Callable[[np.ndarray], np.ndarray]] = None,
     ) -> Optional[np.ndarray]:
-        """Get the global coordinates of the segment. For axon and myelin,
-        interpolate along the y-axis of the local soma coordinates, and then
+        """Get the global coordinates of the segment.
+
+        For axon and myelin, interpolate along the y-axis of the local soma coordinates, and then
         convert to global coordinates.
 
         Args:
@@ -1042,8 +1107,12 @@ class Cell(InjectableMixin, PlottableMixin):
         """Delete the cell."""
         self.delete_plottable()
         if hasattr(self, 'cell') and self.cell is not None:
-            if public_hoc_cell(self.cell) is not None and hasattr(public_hoc_cell(self.cell), 'clear'):
-                public_hoc_cell(self.cell).clear()
+            try:
+                hoc_cell = public_hoc_cell(self.cell)
+            except BluecellulabError:
+                hoc_cell = None
+            if hoc_cell is not None and hasattr(hoc_cell, 'clear'):
+                hoc_cell.clear()
 
             self.connections = None
             self.synapses = None
@@ -1233,7 +1302,6 @@ class Cell(InjectableMixin, PlottableMixin):
     ) -> list[str]:
         """Record all available currents (ionic + optionally nonspecific) at
         (section, segx)."""
-
         # discover what’s available at this site
         available = currents_vars(section)
         chosen: list[str] = []

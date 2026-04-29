@@ -25,6 +25,7 @@ from bluepysnap.circuit_ids import CircuitNodeId, CircuitEdgeIds
 from bluepysnap.exceptions import BluepySnapError
 from bluepysnap import Circuit as SnapCircuit
 import neuron
+import numpy as np
 import pandas as pd
 from bluecellulab import circuit
 from bluecellulab.circuit.circuit_access.definition import CircuitAccess, EmodelProperties
@@ -92,6 +93,35 @@ class SonataCircuitAccess(CircuitAccess):
         return self._circuit.nodes[cell_id.population_name].get(
             cell_id.id, properties=properties
         )
+
+    def get_cell_position_rotation(
+        self, cell_id: CellId
+    ) -> tuple[np.ndarray, Optional[np.ndarray]]:
+        """Return (position, quaternion) for a SONATA cell if available.
+
+        Position is a 3-element ndarray [x, y, z].
+        Quaternion is a 4-element ndarray [w, x, y, z] or None.
+        Returns (zeros, None) when the attributes are not present.
+        """
+        node_pop = self._circuit.nodes[cell_id.population_name]
+        props = node_pop.get(cell_id.id)
+        if "x" in props and "y" in props and "z" in props:
+            position = np.array(
+                [props["x"], props["y"], props["z"]], dtype=np.float64
+            )
+            orientation_keys = (
+                "orientation_w",
+                "orientation_x",
+                "orientation_y",
+                "orientation_z",
+            )
+            if all(k in props for k in orientation_keys):
+                quaternion = np.array(
+                    [props[k] for k in orientation_keys], dtype=np.float64
+                )
+                return position, quaternion
+            return position, None
+        return np.zeros(3, dtype=np.float64), None
 
     @staticmethod
     def _compute_pop_ids(source: str, target: str) -> tuple[int, int]:

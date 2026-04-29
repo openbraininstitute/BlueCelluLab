@@ -452,12 +452,22 @@ class CircuitSimulation:
                 gids_of_target = self.circuit_access.get_target_cell_ids(
                     stimulus.node_set
                 )
-                for cell_id in self.cells:
-                    if cell_id not in gids_of_target:
-                        continue
-                    sec = self.cells[cell_id].soma
-                    sec_name = sec.name().split(".")[-1]
-                    targets.append((cell_id, sec, 0.5, sec_name))
+                if isinstance(stimulus, circuit_stimulus_definitions.SpatiallyUniformEField):
+                    # Neurodamus target_point_list includes all sections of each cell.
+                    for cell_id in self.cells:
+                        if cell_id not in gids_of_target:
+                            continue
+                        cell = self.cells[cell_id]
+                        for sec in cell.sections.values():
+                            sec_name = sec.name().split(".")[-1]
+                            targets.append((cell_id, sec, 0.5, sec_name))
+                else:
+                    for cell_id in self.cells:
+                        if cell_id not in gids_of_target:
+                            continue
+                        sec = self.cells[cell_id].soma
+                        sec_name = sec.name().split(".")[-1]
+                        targets.append((cell_id, sec, 0.5, sec_name))
             else:
                 raise ValueError(
                     f"Stimulus '{stimulus}' has neither node_set nor compartment_set; "
@@ -615,57 +625,71 @@ class CircuitSimulation:
                 self._efield_sources[cell_id] += new_es
 
             es = self._efield_sources[cell_id]
-            segment_coords = cell.compute_segment_coordinates()
+            segment_coords_local = cell.compute_segment_local_coordinates()
+            segment_coords_global = cell.compute_segment_global_coordinates()
 
-            soma_coords_all = segment_coords.get(cell.soma.name())
-            if soma_coords_all is None or len(soma_coords_all) == 0:
+            soma_coords_global = segment_coords_global.get(cell.soma.name())
+            if soma_coords_global is None or len(soma_coords_global) == 0:
                 logger.warning(
                     f"Cell {cell_id} soma has no 3D coordinates, "
                     "cannot apply extracellular stimulus"
                 )
                 continue
 
-            soma_position = np.mean(soma_coords_all, axis=0)
+            soma_position_global = np.mean(soma_coords_global, axis=0)
+            soma_position_local = np.mean(
+                segment_coords_local.get(cell.soma.name(), soma_coords_global),
+                axis=0,
+            )
+
+            def local_to_global(pos: np.ndarray) -> np.ndarray:
+                stacked = np.vstack([soma_position_local, pos])
+                transformed = cell.local_to_global_coord_mapping(stacked)
+                return transformed[1]
 
             n_segments = 0
-            for sec in cell.sections.values():
-                for seg in sec:
-                    segx = seg.x
-                    sec_coords = segment_coords.get(sec.name())
-                    segment_position = None
+            for sec, segx in seg_list:
+                segment_position = None
 
-                    if sec_coords is None or len(sec_coords) == 0:
-                        # Try axon/myelin interpolation for sections without 3D points
-                        if not sec.n3d():
-                            try:
-                                segment_position = cell.get_segment_position(
-                                    np.array([]), soma_position, sec, segx, func_loc2glob=None
-                                )
-                            except ValueError:
-                                logger.warning(
-                                    f"Section {sec.name()} has no 3D coordinates and "
-                                    "could not interpolate, skipping"
-                                )
-                                continue
-                        else:
-                            logger.warning(
-                                f"Section {sec.name()} has no 3D coordinates, skipping"
-                            )
-                            continue
-                    else:
+                if "soma" in sec.name():
+                    segment_position = soma_position_global
+                else:
+                    sec_coords = segment_coords_global.get(sec.name())
+                    if sec_coords is not None and len(sec_coords) > 0:
                         seg_idx = int(segx * sec.nseg)
                         if seg_idx >= len(sec_coords):
                             seg_idx = len(sec_coords) - 1
                         segment_position = sec_coords[seg_idx]
-
-                    if segment_position is None:
+                    elif not sec.n3d():
+                        # Try axon/myelin interpolation for sections without 3D points
+                        try:
+                            segment_position = cell.get_segment_position(
+                                np.array([]),
+                                soma_position_local,
+                                sec,
+                                segx,
+                                func_loc2glob=local_to_global,
+                            )
+                        except ValueError:
+                            logger.warning(
+                                f"Section {sec.name()} has no 3D coordinates and "
+                                "could not interpolate, skipping"
+                            )
+                            continue
+                    else:
+                        logger.warning(
+                            f"Section {sec.name()} has no 3D coordinates, skipping"
+                        )
                         continue
 
-                    displacement_vec = (segment_position - soma_position) * 1e-6
+                if segment_position is None:
+                    continue
 
-                    segment = sec(segx)
-                    es.segment_displacements[segment] = displacement_vec
-                    n_segments += 1
+                displacement_vec = (segment_position - soma_position_global) * 1e-6
+
+                segment = sec(segx)
+                es.segment_displacements[segment] = displacement_vec
+                n_segments += 1
 
             logger.debug(
                 f"Added extracellular stimulus to cell {cell_id} "
@@ -979,6 +1003,13 @@ class CircuitSimulation:
             self.cells[cell_id] = cell
             if self.circuit_access.node_properties_available:
                 cell.connect_to_circuit(SonataProxy(cell_id, self.circuit_access))
+                # Set local-to-global transform if position data is available.
+                if hasattr(self.circuit_access, "get_cell_position_rotation"):
+                    try:
+                        position, quaternion = self.circuit_access.get_cell_position_rotation(cell_id)
+                        cell.set_local_to_global_matrix(position, quaternion)
+                    except (KeyError, ValueError):
+                        pass
 
     def _apply_modifications(self) -> None:
         """Apply condition modifications from the simulation config to
