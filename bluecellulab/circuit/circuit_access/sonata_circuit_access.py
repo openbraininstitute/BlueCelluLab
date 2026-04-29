@@ -99,9 +99,9 @@ class SonataCircuitAccess(CircuitAccess):
     ) -> tuple[np.ndarray, Optional[np.ndarray]]:
         """Return (position, quaternion) for a SONATA cell if available.
 
-        Position is a 3-element ndarray [x, y, z].
-        Quaternion is a 4-element ndarray [w, x, y, z] or None.
-        Returns (zeros, None) when the attributes are not present.
+        Position is a 3-element ndarray [x, y, z]. Quaternion is a
+        4-element ndarray [w, x, y, z] or None. Returns (zeros, None)
+        when the attributes are not present.
         """
         node_pop = self._circuit.nodes[cell_id.population_name]
         props = node_pop.get(cell_id.id)
