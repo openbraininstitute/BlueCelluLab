@@ -72,10 +72,12 @@ class TestMorphologyWrapper:
                 return False
             return original_exists(path)
 
-        with patch.object(Path, "exists", linux_like_exists), \
-            patch.object(MorphIOWrapper, "_build_morph"), \
-            patch.object(MorphIOWrapper, "_get_section_names", return_value=[]), \
-            patch.object(MorphIOWrapper, "_build_sec_typeid_distrib"):
+        with (
+            patch.object(Path, "exists", linux_like_exists),
+            patch.object(MorphIOWrapper, "_build_morph"),
+            patch.object(MorphIOWrapper, "_get_section_names", return_value=[]),
+            patch.object(MorphIOWrapper, "_build_sec_typeid_distrib"),
+        ):
             wrapper = MorphIOWrapper(str(wrong_case))
 
         assert wrapper._morph_name == "cell"
@@ -97,8 +99,10 @@ class TestMorphologyWrapper:
                 return False
             return original_exists(path)
 
-        with patch.object(Path, "exists", linux_like_exists), \
-            patch.object(NeuronTemplate, "load", return_value="T"):
+        with (
+            patch.object(Path, "exists", linux_like_exists),
+            patch.object(NeuronTemplate, "load", return_value="T"),
+        ):
             template = NeuronTemplate(str(template_file), str(wrong_case), "v5", None)
 
         assert template.morph_filepath == str(morph_file)
