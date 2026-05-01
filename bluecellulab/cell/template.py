@@ -25,7 +25,7 @@ import uuid
 
 import neuron
 
-from bluecellulab.cell.morphio_wrapper import split_morphology_path
+from bluecellulab.cell.morphio_wrapper import is_h5_container_path, resolve_case_insensitive_path, split_morphology_path
 from bluecellulab.circuit import EmodelProperties
 from bluecellulab.exceptions import BluecellulabError
 from bluecellulab.type_aliases import HocObjectType
@@ -109,6 +109,9 @@ class NeuronTemplate:
 
         if not os.path.exists(template_filepath):
             raise FileNotFoundError(f"Couldn't find template file: {template_filepath}")
+
+        if not is_h5_container_path(morph_filepath):
+            morph_filepath = resolve_case_insensitive_path(morph_filepath)
 
         # Check morphology path - handle H5 container paths
         if not self._is_valid_morphology_path(morph_filepath):

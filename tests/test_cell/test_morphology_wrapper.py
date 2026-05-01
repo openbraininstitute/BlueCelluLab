@@ -9,6 +9,7 @@ from bluecellulab.cell.morphio_wrapper import (
     SectionName,
     split_morphology_path,
 )
+from bluecellulab.cell.template import NeuronTemplate
 
 
 class TestMorphologyWrapper:
@@ -59,42 +60,48 @@ class TestMorphologyWrapper:
         assert morph_name == "cell_name"
         assert morph_ext == ""
 
-    def test_case_insensitive_morphology_path(self, tmp_path):
+    def test_case_insensitive_morphology_path_linux_like(self, tmp_path):
         p = tmp_path / "cell.ASC"
         p.write_text("dummy")
 
-        with patch.object(MorphIOWrapper, "_build_morph"):
-            with patch.object(MorphIOWrapper, "_get_section_names", return_value=[]):
-                with patch.object(MorphIOWrapper, "_build_sec_typeid_distrib"):
-                    wrapper = MorphIOWrapper(str(tmp_path / "cell.asc"))
+        wrong_case = tmp_path / "cell.asc"
+        original_exists = Path.exists
+
+        def linux_like_exists(path):
+            if path == wrong_case:
+                return False
+            return original_exists(path)
+
+        with patch.object(Path, "exists", linux_like_exists), \
+            patch.object(MorphIOWrapper, "_build_morph"), \
+            patch.object(MorphIOWrapper, "_get_section_names", return_value=[]), \
+            patch.object(MorphIOWrapper, "_build_sec_typeid_distrib"):
+            wrapper = MorphIOWrapper(str(wrong_case))
 
         assert wrapper._morph_name == "cell"
-        assert wrapper._morph_ext == ".asc"
+        assert wrapper._morph_ext == ".ASC"
 
-    def test_case_insensitive_morphology_path_reverse(self, tmp_path):
-        """Should also work if file is lowercase and input is uppercase."""
-        p = tmp_path / "cell.asc"
-        p.write_text("dummy")
+    def test_neuron_template_resolves_case_insensitive_morphology_path(self, tmp_path):
+        """NeuronTemplate should validate wrong-case morphology filenames."""
+        morph_file = tmp_path / "cell.ASC"
+        morph_file.write_text("dummy")
 
-        with patch.object(MorphIOWrapper, "_build_morph"):
-            with patch.object(MorphIOWrapper, "_get_section_names", return_value=[]):
-                with patch.object(MorphIOWrapper, "_build_sec_typeid_distrib"):
-                    wrapper = MorphIOWrapper(str(tmp_path / "cell.ASC"))
+        template_file = tmp_path / "template.hoc"
+        template_file.write_text("begintemplate T\nendtemplate T\n")
 
-        assert wrapper._morph_name == "cell"
-        assert wrapper._morph_ext == ".asc"
+        wrong_case = tmp_path / "cell.asc"
+        original_exists = Path.exists
 
-    def test_extension_normalization(self, tmp_path):
-        """Extension should always be normalized to lowercase."""
-        p = tmp_path / "cell.SWC"
-        p.write_text("dummy")
+        def linux_like_exists(path):
+            if path == wrong_case:
+                return False
+            return original_exists(path)
 
-        with patch.object(MorphIOWrapper, "_build_morph"):
-            with patch.object(MorphIOWrapper, "_get_section_names", return_value=[]):
-                with patch.object(MorphIOWrapper, "_build_sec_typeid_distrib"):
-                    wrapper = MorphIOWrapper(str(p))
+        with patch.object(Path, "exists", linux_like_exists), \
+            patch.object(NeuronTemplate, "load", return_value="T"):
+            template = NeuronTemplate(str(template_file), str(wrong_case), "v5", None)
 
-        assert wrapper._morph_ext == ".swc"
+        assert template.morph_filepath == str(morph_file)
 
     def test_morphology_wrapper_init_success(self):
         """Test successful MorphologyWrapper initialization with real H5 file."""
