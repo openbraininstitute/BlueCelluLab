@@ -71,9 +71,6 @@ class SynapseFactory:
         elif syn_type == SynapseType.ALLEN_CHEMICAL:
             synapse = Exp2Syn(cell.cell_id, syn_hoc_args, syn_id, syn_description,
                               popids, cell.post_gid, extracellular_calcium)
-        elif syn_type == SynapseType.ALLEN_POINT:
-            synapse = Exp2Syn(cell.cell_id, syn_hoc_args, syn_id, syn_description,
-                              popids, cell.post_gid, extracellular_calcium)
         else:
             synapse = GluSynapse(cell.cell_id, syn_hoc_args, syn_id, syn_description,
                                  popids, cell.post_gid, extracellular_calcium)
@@ -98,7 +95,7 @@ class SynapseFactory:
     ) -> SynapseType:
         """Returns the type of synapse to be created."""
         if SynapseProperty.TYPE not in syn_description:
-            return SynapseType.ALLEN_POINT
+            return SynapseType.ALLEN_CHEMICAL
 
         is_inhibitory: bool = int(syn_description[SynapseProperty.TYPE]) < 100
         all_plasticity_props_available: bool = all(

@@ -46,6 +46,8 @@ def test_cell_point_create(capsys):
     for (cell_id, cell) in bcl.cells.items():
         cell_info_dict = cell.info_dict
         assert cell_info_dict != {}
+        assert cell.hoc_cell is not None
+        assert cell.get_spike_times() is not None
         assert (tau_vals[cell_id.id] == cell.pointcell.pointcell.tau)
 
 
@@ -100,3 +102,14 @@ def test_point_process_cell_rejects_none(capsys):
         HocPointProcessCell(None, "IntFire1")
     except ValueError as error:
         assert str(error) == "PointProcessCell requires valid cell_id"
+
+
+def test_point_process_cell_rejects_bad_mechanism_name(capsys):
+    from bluecellulab.circuit import CellId
+    from bluecellulab.cell.point_process import HocPointProcessCell
+    from bluecellulab.exceptions import BluecellulabError
+
+    try:
+        HocPointProcessCell(CellId("point", 0), "Noexist_IntFire99")
+    except BluecellulabError as error:
+        assert str(error) == "Point mechanism 'Noexist_IntFire99' not found in NEURON. Make sure the mod/hoc files are compiled and loaded."
