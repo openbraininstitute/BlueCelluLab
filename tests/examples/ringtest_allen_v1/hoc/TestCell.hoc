@@ -1,0 +1,179 @@
+{load_file("import3d.hoc")}
+
+begintemplate TestCell
+public is_art
+public init, AddMorph, getCCell, setCCell, geom_nsec, biophys, biophys_inhomo, connect2target
+public soma, dend, apic, axon, nSecAxonal, nSecAxonalOrig, synHelperList, CellRef
+public synlist, all, apical, basal, somatic, axonal, gid, nSecAll, nSecSoma, nSecApical, nSecBasal, clear, x, y, z, position
+objref synlist, all, apical, basal, somatic, axonal, this, CCellRef, synHelperList, CellRef
+
+
+/*!
+ * Constructor to create a TestCell object usable in the bbp toolchain
+ *
+ * @param $1 gid
+ * @param $s2 morphology dir
+ * @param $s3 morphology_name
+ */
+proc init() {
+    gid     = 0
+    all     = new SectionList()
+    somatic = new SectionList()
+    basal   = new SectionList()
+    apical  = new SectionList()
+    axonal  = new SectionList()
+    forall delete_section()
+    if(numarg()>0) gid = $1
+    if(numarg()>2){
+        strdef morph_path
+        sprint(morph_path, "%s/%s", $s2, $s3)
+        AddMorph(morph_path)
+    }
+
+    biophys()
+
+    synlist = new List()
+    synHelperList = new List()
+    x = y = z = 0 // only change via position
+    CellRef = this
+
+}
+create soma[1], dend[1], apic[1], axon[1]
+
+proc AddMorph(){ localobj morph, import, strobj, morphPath, extension
+    forall delete_section()
+
+    strobj = new StringFunctions()
+    morphPath = new String()
+    extension = new String()
+    sscanf($s1, "%s", morphPath.s)
+    sscanf($s1, "%s", extension.s)
+    strobj.right(extension.s, strobj.len(extension.s) - 4)
+    strobj.tail(extension.s, "\\.", extension.s) // remove until dot (inclusive)
+
+    // Classic formats
+    if( strcmp(extension.s, "asc") == 0 ) {
+        morph = new Import3d_Neurolucida3()
+    } else if( strcmp(extension.s, "swc") == 0 ) {
+        morph = new Import3d_SWC_read()
+    } else {
+        terminate("Unsupported file format: Morphology file has to end with .asc or .swc" )
+    }
+
+    morph.quiet = 1
+    morph.input($s1)
+    import = new Import3d_GUI(morph, 0)
+    import.instantiate(this)
+    indexSections()
+    geom_nseg_fixed(40)
+    geom_nsec()
+}
+
+proc biophys(){
+    forsec all {
+        Ra = 100
+        cm = 1
+    }
+    soma {
+        insert hh
+        gnabar_hh = 0.12
+        gkbar_hh = 0.036
+        gl_hh = 0.0003
+        el_hh = -54.3
+        insert pas
+        g_pas = 0
+    }   
+    forsec basal {
+        insert pas
+        g_pas = 0.001
+        e_pas = -65
+        insert hh
+    }
+    forsec apical {
+        insert pas
+        g_pas = 0.001
+        e_pas = -65
+        insert hh
+    }
+}
+
+proc biophys_inhomo(){}
+
+proc geom_nseg_fixed(/* chunkSize */) { local chunkSize
+  chunkSize = $1
+  soma area(.5) // make sure diam reflects 3d points 
+  forsec all {
+    nseg = 1 + 2*int(L/chunkSize) 
+  }
+} 
+
+proc geom_nsec() { local nSec
+    nSec = 0
+    forsec all {
+        nSec = nSec + 1
+    }
+    nSecAll = nSec
+    nSec = 0
+    forsec somatic { nSec = nSec + 1}
+    nSecSoma	= 	nSec
+    nSec = 0
+    forsec apical { 
+        nseg = 2
+        nSec = nSec + 1
+    }
+    nSecApical= 	nSec
+    nSec = 0
+    forsec basal { 
+        nseg = 2
+        nSec = nSec + 1
+    }
+    nSecBasal	= 	nSec
+    nSec = 0
+    forsec axonal { 
+        nseg = 2
+        nSec = nSec + 1
+    }
+    nSecAxonalOrig = nSecAxonal = nSec
+
+}
+
+/*!
+ * Assign section indices to the section voltage value.  This will be useful later for serializing
+ * the sections into an array.  Note, that once the simulation begins, the voltage values will revert to actual data again.
+ *
+ * @param $o1 Import3d_GUI object (optional)
+ */
+proc indexSections() { local index
+    index = 0
+    forsec all {
+        v(0.0001) = index
+        index += 1
+    }
+}
+
+proc clear() { }
+
+/*!
+ * @param $o1 NetCon source (can be nil)
+ * @param $o2 Variable where generated NetCon will be placed
+ */
+proc connect2target() { //$o1 target point process, $o2 returned NetCon
+  soma $o2 = new NetCon(&v(1), $o1)
+  $o2.threshold = 10
+}
+objref syn_
+proc synapses() {
+  /* E0 */   dend[0] syn_ = new ExpSyn(0.8)  synlist.append(syn_)
+    syn_.tau = 2
+  /* I1 */   dend[0] syn_ = new ExpSyn(0.1)  synlist.append(syn_)
+    syn_.tau = 5
+    syn_.e = -80
+}
+
+func is_art() { return 0 }
+
+
+proc re_init_rng() {
+}
+
+endtemplate TestCell
