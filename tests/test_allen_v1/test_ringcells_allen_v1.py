@@ -44,6 +44,8 @@ def test_cell_point_create(capsys):
 
     # verify that a point neuron has been created with IntFire and parameters set according to what was in the nodes.h5 file
     for (cell_id, cell) in bcl.cells.items():
+        cell_info_dict = cell.info_dict
+        assert cell_info_dict != {}
         assert (tau_vals[cell_id.id] == cell.pointcell.pointcell.tau)
 
 
@@ -86,4 +88,6 @@ def test_cell_biophysical_create(capsys):
 
     # verify that a point neuron has been created with IntFire and parameters set according to what was in the nodes.h5 file
     for (cell_id, cell) in bcl.cells.items():
+        cell_info_dict = cell.info_dict
+        assert cell_info_dict != {}
         assert (threshold_vals[cell_id.id] == cell.threshold)

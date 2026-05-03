@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
 from pathlib import Path
 from typing import Any, Mapping, Optional
@@ -208,67 +207,3 @@ def mechanism_name_from_model_template(template_path: str, model_template: str) 
             h.load_file(template_path)
             return name
     return mt
-
-
-@dataclass
-class IntFire1Params:
-    tau: float = 10.0
-    refrac: float = 2.0
-
-
-class IntFire1Cell(BasePointProcessCell):
-    def __init__(
-        self,
-        cell_id: Optional[CellId] = None,
-        tau: float = 10.0,
-        refrac: float = 2.0,
-    ) -> None:
-        super().__init__(cell_id)
-        point = h.IntFire1()
-        point.tau = tau
-        point.refrac = refrac
-        self.pointcell = point
-
-        self.start_recording_spikes(None, None, threshold=1.0)
-
-
-@dataclass
-class IntFire2Params:
-    taum: float = 10.0
-    taus: float = 20.0
-    ib: float = 0.0
-
-
-class IntFire2Cell(BasePointProcessCell):
-    def __init__(
-        self,
-        cell_id: Optional[CellId] = None,
-        taum: float = 10.0,
-        taus: float = 20.0,
-        ib: float = 0.0,
-    ) -> None:
-        super().__init__(cell_id)
-        point = h.IntFire2()
-        point.taum = taum
-        point.taus = taus
-        point.ib = ib
-        self.pointcell = point
-
-        self.start_recording_spikes(None, None, threshold=1.0)
-
-
-def create_intfire1_cell(
-    tau: float = 10.0,
-    refrac: float = 2.0,
-    cell_id: Optional[CellId] = None,
-) -> IntFire1Cell:
-    return IntFire1Cell(cell_id=cell_id, tau=tau, refrac=refrac)
-
-
-def create_intfire2_cell(
-    taum: float = 10.0,
-    taus: float = 20.0,
-    ib: float = 0.0,
-    cell_id: Optional[CellId] = None,
-) -> IntFire2Cell:
-    return IntFire2Cell(cell_id=cell_id, taum=taum, taus=taus, ib=ib)

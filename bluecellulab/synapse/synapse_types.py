@@ -464,8 +464,18 @@ class Exp2Syn(Synapse):
 
     @property
     def info_dict(self):
-        parent_dict = super().info_dict
-        parent_dict['synapse_parameters']['tau1'] = self.hsynapse.tau1
-        parent_dict['synapse_parameters']['tau2'] = self.hsynapse.tau2
-        parent_dict['synapse_parameters']['erev'] = self.hsynapse.e
-        return parent_dict
+        synapse_dict: dict[str, Any] = {}
+
+        synapse_dict['synapse_id'] = self.syn_id
+        synapse_dict['pre_cell_id'] = self.pre_gid
+        synapse_dict['post_cell_id'] = self.post_cell_id.id
+        synapse_dict['syn_description'] = self.syn_description.to_dict()
+        # if keys are enum make them str
+        synapse_dict['syn_description'] = {
+            str(k): v for k, v in synapse_dict['syn_description'].items()}
+        synapse_dict['mech_name'] = self.mech_name
+        synapse_dict['synapse_parameters'] = {}
+        synapse_dict['synapse_parameters']['tau1'] = self.hsynapse.tau1
+        synapse_dict['synapse_parameters']['tau2'] = self.hsynapse.tau2
+        synapse_dict['synapse_parameters']['erev'] = self.hsynapse.e
+        return synapse_dict
