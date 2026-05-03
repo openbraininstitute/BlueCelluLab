@@ -9,9 +9,9 @@
         "populations": {
           "RingA": {
             "type": "biophysical",
-            "biophysical_neuron_models_dir": "$BASE_DIR/../ringtest/hoc",
+            "biophysical_neuron_models_dir": "$BASE_DIR/hoc",
             "alternate_morphologies": {
-              "neurolucida-asc": "$BASE_DIR/../ringtest/morphologies/asc"
+              "neurolucida-asc": "$BASE_DIR/morphologies/asc"
             }
           }
         }

@@ -1,7 +1,7 @@
 {
     "node_sets_file": "nodesets.json",
     "network": "circuit_config.json",
-    "node_set": "RingB",
+    "node_set": "Mosaic",
     "target_simulator": "NEURON",
     "run": {
         "tstop": 50.0,
