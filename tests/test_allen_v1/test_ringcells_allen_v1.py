@@ -38,7 +38,7 @@ def test_cell_point_create(capsys):
 
     cell_ids_for_this_rank = [(population, i) for i in all_node_ids]
 
-    bcl.instantiate_gids(cell_ids_for_this_rank)
+    bcl.instantiate_gids(cell_ids_for_this_rank, **{"add_synapses": True, "add_replay": False, "add_stimuli": True})
 
     tau_vals = {0: 24.0, 1: 7.0, 2: 24.0}
 
@@ -80,11 +80,10 @@ def test_cell_biophysical_create(capsys):
 
     cell_ids_for_this_rank = [(population, i) for i in all_node_ids]
 
-    bcl.instantiate_gids(cell_ids_for_this_rank)
+    bcl.instantiate_gids(cell_ids_for_this_rank, **{"add_synapses": True, "add_replay": False, "add_stimuli": True})
 
-    threshold_vals = {0:0.154742, 1:0.154742, 2:0.0876128}
+    threshold_vals = {0: 0.154742, 1: 0.154742, 2: 0.0876128}
 
     # verify that a point neuron has been created with IntFire and parameters set according to what was in the nodes.h5 file
     for (cell_id, cell) in bcl.cells.items():
         assert (threshold_vals[cell_id.id] == cell.threshold)
-

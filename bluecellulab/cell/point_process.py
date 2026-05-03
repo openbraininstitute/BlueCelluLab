@@ -190,7 +190,6 @@ class HocPointProcessCell(BasePointProcessCell):
                                                   syn_description[SynapseProperty.AXONAL_DELAY])
 
         self.pointConn = PointProcessConnection([point_params])
-        self.pointConn.finalize(self.pointcell)
 
 
 def mechanism_name_from_model_template(template_path: str, model_template: str) -> str:
