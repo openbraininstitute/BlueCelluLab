@@ -9,7 +9,7 @@ def test_cell_point_create(capsys):
     from bluecellulab import CircuitSimulation
 
     sim_conf = str(SIM_DIR / "simulation_config_point.json")
-    bcl = CircuitSimulation(simulation_config=sim_conf)
+    bcl = CircuitSimulation(simulation_config=sim_conf, print_cellstate=True)
 
     # Load configuration using json
     with open(sim_conf) as f:
@@ -38,7 +38,7 @@ def test_cell_point_create(capsys):
 
     cell_ids_for_this_rank = [(population, i) for i in all_node_ids]
 
-    bcl.instantiate_gids(cell_ids_for_this_rank, **{"add_synapses": True, "add_replay": False, "add_stimuli": True})
+    bcl.instantiate_gids(cell_ids_for_this_rank, **{"add_synapses": True, "add_replay": False, "add_stimuli": True, "interconnect_cells": True})
 
     tau_vals = {0: 24.0, 1: 7.0, 2: 24.0}
 
@@ -53,7 +53,7 @@ def test_cell_biophysical_create(capsys):
     from bluecellulab import CircuitSimulation
 
     sim_conf = str(SIM_DIR / "simulation_config_biophysical.json")
-    bcl = CircuitSimulation(simulation_config=sim_conf)
+    bcl = CircuitSimulation(simulation_config=sim_conf, print_cellstate=True)
 
     # Load configuration using json
     with open(sim_conf) as f:
@@ -82,7 +82,7 @@ def test_cell_biophysical_create(capsys):
 
     cell_ids_for_this_rank = [(population, i) for i in all_node_ids]
 
-    bcl.instantiate_gids(cell_ids_for_this_rank, **{"add_synapses": True, "add_replay": False, "add_stimuli": True})
+    bcl.instantiate_gids(cell_ids_for_this_rank, **{"add_synapses": True, "add_replay": False, "add_stimuli": True, "interconnect_cells": True})
 
     threshold_vals = {0: 0.154742, 1: 0.154742, 2: 0.0876128}
 
@@ -91,3 +91,12 @@ def test_cell_biophysical_create(capsys):
         cell_info_dict = cell.info_dict
         assert cell_info_dict != {}
         assert (threshold_vals[cell_id.id] == cell.threshold)
+
+
+def test_point_process_cell_rejects_none(capsys):
+    from bluecellulab.cell.point_process import HocPointProcessCell
+
+    try:
+        HocPointProcessCell(None, "IntFire1")
+    except ValueError as error:
+        assert str(error) == "PointProcessCell requires valid cell_id"

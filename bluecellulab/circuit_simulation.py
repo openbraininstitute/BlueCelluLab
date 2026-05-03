@@ -1207,7 +1207,6 @@ class CircuitSimulation:
                 return HocPointProcessCell(
                     cell_id=cell_id,
                     mechanism_name=mech_name,
-                    param_overrides=None,
                     spike_threshold=self.spike_threshold,
                 )
 

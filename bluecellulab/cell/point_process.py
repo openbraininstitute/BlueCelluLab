@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Optional
 
 from bluecellulab.cell import Cell
 from bluecellulab.circuit.simulation_access import get_synapse_replay_spikes
@@ -79,12 +79,6 @@ class BasePointProcessCell(Cell):
         self._spike_detector.threshold = threshold
         self._spike_detector.record(self._spike_times)
 
-    def connect2target(self, target_pp=None) -> h.NetCon:
-        """Neurodamus-like helper: NetCon from this cell to a target point process."""
-        if self.pointcell is None:
-            raise ValueError("call to connect2target without valid pointprocess")
-        return h.NetCon(self.pointcell.pointcell, target_pp)
-
 
 class HocPointProcessCell(BasePointProcessCell):
     """Point process that wraps an arbitrary HOC/mod artificial mechanism."""
@@ -93,7 +87,6 @@ class HocPointProcessCell(BasePointProcessCell):
         self,
         cell_id: Optional[CellId],
         mechanism_name: str,
-        param_overrides: Optional[Mapping[str, Any]] = None,
         spike_threshold: float = 1.0,
     ) -> None:
         super().__init__(cell_id)
@@ -109,10 +102,6 @@ class HocPointProcessCell(BasePointProcessCell):
         if cell_id is None:
             raise ValueError("call to create pointprocess mechanism without valid cell_id")
         point = mech_cls(cell_id.id)
-        if param_overrides:
-            for name, value in param_overrides.items():
-                if hasattr(point, name):
-                    setattr(point, name, value)
 
         self.pointcell = point
         self.start_recording_spikes(None, None, threshold=spike_threshold)
