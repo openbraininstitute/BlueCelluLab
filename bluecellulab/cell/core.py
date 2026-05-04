@@ -97,12 +97,6 @@ class Cell(InjectableMixin, PlottableMixin):
             emodel_properties: Template specific emodel properties.
         """
         super().__init__()
-        self.template_params = TemplateParams(
-            template_filepath=template_path,
-            morph_filepath=morphology_path,
-            template_format=template_format,
-            emodel_properties=emodel_properties,
-        )
         if cell_id is None:
             cell_id = CellId("", Cell.last_id)
             Cell.last_id += 1
@@ -111,6 +105,12 @@ class Cell(InjectableMixin, PlottableMixin):
 
         # Load the template
         neuron_template = NeuronTemplate(template_path, morphology_path, template_format, emodel_properties)
+        self.template_params = TemplateParams(
+            template_filepath=template_path,
+            morph_filepath=neuron_template.morph_filepath,
+            template_format=template_format,
+            emodel_properties=emodel_properties,
+        )
         self.template_id = neuron_template.template_name  # useful to map NEURON and python objects
         self.cell = neuron_template.get_cell(self.cell_id.id)
         if template_format == 'v6':

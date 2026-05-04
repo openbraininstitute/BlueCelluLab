@@ -357,7 +357,6 @@ class MorphIOWrapper:
         if not is_h5_container_path(input_file):
             input_file = resolve_case_insensitive_path(input_file)
         self._collection_dir, self._morph_name, self._morph_ext = split_morphology_path(input_file)
-        self._morph_ext = self._morph_ext.lower()
         self._options = options
         self._build_morph()
         # This logic is similar to what's in BaseCell, but at this point we are still
