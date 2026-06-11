@@ -25,7 +25,7 @@ from bluecellulab.cell.ballstick import create_ball_stick
 from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.circuit.node_id import create_cell_id
 from bluecellulab.exceptions import UnsteadyCellError
-from bluecellulab.tools import calculate_SS_voltage, calculate_SS_voltage_subprocess, calculate_input_resistance, detect_hyp_current, detect_spike, detect_spike_step, detect_spike_step_subprocess, holding_current, holding_current_subprocess, search_threshold_current, template_accepts_cvode, check_empty_topology, calculate_max_thresh_current, calculate_rheobase, validate_section_and_segment
+from bluecellulab.tools import calculate_SS_voltage, calculate_SS_voltage_subprocess, calculate_input_resistance, detect_hyp_current, detect_spike, detect_spike_step, detect_spike_step_subprocess, holding_current, holding_current_subprocess, search_threshold_current, template_accepts_cvode, check_empty_topology, calculate_max_thresh_current, calculate_rheobase, validate_section_and_segment, compute_memodel_properties_v2
 from bluecellulab.cell.section_tools import currents_vars, mechs_vars
 
 
@@ -249,6 +249,24 @@ class TestOnSonataCell:
             step_level=step_level,
         )
         assert spike_occurred is True
+
+    def test_compute_memodel_properties_v2(self):
+        """Unit test compute_memodel_properties_v2."""
+        resp_dict = compute_memodel_properties_v2(
+            template_path=self.template_name,
+            morphology_path=self.morphology_path,
+            template_format=self.template_format,
+            holding_voltage=-85.0,
+            emodel_properties=self.emodel_properties,
+        )
+        import warnings
+        warnings.warn(resp_dict["resting_potential"])
+        warnings.warn(resp_dict["input_resistance"])
+        warnings.warn(resp_dict["threshold_current"])
+        assert resp_dict["holding_current"] == pytest.approx(0.0003600167531203624)
+        assert resp_dict["resting_potential"] == pytest.approx(-85.13006257460853)
+        assert resp_dict["input_resistance"] == pytest.approx(334.1862365049614)
+        assert resp_dict["threshold_current"] == pytest.approx(0.03380088341395323)
 
 
 @pytest.mark.v6
