@@ -259,10 +259,7 @@ class TestOnSonataCell:
             holding_voltage=-85.0,
             emodel_properties=self.emodel_properties,
         )
-        import warnings
-        warnings.warn(resp_dict["resting_potential"])
-        warnings.warn(resp_dict["input_resistance"])
-        warnings.warn(resp_dict["threshold_current"])
+
         assert resp_dict["holding_current"] == pytest.approx(0.0003600167531203624)
         assert resp_dict["resting_potential"] == pytest.approx(-85.13006257460853)
         assert resp_dict["input_resistance"] == pytest.approx(334.1862365049614)
