@@ -553,3 +553,58 @@ def compute_memodel_properties(
     )
 
     return {"holding_current": holding_current, "rheobase": rheobase, "rin": rin}
+
+
+def compute_memodel_properties_v2(
+    template_path,
+    morphology_path,
+    template_format,
+    holding_voltage,
+    emodel_properties,
+    spike_threshold_voltage=-30,
+    v_init=-80.0,
+    celsius=34.0,
+):
+    """Compute holding and threshold currents, resting membrane potential, and
+    input resistance."""
+    # set initial voltage and temperature
+    set_neuron_globals(temperature=celsius, v_init=v_init)
+
+    cell_kwargs = {
+        "template_path": template_path,
+        "morphology_path": morphology_path,
+        "template_format": template_format,
+        "emodel_properties": emodel_properties,
+    }
+
+    with IsolatedProcess() as runner:
+        i_hold, _ = runner.apply(
+            holding_current_subprocess, [holding_voltage, False, cell_kwargs]
+        )
+
+    # update holding current in emodel properties because it is used in rheobase computation
+    emodel_properties.holding_current = i_hold
+
+    rmp = calculate_SS_voltage(
+        template_path, morphology_path, template_format, emodel_properties, 0.0,
+    )
+
+    rin = calculate_input_resistance(
+        template_path=template_path,
+        morphology_path=morphology_path,
+        template_format=template_format,
+        emodel_properties=emodel_properties,
+    )
+
+    cell = Cell(
+        template_path=template_path,
+        morphology_path=morphology_path,
+        template_format=template_format,
+        emodel_properties=emodel_properties,
+    )
+    rheobase = calculate_rheobase(
+        cell=cell, section="soma[0]", segx=0.5, threshold_voltage=spike_threshold_voltage
+    )
+    cell.delete()
+
+    return {"holding_current": i_hold, "resting_potential": rmp, "input_resistance": rin, "threshold_current": rheobase}
