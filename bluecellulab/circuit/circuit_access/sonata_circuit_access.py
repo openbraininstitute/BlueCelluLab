@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 from functools import lru_cache
 import logging
+import os
 from pathlib import Path
 from typing import Mapping, Optional
 
@@ -336,17 +337,32 @@ class SonataCircuitAccess(CircuitAccess):
         # Get the alternate morphologies configuration
         alternate_morphologies = node_population.config.get("alternate_morphologies")
 
-        # Check for H5v1 format first (highest priority for H5 containers)
+        # Get the morphology name for this cell
+        cell_properties = node_population.get(cell_id.id)
+        morphology_name = cell_properties.get("morphology", "")
+
+        # Check for morph-spines format (highest priority for spiny morphologies)
+        if alternate_morphologies and "morph-spines" in alternate_morphologies:
+            h5_path = alternate_morphologies["morph-spines"]
+            if morphology_name:
+                return f"{h5_path}/morphology/{morphology_name}.h5"
+
+        # Check for H5v1 format (highest priority for H5 containers)
         if alternate_morphologies and "h5v1" in alternate_morphologies:
             h5_container_path = alternate_morphologies["h5v1"]
-            # Get the morphology name for this cell
-            cell_properties = node_population.get(cell_id.id)
-            morphology_name = cell_properties.get("morphology", "")
             if morphology_name:
                 # Return the H5 container path with cell name and .h5 extension
                 # This format works with os.path.split() in NeuronTemplate.get_cell()
                 # which splits it into (container.h5, CellName.h5) for the template
                 return f"{h5_container_path}/{morphology_name}.h5"
+
+        # Auto-detection: check if morphologies_dir points to a morph-spines H5 file
+        morphologies_dir = node_population.config.get("morphologies_dir", "")
+        if morphologies_dir and morphology_name:
+            from bluecellulab.cell.morphio_wrapper import is_morph_spines_file
+            if os.path.isfile(morphologies_dir) and morphologies_dir.endswith(".h5"):
+                if is_morph_spines_file(morphologies_dir):
+                    return f"{morphologies_dir}/morphology/{morphology_name}.h5"
 
         # Check for neurolucida-asc format
         try:  # if asc defined in alternate morphology

@@ -34,6 +34,7 @@ from bluecellulab.cell.injector import InjectableMixin
 from bluecellulab.cell.plotting import PlottableMixin
 from bluecellulab.cell.section_distance import EuclideanSectionDistance
 from bluecellulab.cell.sonata_proxy import SonataProxy
+from bluecellulab.cell.spine_info import SpineInfo
 from bluecellulab.cell.template import NeuronTemplate, TemplateParams, public_hoc_cell
 from bluecellulab.circuit.config.sections import Conditions
 from bluecellulab.circuit import EmodelProperties, SynapseProperty
@@ -82,7 +83,8 @@ class Cell(InjectableMixin, PlottableMixin):
                  cell_id: Optional[CellId] = None,
                  record_dt: Optional[float] = None,
                  template_format: str = "v5",
-                 emodel_properties: Optional[EmodelProperties] = None) -> None:
+                 emodel_properties: Optional[EmodelProperties] = None,
+                 spine_info: Optional[SpineInfo] = None) -> None:
         """Initializes a Cell object.
 
         Args:
@@ -95,6 +97,11 @@ class Cell(InjectableMixin, PlottableMixin):
             record_dt: Timestep for the recordings.
             template_format: Cell template format such as 'v5' or 'v6_air_scaler'.
             emodel_properties: Template specific emodel properties.
+            spine_info: Optional spine information for morph-spines H5
+                files.  When skeleton data is available, explicit spine
+                compartments are created automatically during construction.
+                Use :meth:`apply_spine_capacitance` for the alternative
+                f-factor capacitance adjustment.
         """
         super().__init__()
         if cell_id is None:
@@ -155,6 +162,14 @@ class Cell(InjectableMixin, PlottableMixin):
         # Keep track of when a cell is made passive by make_passive()
         # Used to know when re_init_rng() can be executed
         self.is_made_passive = False
+
+        self._spine_info: Optional[SpineInfo] = spine_info
+        self._original_cm: dict[str, float] = {}
+        self._spine_sections: list[HocObjectType] = []
+
+        # Add explicit spine compartments if spine_info has skeleton data
+        if self._spine_info is not None and self._spine_info.spine_skeletons:
+            self.add_spine_compartments()
 
         neuron.h.pop_section()  # Undoing soma push
         self.sonata_proxy: Optional[SonataProxy] = None
@@ -233,6 +248,299 @@ class Cell(InjectableMixin, PlottableMixin):
                                      "ttx_ion"]:
                     neuron.h('uninsert %s' % mech_name, sec=section)
         self.is_made_passive = True
+
+    @property
+    def spine_info(self) -> Optional[SpineInfo]:
+        """Spine surface area information, or None if not provided."""
+        return self._spine_info
+
+    def apply_spine_capacitance(self) -> None:
+        """Increase compartment capacitance based on spine surface area.
+
+        For each section, computes an f-factor from the ratio of
+        (section area + spine area) / section area and multiplies
+        ``section.cm`` by that factor.  The original ``cm`` values are
+        stored so that :meth:`restore_capacitance` can undo the change.
+
+        Requires that ``spine_info`` was provided at construction time.
+
+        Raises:
+            BluecellulabError: If no spine info is available.
+        """
+        if self._spine_info is None:
+            raise BluecellulabError(
+                "Cannot apply spine capacitance: no spine_info provided."
+            )
+        self._original_cm = {}
+        for sec_name, section in self.sections.items():
+            self._original_cm[sec_name] = section.cm
+            total_area = 0.0
+            for seg in section:
+                total_area += neuron.h.area(seg.x, sec=section)
+            section_id = self._section_name_to_id(sec_name)
+            f_factor = self._spine_info.section_f_factor(section_id, total_area)
+            if f_factor > 1.0:
+                section.cm = section.cm * f_factor
+                logger.debug(
+                    "Section %s: cm %.4g -> %.4g (f=%.4f, area=%.2f)",
+                    sec_name,
+                    self._original_cm[sec_name],
+                    section.cm,
+                    f_factor,
+                    total_area,
+                )
+
+    def restore_capacitance(self) -> None:
+        """Restore original capacitance values after :meth:`apply_spine_capacitance`.
+
+        If :meth:`apply_spine_capacitance` has not been called, this is a
+        no-op.
+        """
+        for sec_name, original_cm in self._original_cm.items():
+            if sec_name in self.sections:
+                self.sections[sec_name].cm = original_cm
+        self._original_cm = {}
+
+    def add_spine_compartments(self) -> None:
+        """Create explicit NEURON sections for each dendritic spine.
+
+        For each spine in ``spine_info``, creates NEURON sections following
+        the spine's skeleton branching structure.  Each skeleton section
+        becomes a NEURON section with 3D geometry from the skeleton points,
+        connected to the parent dendrite at the position specified by
+        ``afferent_section_pos``.  Biophysical properties (mechanisms, Ra,
+        cm, ion concentrations) are copied from the parent dendrite section.
+
+        Requires that ``spine_info`` with ``spine_skeletons`` was provided
+        at construction time.
+
+        Raises:
+            BluecellulabError: If no spine info or skeleton data is available.
+        """
+        if self._spine_info is None or not self._spine_info.spine_skeletons:
+            raise BluecellulabError(
+                "Cannot add spine compartments: no spine skeleton data available."
+            )
+
+        spine_info = self._spine_info
+        cell_obj = public_hoc_cell(self.cell)
+
+        # Build a mapping from morphology section ID to NEURON section
+        section_map = self._build_section_id_map(cell_obj)
+
+        for spine_idx in range(spine_info.spine_count):
+            skeleton = spine_info.spine_skeletons[spine_idx]
+            row = spine_info.spine_table.iloc[spine_idx]
+            parent_section_id = int(row["afferent_section_id"])
+
+            if parent_section_id not in section_map:
+                logger.warning(
+                    "Spine %d: parent section %d not found, skipping",
+                    spine_idx, parent_section_id,
+                )
+                continue
+
+            parent_section = section_map[parent_section_id]
+
+            # Get connection position along the parent section
+            if "afferent_section_pos" in row.index:
+                connect_pos = float(row["afferent_section_pos"])
+            else:
+                connect_pos = 0.5
+
+            # Clamp to valid range
+            connect_pos = max(0.0, min(1.0, connect_pos))
+
+            # Recursively create NEURON sections from the skeleton neurite
+            self._create_spine_sections_recursive(
+                skeleton.root_node,
+                parent_section,
+                connect_pos,
+                spine_idx,
+                parent_section,
+            )
+
+        # Update geometry after adding all spine sections
+        neuron.h.finitialize()
+        logger.info(
+            "Created %d spine sections for %d spines",
+            len(self._spine_sections),
+            spine_info.spine_count,
+        )
+
+    def _build_section_id_map(self, cell_obj) -> dict[int, HocObjectType]:
+        """Build a mapping from morphology section ID to NEURON section.
+
+        Morphology section IDs are 0-based indices into the morphology's
+        section list, which includes all section types (soma, dendrites,
+        axon).  We use the ``all`` SectionList for mapping, falling back
+        to basal+apic if ``all`` is not available.
+
+        Args:
+            cell_obj: The public hoc cell object.
+
+        Returns:
+            Dict mapping section ID to NEURON section object.
+        """
+        section_map: dict[int, HocObjectType] = {}
+
+        # Use the 'all' SectionList which contains all sections in
+        # morphology order (soma, basal, apical, axon)
+        all_secs = list(cell_obj.all)
+        for i, sec in enumerate(all_secs):
+            section_map[i] = sec
+
+        # Fallback: if 'all' is empty, try basal + apical
+        if not section_map:
+            basal_secs = list(cell_obj.basal)
+            for i, sec in enumerate(basal_secs):
+                section_map[i] = sec
+            apic_secs = list(cell_obj.apical)
+            for i, sec in enumerate(apic_secs):
+                section_map[len(basal_secs) + i] = sec
+
+        return section_map
+
+    def _create_spine_sections_recursive(
+        self,
+        skel_section,
+        parent_neuron_sec,
+        connect_pos: float,
+        spine_idx: int,
+        dendrite_sec,
+    ) -> Optional[HocObjectType]:
+        """Recursively create NEURON sections from a skeleton section.
+
+        Args:
+            skel_section: A NeuroM Section object with points and children.
+            parent_neuron_sec: The NEURON section to connect to.
+            connect_pos: Position (0-1) along the parent section to connect.
+            spine_idx: Index of the spine (for naming).
+            dendrite_sec: The original dendrite section (for property copying).
+
+        Returns:
+            The created NEURON section, or None if the skeleton section
+            has insufficient geometry (≤1 point).
+        """
+        points = np.asarray(skel_section.points)
+
+        # Skip degenerate sections with 0 or 1 point (no length)
+        if points.shape[0] < 2:
+            return None
+
+        sec_name = f"spine_{spine_idx}_sec_{len(self._spine_sections)}"
+
+        # Create the NEURON section (without cell association to avoid
+        # weak reference issues with HocObject)
+        spine_sec = neuron.h.Section(name=sec_name)
+        self._spine_sections.append(spine_sec)
+
+        # Set 3D geometry from skeleton points
+        # Filter out points with non-positive diameter
+        spine_sec.push()
+        neuron.h.pt3dclear()
+        for pt in points:
+            x, y, z = float(pt[0]), float(pt[1]), float(pt[2])
+            d = abs(float(pt[3])) * 2.0  # points store radius, NEURON wants diameter
+            d = max(d, 0.01)  # ensure positive diameter
+            neuron.h.pt3dadd(x, y, z, d)
+        neuron.h.pop_section()
+
+        # Connect to parent section
+        spine_sec.connect(parent_neuron_sec, connect_pos)
+
+        # Copy biophysical properties from the dendrite
+        self._copy_section_properties(dendrite_sec, spine_sec)
+
+        # Recursively create child sections
+        for child in skel_section.children:
+            self._create_spine_sections_recursive(
+                child, spine_sec, 1.0, spine_idx, dendrite_sec,
+            )
+
+        return spine_sec
+
+    def _copy_section_properties(self, source_sec, target_sec) -> None:
+        """Copy biophysical properties from one section to another.
+
+        Copies Ra, cm, and all inserted mechanisms with their parameters
+        and ion concentrations from the source section to the target.
+
+        Args:
+            source_sec: The section to copy properties from.
+            target_sec: The section to copy properties to.
+        """
+        # Copy basic cable properties
+        target_sec.Ra = source_sec.Ra
+        target_sec.cm = source_sec.cm
+
+        # Collect mechanism names from source
+        mech_names = set()
+        for seg in source_sec:
+            for mech in seg:
+                mech_names.add(mech.name())
+
+        # Skip ion species (they are handled with their mechanisms)
+        ion_names = {"k_ion", "na_ion", "ca_ion", "ttx_ion"}
+
+        # Insert each mechanism and copy parameters
+        for mech_name in mech_names:
+            if mech_name in ion_names:
+                continue
+            target_sec.insert(mech_name)
+
+        # Copy mechanism parameters per segment
+        # Use the first segment of source as reference (assuming uniform)
+        if source_sec.nseg > 0:
+            source_seg = source_sec(0.5)
+            target_seg = target_sec(0.5)
+            for mech_name in mech_names:
+                if mech_name in ion_names:
+                    continue
+                if hasattr(source_seg, mech_name):
+                    try:
+                        val = getattr(source_seg, mech_name)
+                        setattr(target_seg, mech_name, val)
+                    except (AttributeError, TypeError):
+                        pass
+
+        # Copy ion concentrations
+        for ion_name in ion_names:
+            if ion_name in mech_names:
+                ion_short = ion_name.replace("_ion", "")
+                # Copy ion concentrations (e.g., ena, ek, eca)
+                for attr in [f"e{ion_short}", f"{ion_short}i", f"{ion_short}o"]:
+                    try:
+                        val = getattr(source_sec(0.5), attr)
+                        setattr(target_sec(0.5), attr)
+                    except (AttributeError, TypeError):
+                        pass
+
+        # Copy reversal potential for pas mechanism if present
+        if "pas" in mech_names:
+            try:
+                target_sec(0.5).e_pas = source_sec(0.5).e_pas
+                target_sec(0.5).g_pas = source_sec(0.5).g_pas
+            except (AttributeError, TypeError):
+                pass
+
+    @property
+    def spine_sections(self) -> list[HocObjectType]:
+        """List of NEURON sections created for dendritic spines."""
+        return self._spine_sections
+
+    @staticmethod
+    def _section_name_to_id(sec_name: str) -> int:
+        """Convert a NEURON section name to a morphology section ID.
+
+        NEURON section names follow the pattern ``dend[0]``, ``dend[1]``,
+        etc.  The morphology section ID is the integer index inside the
+        brackets.  Soma (``soma[0]``) maps to 0.
+        """
+        try:
+            return int(sec_name.split('[')[1].rstrip(']'))
+        except (IndexError, ValueError):
+            return 0
 
     def enable_ttx(self) -> None:
         """Add TTX to the environment (i.e. block the Na channels).

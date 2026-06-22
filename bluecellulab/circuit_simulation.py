@@ -1151,16 +1151,61 @@ class CircuitSimulation:
     def fetch_cell_kwargs(self, cell_id: CellId) -> dict:
         """Get the kwargs to instantiate a Cell object."""
         emodel_properties = self.circuit_access.get_emodel_properties(cell_id)
+        morphology_path = self.circuit_access.morph_filepath(cell_id)
         cell_kwargs = {
             "template_path": self.circuit_access.emodel_path(cell_id),
-            "morphology_path": self.circuit_access.morph_filepath(cell_id),
+            "morphology_path": morphology_path,
             "cell_id": cell_id,
             "record_dt": self.record_dt,
             "template_format": self.circuit_access.get_template_format(),
             "emodel_properties": emodel_properties,
         }
 
+        spine_info = self._try_load_spine_info(morphology_path)
+        if spine_info is not None:
+            cell_kwargs["spine_info"] = spine_info
+
         return cell_kwargs
+
+    @staticmethod
+    def _try_load_spine_info(morphology_path: str):
+        """Attempt to load spine info from a morph-spines morphology path.
+
+        Returns a SpineInfo instance if the path points to a morph-spines
+        H5 file and morph-spines is installed, otherwise None.
+        """
+        from bluecellulab.cell.morphio_wrapper import is_h5_container_path
+
+        if not is_h5_container_path(morphology_path):
+            return None
+
+        import os
+        container = morphology_path
+        while not os.path.exists(container):
+            container = os.path.dirname(container)
+
+        from bluecellulab.cell.morphio_wrapper import is_morph_spines_file
+        if not is_morph_spines_file(container):
+            return None
+
+        morph_name = os.path.relpath(morphology_path, container)
+        if morph_name.endswith(".h5"):
+            morph_name = morph_name[:-3]
+        if morph_name.startswith("morphology/"):
+            morph_name = morph_name[len("morphology/"):]
+
+        try:
+            from bluecellulab.cell.spine_info import SpineInfo
+            return SpineInfo.from_morphology_file(container, morph_name, load_meshes=False)
+        except ImportError:
+            logger.debug(
+                "morph-spines not installed; skipping spine info for %s",
+                morphology_path,
+            )
+            return None
+        except Exception as exc:
+            logger.warning("Failed to load spine info from %s: %s", morphology_path, exc)
+            return None
 
     def create_cell_from_circuit(self, cell_id: CellId) -> bluecellulab.Cell:
         """Create a Cell object from the circuit."""
@@ -1172,6 +1217,7 @@ class CircuitSimulation:
             record_dt=cell_kwargs["record_dt"],
             template_format=cell_kwargs["template_format"],
             emodel_properties=cell_kwargs["emodel_properties"],
+            spine_info=cell_kwargs.get("spine_info"),
         )
 
     def global_gid(self, pop: str, local_id: int) -> int:

@@ -322,6 +322,45 @@ def is_h5_container_path(path: str) -> bool:
     return os.path.isfile(candidate) and candidate.lower().endswith(".h5")
 
 
+def is_morph_spines_file(filepath: str) -> bool:
+    """Check if an H5 file is in morph-spines format.
+
+    A morph-spines H5 file contains a ``/morphology`` group at root level,
+    distinguishing it from a standard H5v1 morphology (which has
+    ``/points`` and ``/structure`` at root) or an H5 container.
+
+    Args:
+        filepath: Path to an H5 file on disk.
+
+    Returns:
+        True if the file contains a ``/morphology`` root group,
+        False otherwise (including if the file cannot be opened).
+    """
+    try:
+        import h5py
+        with h5py.File(filepath, 'r') as f:
+            return 'morphology' in f
+    except Exception:
+        return False
+
+
+def morph_spines_morphology_path(h5_filepath: str, morphology_name: str) -> str:
+    """Construct the nested path for a morphology inside a morph-spines H5 file.
+
+    The morph-spines format stores the base skeleton under
+    ``/morphology/{name}``.  This helper returns a container-style path
+    that ``MorphIOWrapper`` and ``split_morphology_path`` already handle.
+
+    Args:
+        h5_filepath: Path to the morph-spines ``.h5`` file on disk.
+        morphology_name: Name of the morphology (without extension).
+
+    Returns:
+        A path of the form ``"{h5_filepath}/morphology/{morphology_name}"``.
+    """
+    return f"{h5_filepath}/morphology/{morphology_name}"
+
+
 class MorphIOWrapper:
     """Load a MorphIO morphology and generate HOC instantiation commands.
 

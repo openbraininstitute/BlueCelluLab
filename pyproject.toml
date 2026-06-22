@@ -51,6 +51,9 @@ requires-python = ">=3.10"
 examples = [
     "ipywidgets",
 ]
+spines = [
+    "morph-spines",
+]
 
 [project.urls]
 Homepage = "https://github.com/openbraininstitute/BlueCelluLab"
