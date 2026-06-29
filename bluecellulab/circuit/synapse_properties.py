@@ -29,7 +29,6 @@ class SynapseProperty(Enum):
     PRE_GID = "pre_gid"
     AXONAL_DELAY = "axonal_delay"
     POST_SECTION_ID = "post_section_id"
-    POST_SECTION_POS = "post_section_pos"
     POST_SEGMENT_ID = "post_segment_id"
     POST_SEGMENT_OFFSET = "post_segment_offset"
     G_SYNX = "g_synx"
@@ -42,6 +41,7 @@ class SynapseProperty(Enum):
     U_HILL_COEFFICIENT = "u_hill_coefficient"
     CONDUCTANCE_RATIO = "conductance_scale_factor"
     AFFERENT_SECTION_POS = "afferent_section_pos"
+    TAU1 = "tau1"
 
     @classmethod
     def from_bluepy(cls, prop: BLPSynapse) -> SynapseProperty:

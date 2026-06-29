@@ -218,19 +218,21 @@ class SonataCircuitAccess(CircuitAccess):
                 ):
                     edge_properties += list(SynapseProperties.plasticity)
 
+                # check that minimal tsodyks markram property exists - if missing, then try allen
                 # check for allen instance - replace the entire edge_properties list as appropriate
                 # properties for allen point/chemical neuron connection type edges
-                if len(edge_population.property_names) < 10:
-                    if all(
-                        x in edge_population.property_names
-                        for x in SynapseProperties.allen_point
-                    ):
-                        edge_properties = list(SynapseProperties.allen_point)
+                if SynapseProperty.U_SYN.to_snap() not in edge_population.property_names:
+                    logging.debug("Missing required tsodyks markram property u_syn, checking for allen properties")
                     if all(
                         x in edge_population.property_names
                         for x in SynapseProperties.allen_chemical
                     ):
                         edge_properties = list(SynapseProperties.allen_chemical)
+                    elif all(
+                        x in edge_population.property_names
+                        for x in SynapseProperties.allen_point
+                    ):
+                        edge_properties = list(SynapseProperties.allen_point)
 
                 snap_properties = properties_to_snap(edge_properties)
                 synapses: pd.DataFrame = edge_population.get(afferent_edges, snap_properties)

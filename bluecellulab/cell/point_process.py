@@ -30,6 +30,10 @@ class BasePointProcessCell(Cell):
         self.synapses: dict = {}
         self.connections: dict = {}
 
+        self._replay_vecs: list[h.Vector] = []
+        self._replay_vecstims: list[h.VecStim] = []
+        self._replay_netcons: list[h.NetCon] = []
+
     @property
     def hoc_cell(self):
         return self.pointcell
@@ -78,6 +82,9 @@ class BasePointProcessCell(Cell):
         self._spike_detector = h.NetCon(self.pointcell.pointcell, None)
         self._spike_detector.threshold = threshold
         self._spike_detector.record(self._spike_times)
+
+    def get_recorded_spikes(self, location="pointcell", threshold=-20):
+        return self._spike_times
 
 
 class HocPointProcessCell(BasePointProcessCell):
@@ -128,20 +135,23 @@ class HocPointProcessCell(BasePointProcessCell):
 
         synapse_spikes = get_synapse_replay_spikes(str(file_path))
 
-        if not hasattr(self, "_replay_vecs"):
-            self._replay_vecs: list[h.Vector] = []
-        if not hasattr(self, "_replay_vecstims"):
-            self._replay_vecstims: list[h.VecStim] = []
-        if not hasattr(self, "_replay_netcons"):
-            self._replay_netcons: list[h.NetCon] = []
+        for synapse_id, synapse in self.synapses.items():
+            pre_cell_id = CellId(
+                str(synapse.syn_description["source_population_name"]),
+                int(synapse.syn_description[SynapseProperty.PRE_GID]),
+            )
 
-        for pre_node_id, spikes in synapse_spikes.items():
+            if pre_cell_id not in synapse_spikes:
+                continue
+
+            spikes_of_interest = synapse_spikes[pre_cell_id]
             delay = getattr(stimulus, "delay", 0.0) or 0.0
             duration = getattr(stimulus, "duration", np.inf)
 
-            spikes_of_interest = spikes[
-                (spikes >= delay) & (spikes <= duration)
+            spikes_of_interest = spikes_of_interest[
+                (spikes_of_interest >= delay) & (spikes_of_interest <= duration)
             ]
+
             if spikes_of_interest.size == 0:
                 continue
 
@@ -150,7 +160,7 @@ class HocPointProcessCell(BasePointProcessCell):
             vs.play(vec)
 
             if self.pointcell is None:
-                raise ValueError("attempting to add replay spikes with valid pointprocess")
+                raise ValueError("attempting to add replay spikes without valid pointprocess")
             nc = h.NetCon(vs, self.pointcell.pointcell)
             # Use stimulus weight if available, otherwise default to 1.0
             weight = getattr(stimulus, "weight", 1.0)
@@ -162,7 +172,7 @@ class HocPointProcessCell(BasePointProcessCell):
             self._replay_netcons.append(nc)
 
             logger.debug(
-                f"Added replay connection from pre_node_id={pre_node_id} "
+                f"Added replay connection from pre_node_id={pre_cell_id} "
                 f"to point neuron {self.cell_id}"
             )
 
@@ -174,10 +184,16 @@ class HocPointProcessCell(BasePointProcessCell):
         from bluecellulab.point.connection_params import PointProcessConnParameters
 
         # syn_connection_parameters should only have 1 element, PointProcessConnection will confirm
-        point_params = PointProcessConnParameters(syn_description[SynapseProperty.PRE_GID], syn_description[SynapseProperty.PRE_GID],
-                                                  syn_description[SynapseProperty.AXONAL_DELAY])
+        point_params = PointProcessConnParameters(sgid=syn_description[SynapseProperty.PRE_GID], delay=syn_description[SynapseProperty.AXONAL_DELAY],
+                                                  weight=syn_description[SynapseProperty.G_SYNX])
 
-        self.pointConn = PointProcessConnection([point_params])
+        pointConn = PointProcessConnection([point_params])
+        pointConn.syn_description = syn_description
+        pointConn.delay_weights = []
+        pointConn.hsynapse = self.pointcell.pointcell
+        pointConn.syn_id = syn_id
+
+        self.synapses[syn_id] = pointConn
 
 
 def mechanism_name_from_model_template(template_path: str, model_template: str) -> str:

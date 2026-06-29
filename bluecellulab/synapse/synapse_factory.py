@@ -31,7 +31,7 @@ from bluecellulab.synapse.synapse_types import SynapseHocArgs
 from bluecellulab.type_aliases import NeuronSection
 
 
-SynapseType = Enum("SynapseType", "GABAAB AMPANMDA GLUSYNAPSE ALLEN_CHEMICAL ALLEN_POINT")
+SynapseType = Enum("SynapseType", "GABAAB AMPANMDA GLUSYNAPSE ALLEN_CHEMICAL")
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +71,6 @@ class SynapseFactory:
         elif syn_type == SynapseType.ALLEN_CHEMICAL:
             synapse = Exp2Syn(cell.cell_id, syn_hoc_args, syn_id, syn_description,
                               popids, cell.post_gid, extracellular_calcium)
-        else:
-            synapse = GluSynapse(cell.cell_id, syn_hoc_args, syn_id, syn_description,
-                                 popids, cell.post_gid, extracellular_calcium)
 
         synapse = cls.apply_connection_modifiers(connection_modifiers, synapse)
 
@@ -94,7 +91,7 @@ class SynapseFactory:
         syn_description: pd.Series,
     ) -> SynapseType:
         """Returns the type of synapse to be created."""
-        if SynapseProperty.TYPE not in syn_description:
+        if "tau1" in syn_description:
             return SynapseType.ALLEN_CHEMICAL
 
         is_inhibitory: bool = int(syn_description[SynapseProperty.TYPE]) < 100

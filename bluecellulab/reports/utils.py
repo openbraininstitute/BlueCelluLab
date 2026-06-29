@@ -28,6 +28,7 @@ from bluecellulab.type_aliases import NeuronSection, SiteEntry
 from bluecellulab.tools import (
     resolve_source_nodes,
 )
+from bluecellulab.cell.point_process import BasePointProcessCell
 
 logger = logging.getLogger(__name__)
 
@@ -142,10 +143,10 @@ def prepare_recordings_for_reports(
                 cell.report_sites[report_name].append(entry)
 
     for cell_id, cell in cells.items():
-        try:
-            sec = cell.soma
-        except Exception:
+        # for point neurons, one skips
+        if isinstance(cell, BasePointProcessCell):
             continue
+        sec = cell.soma
         sec_name = sec.name().split(".")[-1]
         segx = 0.5
         rec_name = section_to_variable_recording_str(sec, segx, "v")
@@ -389,12 +390,9 @@ def collect_local_payload(
     for pop, gid in cell_ids_for_this_rank:
         cell_id = CellId(pop, gid)
         cell = cells.get(cell_id)
-        if cell is None:
+        if cell is None or isinstance(cell, BasePointProcessCell):
             continue
-        try:
-            cell.get_time()
-        except Exception:
-            continue
+        cell.get_time()
 
         recs: dict[str, list[float]] = {}
         for rec_name in recording_index.get(cell_id, []):

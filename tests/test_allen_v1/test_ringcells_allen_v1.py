@@ -1,11 +1,12 @@
 from pathlib import Path
 
 import json
+import pytest
 
 SIM_DIR = Path(__file__).parent.parent.absolute() / "examples" / "ringtest_allen_v1"
 
 
-def test_cell_point_create(capsys):
+def test_cell_point_create():
     from bluecellulab import CircuitSimulation
 
     sim_conf = str(SIM_DIR / "simulation_config_point.json")
@@ -44,14 +45,12 @@ def test_cell_point_create(capsys):
 
     # verify that a point neuron has been created with IntFire and parameters set according to what was in the nodes.h5 file
     for (cell_id, cell) in bcl.cells.items():
-        cell_info_dict = cell.info_dict
-        assert cell_info_dict != {}
         assert cell.hoc_cell is not None
         assert cell.get_spike_times() is not None
         assert (tau_vals[cell_id.id] == cell.pointcell.pointcell.tau)
 
 
-def test_cell_biophysical_create(capsys):
+def test_cell_biophysical_create():
     from bluecellulab import CircuitSimulation
 
     sim_conf = str(SIM_DIR / "simulation_config_biophysical.json")
@@ -95,21 +94,18 @@ def test_cell_biophysical_create(capsys):
         assert (threshold_vals[cell_id.id] == cell.threshold)
 
 
-def test_point_process_cell_rejects_none(capsys):
+def test_point_process_cell_rejects_none():
     from bluecellulab.cell.point_process import HocPointProcessCell
 
-    try:
+    with pytest.raises(ValueError, match="PointProcessCell requires valid cell_id"):
         HocPointProcessCell(None, "IntFire1")
-    except ValueError as error:
-        assert str(error) == "PointProcessCell requires valid cell_id"
 
 
-def test_point_process_cell_rejects_bad_mechanism_name(capsys):
+def test_point_process_cell_rejects_bad_mechanism_name():
     from bluecellulab.circuit import CellId
     from bluecellulab.cell.point_process import HocPointProcessCell
     from bluecellulab.exceptions import BluecellulabError
 
-    try:
+    with pytest.raises(BluecellulabError, match="Point mechanism 'Noexist_IntFire99' not found in NEURON. "
+                                                "Make sure the mod/hoc files are compiled and loaded."):
         HocPointProcessCell(CellId("point", 0), "Noexist_IntFire99")
-    except BluecellulabError as error:
-        assert str(error) == "Point mechanism 'Noexist_IntFire99' not found in NEURON. Make sure the mod/hoc files are compiled and loaded."

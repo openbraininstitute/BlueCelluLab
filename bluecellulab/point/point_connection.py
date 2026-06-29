@@ -34,7 +34,7 @@ class PointProcessConnection:
             "PointProcessConnection supports max. one synapse per connection"
         )
 
-        self.weight_factor = weight_factor
+        self.weight = weight_factor
         self.syndelay_override = syndelay_override
         self.attach_src_cell = attach_src_cell
         self._replay = replay
@@ -44,3 +44,12 @@ class PointProcessConnection:
     @property
     def netcons(self) -> list[h.NetCon]:
         return self._netcons
+
+    @property
+    def info_dict(self):
+        synapse_dict: dict[str, Any] = {}
+        synapse_dict['syn_description'] = self.syn_description.to_dict()
+        # if keys are enum make them str
+        synapse_dict['syn_description'] = {
+            str(k): v for k, v in synapse_dict['syn_description'].items()}
+        return synapse_dict

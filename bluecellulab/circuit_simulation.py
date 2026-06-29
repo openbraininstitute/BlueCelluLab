@@ -441,18 +441,13 @@ class CircuitSimulation:
 
         for stimulus in stimuli_entries:
 
-            # 1) SynapseReplay: works for both morpho cells and point processes
+            # 1) SynapseReplay: works for both morpho cells and point processes, so check first
             if isinstance(stimulus, circuit_stimulus_definitions.SynapseReplay):
                 for cell_id, cell in self.cells.items():
                     if self.circuit_access.target_contains_cell(stimulus.target, cell_id):
-                        if hasattr(cell, "add_synapse_replay"):
-                            print("Adding SynapseReplay to cell", cell_id)
-                            cell.add_synapse_replay(
-                                stimulus, self.spike_threshold, self.spike_location
-                            )
-                            logger.debug(
-                                f"Added SynapseReplay {stimulus} to point/morpho cell {cell_id}"
-                            )
+                        cell.add_synapse_replay(
+                            stimulus, self.spike_threshold, self.spike_location
+                        )
                 # No section/compartment logic needed for SynapseReplay
                 continue
 
