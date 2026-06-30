@@ -2,16 +2,24 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+import queue
 from typing import Optional
 
+import bluecellulab
 from bluecellulab.cell import Cell
 from bluecellulab.circuit.simulation_access import get_synapse_replay_spikes
 from bluecellulab.exceptions import BluecellulabError
 from bluecellulab.circuit import SynapseProperty
+from bluecellulab.psection import PSection
+from bluecellulab.type_aliases import HocObjectType
+
 from neuron import h
 import numpy as np
 
 from bluecellulab.circuit.node_id import CellId
+from bluecellulab.synapse.synapse_types import SynapseID
+from bluecellulab.point.point_connection import PointProcessConnection
+from bluecellulab.point.connection_params import PointProcessConnParameters
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +28,7 @@ class BasePointProcessCell(Cell):
     """Base class for NEURON artificial point processes (IntFire1/2/...)."""
 
     def __init__(self, cell_id: Optional[CellId]) -> None:
+
         if cell_id is None:
             raise ValueError("PointProcessCell requires valid cell_id")
         self.cell_id = cell_id
@@ -27,12 +36,32 @@ class BasePointProcessCell(Cell):
         self._spike_times = h.Vector()
         self._spike_detector: Optional[h.NetCon] = None
         self.pointcell = None  # type: ignore[assignment]
-        self.synapses: dict = {}
-        self.connections: dict = {}
+        self.synapses = {}
+        self.connections: dict[SynapseID, bluecellulab.Connection] = {}
 
         self._replay_vecs: list[h.Vector] = []
         self._replay_vecstims: list[h.VecStim] = []
         self._replay_netcons: list[h.NetCon] = []
+
+        # TODO: some members used in base class Cell are init to None, empty; to refactor
+        self.soma = None
+
+        self.recordings = {}
+        self.report_sites: dict[str, list[dict]] = {}
+
+        self.post_gid = None
+        self.ips = {}
+        self.syn_mini_netcons = {}
+        self.hocname = None
+        self.record_dt = None
+        self.delayed_weights = queue.PriorityQueue()
+        self.psections: dict[int, PSection] = {}
+        self.secname_to_psection: dict[str, PSection] = {}
+        self.is_made_passive = False
+        self.sonata_proxy = None
+        self.persistent: list[HocObjectType] = []
+        self.hypamp = 0.0
+        self.threshold = 0.0
 
     @property
     def hoc_cell(self):
@@ -180,16 +209,13 @@ class HocPointProcessCell(BasePointProcessCell):
                            popids, extracellular_calcium):
         """For Point Neurons, the replay simply queues events directly to the
         point obj."""
-        from bluecellulab.point.point_connection import PointProcessConnection
-        from bluecellulab.point.connection_params import PointProcessConnParameters
 
         # syn_connection_parameters should only have 1 element, PointProcessConnection will confirm
         point_params = PointProcessConnParameters(sgid=syn_description[SynapseProperty.PRE_GID], delay=syn_description[SynapseProperty.AXONAL_DELAY],
                                                   weight=syn_description[SynapseProperty.G_SYNX])
 
-        pointConn = PointProcessConnection([point_params])
+        pointConn = PointProcessConnection([point_params], syn_connection_parameters.get("Weight", 1.0))
         pointConn.syn_description = syn_description
-        pointConn.delay_weights = []
         pointConn.hsynapse = self.pointcell.pointcell
         pointConn.syn_id = syn_id
 

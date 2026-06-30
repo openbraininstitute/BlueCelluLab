@@ -39,6 +39,11 @@ class PointProcessConnection:
         self.attach_src_cell = attach_src_cell
         self._replay = replay
 
+        self.syn_description = None
+        self.delay_weights: list[tuple[float, float]] = []
+        self.hsynapse = None
+        self.syn_id = None
+
         self._netcons: List[h.NetCon] = []
 
     @property
