@@ -45,6 +45,8 @@ def test_cell_point_create():
 
     # verify that a point neuron has been created with IntFire and parameters set according to what was in the nodes.h5 file
     for (cell_id, cell) in bcl.cells.items():
+        cell_info_dict = cell.info_dict
+        assert cell_info_dict != {}
         assert cell.hoc_cell is not None
         assert cell.get_spike_times() is not None
         assert (tau_vals[cell_id.id] == cell.pointcell.pointcell.tau)

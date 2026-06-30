@@ -217,9 +217,10 @@ class HocPointProcessCell(BasePointProcessCell):
         pointConn = PointProcessConnection([point_params], syn_connection_parameters.get("Weight", 1.0))
         pointConn.syn_description = syn_description
         pointConn.hsynapse = self.pointcell.pointcell
-        pointConn.syn_id = syn_id
+        pointConn.syn_id = SynapseID(*syn_id)
+        pointConn.post_cell_id = self.cell_id
 
-        self.synapses[syn_id] = pointConn
+        self.synapses[pointConn.syn_id] = pointConn
 
 
 def mechanism_name_from_model_template(template_path: str, model_template: str) -> str:

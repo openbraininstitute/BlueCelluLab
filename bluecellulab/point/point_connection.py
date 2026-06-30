@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Iterable, List, Optional
+from typing import Any, Iterable, List, Optional
 
 from neuron import h
 
@@ -43,6 +43,8 @@ class PointProcessConnection:
         self.delay_weights: list[tuple[float, float]] = []
         self.hsynapse = None
         self.syn_id = None
+        self.pre_gid = self.synapse_params[0].sgid
+        self.post_cell_id = None
 
         self._netcons: List[h.NetCon] = []
 
