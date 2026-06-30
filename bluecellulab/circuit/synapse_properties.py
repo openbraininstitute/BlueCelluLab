@@ -41,6 +41,7 @@ class SynapseProperty(Enum):
     U_HILL_COEFFICIENT = "u_hill_coefficient"
     CONDUCTANCE_RATIO = "conductance_scale_factor"
     AFFERENT_SECTION_POS = "afferent_section_pos"
+    TAU1 = "tau1"
 
     @classmethod
     def from_bluepy(cls, prop: BLPSynapse) -> SynapseProperty:
@@ -82,6 +83,14 @@ class SynapseProperties:
     plasticity = (
         "volume_CR", "rho0_GB", "Use_d_TM", "Use_p_TM", "gmax_d_AMPA",
         "gmax_p_AMPA", "theta_d", "theta_p"
+    )
+    allen_chemical = (
+        "afferent_section_id", "afferent_section_pos", "conductance", "delay", "tau1", "tau2", "erev",
+        "@source_node"
+    )
+    allen_point = (
+        "afferent_section_id", "afferent_section_pos", "conductance", "delay",
+        "@source_node"
     )
 
 

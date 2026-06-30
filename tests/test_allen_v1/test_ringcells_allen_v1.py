@@ -1,0 +1,113 @@
+from pathlib import Path
+
+import json
+import pytest
+
+SIM_DIR = Path(__file__).parent.parent.absolute() / "examples" / "ringtest_allen_v1"
+
+
+def test_cell_point_create():
+    from bluecellulab import CircuitSimulation
+
+    sim_conf = str(SIM_DIR / "simulation_config_point.json")
+    bcl = CircuitSimulation(simulation_config=sim_conf, print_cellstate=True)
+
+    # Load configuration using json
+    with open(sim_conf) as f:
+        simulation_config_data = json.load(f)
+
+    # Get the directory of the simulation config
+    sim_config_base_dir = Path(sim_conf).parent
+
+    # Get manifest path
+    OUTPUT_DIR = simulation_config_data.get("manifest", {}).get("$OUTPUT_DIR", "./")
+
+    # Get the node_set
+    node_set_name = simulation_config_data.get("node_set", "All")
+
+    node_sets_file = sim_config_base_dir / simulation_config_data["node_sets_file"]
+
+    with open(node_sets_file) as f:
+        node_set_data = json.load(f)
+
+    # Get population and node IDs
+    if node_set_name not in node_set_data:
+        raise KeyError(f"Node set '{node_set_name}' not found in node sets file")
+
+    population = node_set_data[node_set_name]["population"]
+    all_node_ids = node_set_data[node_set_name]["node_id"]
+
+    cell_ids_for_this_rank = [(population, i) for i in all_node_ids]
+
+    bcl.instantiate_gids(cell_ids_for_this_rank, **{"add_synapses": True, "add_replay": False, "add_stimuli": True, "interconnect_cells": True})
+
+    tau_vals = {0: 24.0, 1: 7.0, 2: 24.0}
+
+    # verify that a point neuron has been created with IntFire and parameters set according to what was in the nodes.h5 file
+    for (cell_id, cell) in bcl.cells.items():
+        cell_info_dict = cell.info_dict
+        assert cell_info_dict != {}
+        assert cell.hoc_cell is not None
+        assert cell.get_spike_times() is not None
+        assert (tau_vals[cell_id.id] == cell.pointcell.pointcell.tau)
+
+
+def test_cell_biophysical_create():
+    from bluecellulab import CircuitSimulation
+
+    sim_conf = str(SIM_DIR / "simulation_config_biophysical.json")
+    bcl = CircuitSimulation(simulation_config=sim_conf, print_cellstate=True)
+
+    # Load configuration using json
+    with open(sim_conf) as f:
+        simulation_config_data = json.load(f)
+
+    # Get the directory of the simulation config
+    sim_config_base_dir = Path(sim_conf).parent
+
+    # Get manifest path
+    OUTPUT_DIR = simulation_config_data.get("manifest", {}).get("$OUTPUT_DIR", "./")
+
+    # Get the node_set
+    node_set_name = simulation_config_data.get("node_set", "All")
+
+    node_sets_file = sim_config_base_dir / simulation_config_data["node_sets_file"]
+
+    with open(node_sets_file) as f:
+        node_set_data = json.load(f)
+
+    # Get population and node IDs
+    if node_set_name not in node_set_data:
+        raise KeyError(f"Node set '{node_set_name}' not found in node sets file")
+
+    population = node_set_data[node_set_name]["population"]
+    all_node_ids = node_set_data[node_set_name]["node_id"]
+
+    cell_ids_for_this_rank = [(population, i) for i in all_node_ids]
+
+    bcl.instantiate_gids(cell_ids_for_this_rank, **{"add_synapses": True, "add_replay": False, "add_stimuli": True, "interconnect_cells": True})
+
+    threshold_vals = {0: 0.154742, 1: 0.154742, 2: 0.0876128}
+
+    # verify that a point neuron has been created with IntFire and parameters set according to what was in the nodes.h5 file
+    for (cell_id, cell) in bcl.cells.items():
+        cell_info_dict = cell.info_dict
+        assert cell_info_dict != {}
+        assert (threshold_vals[cell_id.id] == cell.threshold)
+
+
+def test_point_process_cell_rejects_none():
+    from bluecellulab.cell.point_process import HocPointProcessCell
+
+    with pytest.raises(ValueError, match="PointProcessCell requires valid cell_id"):
+        HocPointProcessCell(None, "IntFire1")
+
+
+def test_point_process_cell_rejects_bad_mechanism_name():
+    from bluecellulab.circuit import CellId
+    from bluecellulab.cell.point_process import HocPointProcessCell
+    from bluecellulab.exceptions import BluecellulabError
+
+    with pytest.raises(BluecellulabError, match="Point mechanism 'Noexist_IntFire99' not found in NEURON. "
+                                                "Make sure the mod/hoc files are compiled and loaded."):
+        HocPointProcessCell(CellId("point", 0), "Noexist_IntFire99")

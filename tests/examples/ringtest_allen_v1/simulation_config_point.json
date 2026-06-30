@@ -1,0 +1,60 @@
+{
+    "node_sets_file": "nodesets.json",
+    "network": "circuit_config.json",
+    "node_set": "RingB",
+    "target_simulator": "NEURON",
+    "run": {
+        "tstop": 50.0,
+        "dt": 0.1,
+        "random_seed": 1122
+    },
+    "conditions": {
+        "celsius": 35,
+        "v_init": -65
+    },
+    "connection_overrides": [
+        {
+        "name": "biophysical_biophysical",
+        "source": "RingA",
+        "target": "RingA",
+        "weight": 1,
+        "modoverride": "Exp2Syn"
+        },
+        {
+        "name": "point_biophysical",
+        "source": "RingB",
+        "target": "RingA",
+        "weight": 1,
+        "modoverride": "Exp2Syn"
+        }
+    ],
+    "inputs": {
+        "RingA_spikes": {
+            "input_type": "spikes",
+            "module": "synapse_replay",
+            "delay": 0,
+            "duration": 100,
+            "spike_file": "replay_RingA.h5",
+            "node_set": "RingB"
+        },
+        "RingB_spikes": {
+            "input_type": "spikes",
+            "module": "synapse_replay",
+            "delay": 0,
+            "duration": 100,
+            "spike_file": "replay_RingB.h5",
+            "node_set": "RingA"
+        }
+    },
+    "reports": {
+        "compartment_report": {
+            "type": "compartment",
+            "sections": "all",
+            "cells": "RingA",
+            "variable_name": "v",
+            "dt": 0.1,
+            "start_time": 0.0,
+            "end_time": 100.0
+        }
+    }
+}

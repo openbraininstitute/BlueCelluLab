@@ -1,0 +1,6 @@
+{
+  "RingA": {"population": "RingA", "node_id": [0,1,2]},
+  "RingB": {"population": "RingB", "node_id": [0,1,2]},
+  "Mosaic": {"population": ["RingA", "RingB"]}
+}
+
