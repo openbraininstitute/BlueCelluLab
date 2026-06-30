@@ -868,7 +868,7 @@ class Cell(InjectableMixin, PlottableMixin):
                 spikes_of_interest = synapse_spikes[pre_cell_id]
                 spikes_of_interest = spikes_of_interest[
                     (spikes_of_interest >= stimulus.delay)
-                    & (spikes_of_interest <= stimulus.duration)
+                    & (spikes_of_interest <= stimulus.delay + stimulus.duration)
                 ]
 
                 connection = bluecellulab.Connection(

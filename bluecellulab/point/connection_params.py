@@ -9,7 +9,3 @@ class PointProcessConnParameters:
     sgid: int        # source gid
     delay: float     # ms
     weight: float    # NetCon weight
-
-    # isec: int = -1
-    # ipt: int = -1
-    # offset: float = 0.5

@@ -109,7 +109,7 @@ class BasePointProcessCell(Cell):
             raise ValueError("attempting to record spikes without valid pointprocess")
         self._spike_times = h.Vector()
         self._spike_detector = h.NetCon(self.pointcell.pointcell, None)
-        self._spike_detector.threshold = threshold
+        self._spike_detector.threshold = threshold  # not used by artificial cells e.g. IntFire1
         self._spike_detector.record(self._spike_times)
 
     def get_recorded_spikes(self, location="pointcell", threshold=-20):
@@ -123,7 +123,7 @@ class HocPointProcessCell(BasePointProcessCell):
         self,
         cell_id: Optional[CellId],
         mechanism_name: str,
-        spike_threshold: float = 1.0,
+        spike_threshold: float = 0.0,
     ) -> None:
         super().__init__(cell_id)
 
@@ -164,6 +164,9 @@ class HocPointProcessCell(BasePointProcessCell):
 
         synapse_spikes = get_synapse_replay_spikes(str(file_path))
 
+        if self.pointcell is None:
+            raise ValueError("attempting to add replay spikes without valid pointprocess")
+
         for synapse_id, synapse in self.synapses.items():
             pre_cell_id = CellId(
                 str(synapse.syn_description["source_population_name"]),
@@ -178,7 +181,7 @@ class HocPointProcessCell(BasePointProcessCell):
             duration = getattr(stimulus, "duration", np.inf)
 
             spikes_of_interest = spikes_of_interest[
-                (spikes_of_interest >= delay) & (spikes_of_interest <= duration)
+                (spikes_of_interest >= delay) & (spikes_of_interest <= delay + duration)
             ]
 
             if spikes_of_interest.size == 0:
@@ -188,8 +191,6 @@ class HocPointProcessCell(BasePointProcessCell):
             vs = h.VecStim()
             vs.play(vec)
 
-            if self.pointcell is None:
-                raise ValueError("attempting to add replay spikes without valid pointprocess")
             nc = h.NetCon(vs, self.pointcell.pointcell)
             # Use stimulus weight if available, otherwise default to 1.0
             weight = getattr(stimulus, "weight", 1.0)
