@@ -55,8 +55,8 @@ class PointProcessConnection:
     @property
     def info_dict(self):
         synapse_dict: dict[str, Any] = {}
-        synapse_dict['syn_description'] = self.syn_description.to_dict()
-        # if keys are enum make them str
-        synapse_dict['syn_description'] = {
-            str(k): v for k, v in synapse_dict['syn_description'].items()}
+        if self.syn_description is not None:
+            synapse_dict['syn_description'] = self.syn_description.to_dict()
+            synapse_dict['syn_description'] = {
+                str(k): v for k, v in synapse_dict['syn_description'].items()}
         return synapse_dict
