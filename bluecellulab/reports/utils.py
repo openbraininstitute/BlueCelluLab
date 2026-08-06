@@ -63,6 +63,20 @@ def _get_source_for_report(simulation_config: Any, report_name: str, report_cfg:
     return report_type, source
 
 
+def _normalize_recording_site(
+    site: tuple[Any, str, float] | tuple[Any, str, float, int | None],
+) -> tuple[Any, str, float, int | None]:
+    if len(site) == 4:
+        sec, sec_name, segx, section_id = site
+    elif len(site) == 3:
+        sec, sec_name, segx = site
+        section_id = None
+    else:
+        raise ValueError(f"Unexpected recording site shape: {site!r}")
+
+    return sec, sec_name, float(segx), section_id
+
+
 def prepare_recordings_for_reports(
     cells: Dict[CellId, Any],
     simulation_config: Any,
@@ -123,7 +137,8 @@ def prepare_recordings_for_reports(
                     cell_id,
                 )
 
-            for (sec, sec_name, segx), rec_name in configured:
+            for site, rec_name in configured:
+                sec, sec_name, segx, section_id = _normalize_recording_site(site)
                 recording_index[cell_id].append(rec_name)
 
                 area_um2 = None
@@ -136,6 +151,7 @@ def prepare_recordings_for_reports(
                     "report": report_name,
                     "rec_name": rec_name,
                     "section": sec_name,
+                    "section_id": section_id,
                     "segx": float(segx),
                     "area_um2": area_um2,
                 }
@@ -163,13 +179,15 @@ def prepare_recordings_for_reports(
             report_name,
         )
 
-        for (sec, sec_name, segx), rec_name in configured:
+        for site, rec_name in configured:
+            sec, sec_name, segx, section_id = _normalize_recording_site(site)
             recording_index[cell_id].append(rec_name)
 
             entry_default_voltage: SiteEntry = {
                 "report": report_name,
                 "rec_name": rec_name,
                 "section": sec_name,
+                "section_id": section_id,
                 "segx": float(segx),
                 "area_um2": None,
             }

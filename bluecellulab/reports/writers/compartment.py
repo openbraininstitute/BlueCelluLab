@@ -62,6 +62,7 @@ class CompartmentReportWriter(BaseReportWriter):
             if not sites:
                 continue
 
+            node_site_count = 0
             for site in sites:
                 rec_name = site["rec_name"]
                 try:
@@ -71,10 +72,25 @@ class CompartmentReportWriter(BaseReportWriter):
                                    rec_name, population, gid, report_name, e)
                     continue
 
+                section_id = site.get("section_id")
+                if section_id is None:
+                    logger.warning(
+                        "Missing section_id for recording '%s' on (%s,%d) in '%s'; "
+                        "skipping the trace entry.",
+                        rec_name,
+                        population,
+                        gid,
+                        report_name,
+                    )
+                    continue
+
                 data_matrix.append(np.asarray(trace, dtype=np.float32))
+                elem_ids.append(section_id)
+                node_site_count += 1
+
+            if node_site_count:
                 node_id_list.append(gid)
-                elem_ids.append(len(elem_ids))
-                idx_ptr.append(idx_ptr[-1] + 1)
+                idx_ptr.append(idx_ptr[-1] + node_site_count)
 
         if not data_matrix:
             logger.warning("No data for report '%s'.", report_name)

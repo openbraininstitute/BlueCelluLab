@@ -623,6 +623,7 @@ class TestCellV6:
 
         assert sec_name_0 == "soma[0]"
         assert seg_0 == 0.5
+
         assert sec_name_1 == "dend[0]"
         assert seg_1 == 0.25
 

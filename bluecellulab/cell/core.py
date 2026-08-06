@@ -971,6 +971,19 @@ class Cell(InjectableMixin, PlottableMixin):
         except KeyError:
             raise IndexError(f"Section ID {section_id} is out of range for cell {self.cell_id.id}")
 
+    def get_section_id(self, section: NeuronSection) -> int:
+        """Return LibSONATA section index for a NEURON section."""
+        if not self.psections:
+            self._init_psections()
+
+        for section_id, psection in self.psections.items():
+            if psection.hsection == section:
+                return int(section_id)
+
+        raise ValueError(
+            f"Section '{section}' not found in cell section mapping"
+        )
+
     def resolve_segments_from_compartment_set(self, node_id, compartment_nodes) -> List[Tuple[NeuronSection, str, float]]:
         """Resolve segments for a cell using a predefined compartment node
         list.
@@ -993,7 +1006,9 @@ class Cell(InjectableMixin, PlottableMixin):
                     section = self.get_section_by_id(sec_ref)
                     sec_name = section.name().split(".")[-1]
                 except AttributeError:
-                    raise ValueError(f"Cell object does not support section lookup by index: {sec_ref}")
+                    raise ValueError(
+                        f"Cell object does not support section lookup by index: {sec_ref}"
+                    )
             else:
                 raise TypeError(f"Unsupported section reference type: {type(sec_ref)}")
 
@@ -1046,9 +1061,21 @@ class Cell(InjectableMixin, PlottableMixin):
         node_id = self.cell_id.id
         configured: list[tuple[ReportSite, str]] = []
 
-        for site in recording_sites:
-            sec, sec_name, seg = site
-            report_site = ReportSite(sec, sec_name, float(seg))
+        for sec, sec_name, seg in recording_sites:
+            section_id = None
+
+            try:
+                section = self.soma if sec is None else sec
+                section_id = self.get_section_id(section)
+            except ValueError:
+                pass
+
+            report_site = ReportSite(
+                sec,
+                sec_name,
+                float(seg),
+                section_id,
+            )
 
             try:
                 section_obj = self.soma if sec is None else sec
