@@ -64,16 +64,14 @@ def _get_source_for_report(simulation_config: Any, report_name: str, report_cfg:
 
 
 def _normalize_recording_site(
-    site: tuple[Any, str, float] | tuple[Any, str, float, int | None],
+    site: tuple[Any, str, float, int | None],
 ) -> tuple[Any, str, float, int | None]:
-    if len(site) == 4:
-        sec, sec_name, segx, section_id = site
-    elif len(site) == 3:
-        sec, sec_name, segx = site
-        section_id = None
-    else:
-        raise ValueError(f"Unexpected recording site shape: {site!r}")
-
+    if len(site) != 4:
+        raise ValueError(
+            f"Expected a 4-tuple (section, section_name, segx, section_id), "
+            f"got {len(site)}-tuple: {site!r}"
+        )
+    sec, sec_name, segx, section_id = site
     return sec, sec_name, float(segx), section_id
 
 

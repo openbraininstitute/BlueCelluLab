@@ -22,6 +22,7 @@ import pytest
 
 from bluecellulab.circuit.node_id import CellId
 from bluecellulab.reports.utils import (
+    _normalize_recording_site,
     build_recording_sites,
     collect_local_payload,
     collect_local_spikes,
@@ -58,8 +59,8 @@ class DummyCell:
 
     def configure_recording(self, sites, variable, report_name):
         if report_name == "__default_voltage__":
-            return [(site, f"default_{variable}_{idx}") for idx, site in enumerate(sites)]
-        return list(zip(sites, self.rec_names))
+            return [((site[0], site[1], site[2], None), f"default_{variable}_{idx}") for idx, site in enumerate(sites)]
+        return [((site[0], site[1], site[2], None), name) for site, name in zip(sites, self.rec_names)]
 
 
 class DummyConfig:
@@ -261,6 +262,36 @@ def test_payload_to_cells_and_recorded_cell_access():
 def test_merge_helpers():
     assert merge_dicts([{"a": 1}, {"b": 2}]) == {"a": 1, "b": 2}
     assert merge_spikes([{"p": {1: [0.1]}}, {"p": {2: [0.2]}}]) == {"p": {1: [0.1], 2: [0.2]}}
+
+
+def test_normalize_recording_site_3_tuple():
+    """3-tuple site should raise ValueError (only 4-tuples are valid)."""
+    site = ("sec_obj", "soma[0]", 0.5)
+    with pytest.raises(ValueError, match="Expected a 4-tuple"):
+        _normalize_recording_site(site)
+
+
+def test_normalize_recording_site_4_tuple():
+    """4-tuple site should pass through unchanged."""
+    site = ("sec_obj", "dend[0]", 0.3, 7)
+    result = _normalize_recording_site(site)
+    assert result == ("sec_obj", "dend[0]", 0.3, 7)
+
+
+def test_normalize_recording_site_4_tuple_none_section_id():
+    """4-tuple with explicit None section_id should pass through."""
+    site = ("sec_obj", "axon[1]", 0.7, None)
+    result = _normalize_recording_site(site)
+    assert result == ("sec_obj", "axon[1]", 0.7, None)
+
+
+def test_normalize_recording_site_invalid_length():
+    """Unexpected tuple length should raise ValueError."""
+    with pytest.raises(ValueError, match="Expected a 4-tuple"):
+        _normalize_recording_site(("a", "b"))
+
+    with pytest.raises(ValueError, match="Expected a 4-tuple"):
+        _normalize_recording_site(("a", "b", 0.5, 1, "extra"))
 
 
 def test_gather_recording_sites_merges_and_skips_empty():
