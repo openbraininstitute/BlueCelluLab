@@ -18,7 +18,7 @@ from bluecellulab.validation.base import ValidationOutcome, ValidationTest
 from bluecellulab.validation.criterion import Criterion, GreaterThan
 from bluecellulab.validation.measurement import EfelMeasurement, Measurement
 from bluecellulab.validation.parametric_test import ParametricValidation
-from bluecellulab.validation.protocol import Protocol, StepProtocol
+from bluecellulab.validation.protocol import Protocol, SequenceProtocol, StepProtocol
 
 __all__ = [
     "Criterion",
@@ -27,6 +27,7 @@ __all__ = [
     "Measurement",
     "ParametricValidation",
     "Protocol",
+    "SequenceProtocol",
     "StepProtocol",
     "ValidationOutcome",
     "ValidationTest",

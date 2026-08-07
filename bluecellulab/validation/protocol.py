@@ -15,7 +15,7 @@
 """Protocols define how to stimulate a cell and obtain a recording."""
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from bluecellulab.analysis.inject_sequence import Recording, run_stimulus
 from bluecellulab.stimulus.factory import IDRestTimings, StimulusFactory
@@ -87,6 +87,99 @@ class StepProtocol(Protocol):
         return run_stimulus(
             template_params,
             stimulus,
+            self.section,
+            self.segment,
+            add_hypamp=self.add_hypamp,
+        )
+
+
+@dataclass
+class SequenceProtocol(Protocol):
+    """Multi-phase stimulus protocol composed of sequential steps.
+
+    Each phase is defined by a duration and amplitude (as percentage of rheobase).
+    Phases are concatenated in order with a configurable pre-delay and post-delay.
+
+    This enables protocols like rebound bursting (hold -> hyperpolarize -> release)
+    or any custom multi-step stimulation sequence.
+
+    Attributes:
+        phases: List of (duration_ms, threshold_percentage) tuples. Each phase is
+            a step at the given percentage of rheobase for the given duration.
+        pre_delay: Delay before the first phase in ms.
+        post_delay: Delay after the last phase in ms.
+        dt: Time step for the stimulus waveform in ms.
+        section: Section to inject into.
+        segment: Segment position along the section (0.0 to 1.0).
+        add_hypamp: Whether to add the holding current.
+
+    Example:
+        Rebound burst protocol (hold 250ms, hyperpolarize 500ms at -200%, release 500ms):
+
+        >>> protocol = SequenceProtocol(
+        ...     phases=[(500.0, -200.0), (500.0, 0.0)],
+        ...     pre_delay=250.0,
+        ...     post_delay=250.0,
+        ... )
+    """
+
+    phases: list[tuple[float, float]] = field(default_factory=lambda: [(1350.0, 130.0)])
+    pre_delay: float = 250.0
+    post_delay: float = 250.0
+    dt: float = 1.0
+    section: str = "soma[0]"
+    segment: float = 0.5
+    add_hypamp: bool = True
+
+    @property
+    def stim_start(self) -> float:
+        return self.pre_delay
+
+    @property
+    def stim_end(self) -> float:
+        total_duration = sum(duration for duration, _ in self.phases)
+        return self.pre_delay + total_duration
+
+    def execute(self, template_params, rheobase: float) -> Recording:
+        """Build a multi-phase stimulus and record the response."""
+        stim_factory = StimulusFactory(dt=self.dt)
+
+        # Build the first phase with the pre_delay
+        first_duration, first_pct = self.phases[0]
+        first_amplitude = rheobase * first_pct / 100.0
+        combined = stim_factory.step(
+            pre_delay=self.pre_delay,
+            duration=first_duration,
+            post_delay=0.0,
+            amplitude=first_amplitude,
+        )
+
+        # Add subsequent phases
+        for i, (duration, pct) in enumerate(self.phases[1:], start=1):
+            amplitude = rheobase * pct / 100.0
+            is_last = i == len(self.phases) - 1
+            post = self.post_delay if is_last else 0.0
+            phase_stimulus = stim_factory.step(
+                pre_delay=0.0,
+                duration=duration,
+                post_delay=post,
+                amplitude=amplitude,
+            )
+            combined = combined + phase_stimulus
+
+        # If only one phase, append the post_delay as a zero-amplitude step
+        if len(self.phases) == 1:
+            post_stimulus = stim_factory.step(
+                pre_delay=0.0,
+                duration=self.post_delay,
+                post_delay=0.0,
+                amplitude=0.0,
+            )
+            combined = combined + post_stimulus
+
+        return run_stimulus(
+            template_params,
+            combined,
             self.section,
             self.segment,
             add_hypamp=self.add_hypamp,
