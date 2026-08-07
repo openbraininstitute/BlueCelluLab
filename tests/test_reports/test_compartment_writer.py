@@ -317,6 +317,97 @@ def test_compartment_set_multinode_multiple_locations(tmp_path):
         assert np.allclose(data[:, 4], 22.0)
 
 
+def test_compartment_writer_skips_entries_with_missing_section_id(tmp_path, caplog):
+    """Entries with section_id=None should be skipped with a warning."""
+    out = tmp_path / "trace_missing_section_id.h5"
+    tlen = 10
+
+    sites = [
+        {"rec_name": "r_good", "section": "soma[0]", "segx": 0.5, "section_id": 5},
+        {"rec_name": "r_bad", "section": "dend[0]", "segx": 0.3, "section_id": None},
+    ]
+
+    cells = {
+        ("NodeA", 0): make_cell_for_report(
+            report_name="trace_skip",
+            rec_sites=sites,
+            rec_to_trace={
+                "r_good": make_trace(tlen, 1.0),
+                "r_bad": make_trace(tlen, 2.0),
+            },
+        )
+    }
+
+    report_cfg = {
+        "name": "trace_skip",
+        "type": "compartment_set",
+        "compartment_set": "NodeA",
+        "variable_name": "v",
+        "start_time": 0.0,
+        "end_time": 1.0,
+        "dt": 0.1,
+        "_source_sets": {"NodeA": {"population": "NodeA"}},
+    }
+
+    import logging
+    with caplog.at_level(logging.WARNING):
+        writer = CompartmentReportWriter(report_cfg=report_cfg, output_path=out, sim_dt=0.1)
+        writer.write(cells=cells, tstart=0.0)
+
+    assert "Missing section_id" in caplog.text
+    assert "r_bad" in caplog.text
+
+    assert out.exists()
+    with h5py.File(out, "r") as f:
+        data = np.array(f["/report/NodeA/data"])
+        node_ids = np.array(f["/report/NodeA/mapping/node_ids"])
+        elem_ids = np.array(f["/report/NodeA/mapping/element_ids"])
+        ptrs = np.array(f["/report/NodeA/mapping/index_pointers"])
+
+        # Only the good entry should be written
+        assert data.shape == (tlen, 1)
+        assert node_ids.tolist() == [0]
+        assert elem_ids.tolist() == [5]
+        assert ptrs.tolist() == [0, 1]
+        assert np.allclose(data[:, 0], 1.0)
+
+
+def test_compartment_writer_all_entries_missing_section_id(tmp_path, caplog):
+    """If all entries have section_id=None, no file should be written."""
+    out = tmp_path / "trace_all_missing.h5"
+    tlen = 10
+
+    cells = {
+        ("NodeA", 0): make_cell_for_report(
+            report_name="trace_empty",
+            rec_sites=[
+                {"rec_name": "r1", "section": "soma[0]", "segx": 0.5, "section_id": None},
+            ],
+            rec_to_trace={"r1": make_trace(tlen, 1.0)},
+        )
+    }
+
+    report_cfg = {
+        "name": "trace_empty",
+        "type": "compartment_set",
+        "compartment_set": "NodeA",
+        "variable_name": "v",
+        "start_time": 0.0,
+        "end_time": 1.0,
+        "dt": 0.1,
+        "_source_sets": {"NodeA": {"population": "NodeA"}},
+    }
+
+    import logging
+    with caplog.at_level(logging.WARNING):
+        writer = CompartmentReportWriter(report_cfg=report_cfg, output_path=out, sim_dt=0.1)
+        writer.write(cells=cells, tstart=0.0)
+
+    assert "Missing section_id" in caplog.text
+    assert "No data for report" in caplog.text
+    assert not out.exists()
+
+
 class TestSimCompartmentSet:
     def setup_method(self):
         sim_path = (
