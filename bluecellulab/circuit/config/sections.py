@@ -279,5 +279,7 @@ class ConnectionOverrides:
             synapse_delay_override=conn_entry.get("synapse_delay_override", None),
             spont_minis=conn_entry.get("spont_minis", None),
             synapse_configure=conn_entry.get("synapse_configure", None),
-            mod_override=conn_entry.get("mod_override", None),
+            mod_override=conn_entry.get(
+                "modoverride", conn_entry.get("mod_override", None)
+            ),
         )
