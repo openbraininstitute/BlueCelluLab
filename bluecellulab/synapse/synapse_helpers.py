@@ -7,11 +7,11 @@
 #     http://www.apache.org/licenses/LICENSE-2.0
 """Neurodamus-compatible synapse helper HOC loading.
 
-Implements the same convention as `neurodamus`:
-- A SUFFIX (e.g. ``"GluSynapse"``) names a compiled NMODL mechanism.
-- The companion HOC template is ``"{SUFFIX}Helper"``, expected to be
-  loadable via ``h.load_file("{SUFFIX}Helper.hoc")`` (NEURON searches
-  ``HOC_LIBRARY_PATH`` / cwd).
+Implements the same convention as ``neurodamus``. A SUFFIX (e.g.
+``"GluSynapse"``) names a compiled NMODL mechanism. The companion HOC
+template is ``"{SUFFIX}Helper"``, expected to be loadable via
+``h.load_file("{SUFFIX}Helper.hoc")`` (NEURON searches ``HOC_LIBRARY_PATH``
+/ cwd).
 """
 from __future__ import annotations
 

@@ -491,7 +491,9 @@ class GenericSpikeSynapse(Synapse):
     the resulting point process as a public objref ``synapse``.
 
     Helper template signature (matching neurodamus):
+
         ``<SUFFIX>Helper(post_gid, params, x, syn_id, base_seed, src_pop_id, dst_pop_id)``
+
     where ``params`` is a Python object with attribute-style access to the
     synapse parameters (e.g. ``params.weight``, ``params.U``).
     """
