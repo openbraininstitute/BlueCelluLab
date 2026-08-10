@@ -59,7 +59,7 @@ class SynapseFactory:
         # built-in GABAAB/AMPANMDA/GluSynapse classes.
         synapse: Synapse
         mod_override = connection_modifiers.get("ModOverride")
-        if mod_override and mod_override not in ("GluSynapse",):
+        if mod_override and mod_override not in ("GluSynapse", "Exp2Syn"):
             synapse = GenericSpikeSynapse(
                 cell.cell_id, syn_hoc_args, syn_id, syn_description,
                 popids, cell.post_gid, extracellular_calcium,
