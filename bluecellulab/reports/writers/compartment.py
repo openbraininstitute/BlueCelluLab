@@ -62,7 +62,7 @@ class CompartmentReportWriter(BaseReportWriter):
             if not sites:
                 continue
 
-            node_site_count = 0
+            node_entries: list[tuple[int, np.ndarray]] = []
             for site in sites:
                 rec_name = site["rec_name"]
                 try:
@@ -84,13 +84,16 @@ class CompartmentReportWriter(BaseReportWriter):
                     )
                     continue
 
-                data_matrix.append(np.asarray(trace, dtype=np.float32))
-                elem_ids.append(section_id)
-                node_site_count += 1
+                node_entries.append((section_id, np.asarray(trace, dtype=np.float32)))
 
-            if node_site_count:
+            if node_entries:
+                # SONATA spec requires element_ids sorted within each node
+                node_entries.sort(key=lambda entry: entry[0])
+                for sec_id, trace in node_entries:
+                    data_matrix.append(trace)
+                    elem_ids.append(sec_id)
                 node_id_list.append(gid)
-                idx_ptr.append(idx_ptr[-1] + node_site_count)
+                idx_ptr.append(idx_ptr[-1] + len(node_entries))
 
         if not data_matrix:
             logger.warning("No data for report '%s'.", report_name)

@@ -45,9 +45,10 @@ class DummySection:
 
 
 class DummyCell:
-    def __init__(self, targets, rec_names):
+    def __init__(self, targets, rec_names, section_ids=None):
         self.targets = targets
         self.rec_names = rec_names
+        self.section_ids = section_ids
         self.report_sites: dict[str, list[dict]] = {}
         self.soma = DummySection()
 
@@ -59,8 +60,9 @@ class DummyCell:
 
     def configure_recording(self, sites, variable, report_name):
         if report_name == "__default_voltage__":
-            return [((site[0], site[1], site[2], None), f"default_{variable}_{idx}") for idx, site in enumerate(sites)]
-        return [((site[0], site[1], site[2], None), name) for site, name in zip(sites, self.rec_names)]
+            return [((site[0], site[1], site[2], 0), f"default_{variable}_{idx}") for idx, site in enumerate(sites)]
+        ids = self.section_ids or [idx for idx in range(len(sites))]
+        return [((site[0], site[1], site[2], ids[i]), name) for i, (site, name) in enumerate(zip(sites, self.rec_names))]
 
 
 class DummyConfig:
@@ -134,7 +136,7 @@ def test_build_recording_sites_handles_missing_and_unsupported():
 def test_prepare_recordings_for_reports_compartment_populates_report_sites(caplog):
     cell_id = CellId("popA", 7)
     targets = [("sec", "soma[0]", 0.5), ("sec", "dend[0]", 0.3)]
-    cell = DummyCell(targets=targets, rec_names=["rec_soma", "rec_dend"])
+    cell = DummyCell(targets=targets, rec_names=["rec_soma", "rec_dend"], section_ids=[0, 3])
     cells = {cell_id: cell}
 
     cfg = DummyConfig(
@@ -153,6 +155,11 @@ def test_prepare_recordings_for_reports_compartment_populates_report_sites(caplo
     assert len(cell.report_sites["__default_voltage__"]) == 1
     assert "r1" in cell.report_sites
     assert [s["rec_name"] for s in cell.report_sites["r1"]] == ["rec_soma", "rec_dend"]
+    # Verify section_id flows through to SiteEntry
+    assert cell.report_sites["r1"][0]["section_id"] == 0
+    assert cell.report_sites["r1"][1]["section_id"] == 3
+    assert sites_index[cell_id][0]["section_id"] == 0
+    assert sites_index[cell_id][1]["section_id"] == 3
 
 
 def test_prepare_recordings_for_reports_warns_on_rec_mismatch(caplog):

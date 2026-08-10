@@ -93,7 +93,8 @@ def prepare_recordings_for_reports(
     -------
     (recording_index, sites_index)
         recording_index maps CellId -> ordered list of recording names (rec_name).
-        sites_index maps CellId -> list of site entries (report, rec_name, section, segx).
+        sites_index maps CellId -> list of site entries (report, rec_name, section,
+        section_id, segx, area_um2).
 
     Notes
     -----
@@ -336,7 +337,8 @@ def payload_to_cells(
 ) -> Dict[CellId, RecordedCell]:
     """
     payload: {CellId(...): {"recordings": {rec_name: [floats...]}}}
-    sites_index: {CellId(...): [{"report":..., "rec_name":..., "section":..., "segx":...}, ...]}
+    sites_index: {CellId(...): [{"report":..., "rec_name":..., "section":...,
+                  "section_id":..., "segx":..., "area_um2":...}, ...]}
     """
     out: Dict[CellId, RecordedCell] = {}
 

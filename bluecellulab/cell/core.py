@@ -167,6 +167,11 @@ class Cell(InjectableMixin, PlottableMixin):
         """Initialize the psections of the cell."""
         if not self.psections:
             self.psections, self.secname_to_psection = init_psections(public_hoc_cell(self.cell))
+            # Build reverse lookup: NEURON section -> LibSONATA section ID
+            self._section_to_id: dict = {
+                psec.hsection: int(sec_id)
+                for sec_id, psec in self.psections.items()
+            }
 
     def _extract_sections(self, sections) -> SectionMapping:
         res: SectionMapping = {}
@@ -976,13 +981,12 @@ class Cell(InjectableMixin, PlottableMixin):
         if not self.psections:
             self._init_psections()
 
-        for section_id, psection in self.psections.items():
-            if psection.hsection == section:
-                return int(section_id)
-
-        raise ValueError(
-            f"Section '{section}' not found in cell section mapping"
-        )
+        try:
+            return self._section_to_id[section]
+        except KeyError:
+            raise ValueError(
+                f"Section '{section}' not found in cell section mapping"
+            )
 
     def resolve_segments_from_compartment_set(self, node_id, compartment_nodes) -> List[Tuple[NeuronSection, str, float]]:
         """Resolve segments for a cell using a predefined compartment node
@@ -1057,6 +1061,9 @@ class Cell(InjectableMixin, PlottableMixin):
         -------
         list[tuple[ReportSite, str]]
             (site, rec_name) pairs for successfully configured recordings.
+            Each ReportSite contains (section, section_name, segx, section_id)
+            where section_id is the LibSONATA section index (or None if the
+            section could not be resolved).
         """
         node_id = self.cell_id.id
         configured: list[tuple[ReportSite, str]] = []
@@ -1068,7 +1075,11 @@ class Cell(InjectableMixin, PlottableMixin):
                 section = self.soma if sec is None else sec
                 section_id = self.get_section_id(section)
             except ValueError:
-                pass
+                logger.warning(
+                    "Could not resolve section_id for section '%s' in report '%s' "
+                    "on cell %d; trace will be excluded from SONATA output.",
+                    sec_name, report_name, node_id,
+                )
 
             report_site = ReportSite(
                 sec,

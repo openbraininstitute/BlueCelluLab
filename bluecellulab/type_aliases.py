@@ -28,4 +28,4 @@ class ReportSite(NamedTuple):
     section: Optional[NeuronSection]
     section_name: str
     segx: float
-    section_id: int | None = None
+    section_id: int | None

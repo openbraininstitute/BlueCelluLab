@@ -317,6 +317,52 @@ def test_compartment_set_multinode_multiple_locations(tmp_path):
         assert np.allclose(data[:, 4], 22.0)
 
 
+def test_compartment_writer_sorts_element_ids_per_node(tmp_path):
+    """Element IDs must be sorted within each node per SONATA spec."""
+    out = tmp_path / "trace_unsorted.h5"
+    tlen = 10
+
+    # Deliberately unsorted section IDs: [25, 11]
+    sites = [
+        {"rec_name": "raxon", "section": "axon[1]", "segx": 0.7, "section_id": 25},
+        {"rec_name": "rsoma", "section": "soma[0]", "segx": 0.5, "section_id": 11},
+    ]
+    rec_to_trace = {"raxon": make_trace(tlen, 99.0), "rsoma": make_trace(tlen, 42.0)}
+
+    cells = {
+        ("NodeA", 0): make_cell_for_report(
+            report_name="trace_unsorted",
+            rec_sites=sites,
+            rec_to_trace=rec_to_trace,
+        )
+    }
+
+    report_cfg = {
+        "name": "trace_unsorted",
+        "type": "compartment_set",
+        "compartment_set": "NodeA",
+        "variable_name": "v",
+        "start_time": 0.0,
+        "end_time": 1.0,
+        "dt": 0.1,
+        "_source_sets": {"NodeA": {"population": "NodeA"}},
+    }
+
+    writer = CompartmentReportWriter(report_cfg=report_cfg, output_path=out, sim_dt=0.1)
+    writer.write(cells=cells, tstart=0.0)
+
+    assert out.exists()
+    with h5py.File(out, "r") as f:
+        data = np.array(f["/report/NodeA/data"])
+        elem_ids = np.array(f["/report/NodeA/mapping/element_ids"])
+
+        # element_ids must be sorted within the node
+        assert elem_ids.tolist() == [11, 25]
+        # Data columns must follow the sorted order (rsoma=42 first, raxon=99 second)
+        assert np.allclose(data[:, 0], 42.0)
+        assert np.allclose(data[:, 1], 99.0)
+
+
 def test_compartment_writer_skips_entries_with_missing_section_id(tmp_path, caplog):
     """Entries with section_id=None should be skipped with a warning."""
     out = tmp_path / "trace_missing_section_id.h5"
