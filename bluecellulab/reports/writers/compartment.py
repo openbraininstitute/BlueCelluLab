@@ -62,6 +62,7 @@ class CompartmentReportWriter(BaseReportWriter):
             if not sites:
                 continue
 
+            node_entries: list[tuple[int, np.ndarray]] = []
             for site in sites:
                 rec_name = site["rec_name"]
                 try:
@@ -71,10 +72,28 @@ class CompartmentReportWriter(BaseReportWriter):
                                    rec_name, population, gid, report_name, e)
                     continue
 
-                data_matrix.append(np.asarray(trace, dtype=np.float32))
+                section_id = site.get("section_id")
+                if section_id is None:
+                    logger.warning(
+                        "Missing section_id for recording '%s' on (%s,%d) in '%s'; "
+                        "skipping the trace entry.",
+                        rec_name,
+                        population,
+                        gid,
+                        report_name,
+                    )
+                    continue
+
+                node_entries.append((section_id, np.asarray(trace, dtype=np.float32)))
+
+            if node_entries:
+                # SONATA spec requires element_ids sorted within each node
+                node_entries.sort(key=lambda entry: entry[0])
+                for sec_id, trace in node_entries:
+                    data_matrix.append(trace)
+                    elem_ids.append(sec_id)
                 node_id_list.append(gid)
-                elem_ids.append(len(elem_ids))
-                idx_ptr.append(idx_ptr[-1] + 1)
+                idx_ptr.append(idx_ptr[-1] + len(node_entries))
 
         if not data_matrix:
             logger.warning("No data for report '%s'.", report_name)

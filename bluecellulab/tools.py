@@ -510,7 +510,14 @@ def validate_section_and_segment(cell: Cell, section_name: str, segment_position
 def resolve_source_nodes(source, report_type, cells, population):
     if report_type == "compartment_set":
         compartment_nodes = source.get("compartment_set", [])
-        node_ids = [entry[0] for entry in compartment_nodes]
+        # Deduplicate node IDs while preserving first-seen order
+        seen: set = set()
+        node_ids = []
+        for entry in compartment_nodes:
+            nid = entry[0]
+            if nid not in seen:
+                seen.add(nid)
+                node_ids.append(nid)
     elif report_type == "compartment":
         node_ids = source.get("node_id")
         if node_ids is None:

@@ -19,6 +19,7 @@ class SiteEntry(TypedDict):
     report: str
     rec_name: str
     section: str
+    section_id: int | None
     segx: float
     area_um2: float | None
 
@@ -27,3 +28,4 @@ class ReportSite(NamedTuple):
     section: Optional[NeuronSection]
     section_name: str
     segx: float
+    section_id: int | None
