@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-from bluecellulab.validation.base import ValidationOutcome
+from bluecellulab.validation.base import TestResult
 from bluecellulab.validation.criterion import GreaterThan
 from bluecellulab.validation.measurement import EfelMeasurement
 from bluecellulab.validation.parametric_test import ParametricValidation
@@ -13,9 +13,9 @@ from bluecellulab.validation.plotting import plot_trace
 from bluecellulab.validation.protocol import StepProtocol
 
 
-class TestValidationOutcome:
+class TestTestResult:
     def test_creation_minimal(self):
-        outcome = ValidationOutcome(name="test", passed=True, details="ok")
+        outcome = TestResult(name="test", passed=True, details="ok")
         assert outcome.name == "test"
         assert outcome.passed is True
         assert outcome.details == "ok"
@@ -23,14 +23,14 @@ class TestValidationOutcome:
 
     def test_creation_with_figures(self, tmp_path):
         figs = [tmp_path / "fig1.pdf", tmp_path / "fig2.png"]
-        outcome = ValidationOutcome(name="test", passed=False, details="failed", figures=figs)
+        outcome = TestResult(name="test", passed=False, details="failed", figures=figs)
         assert outcome.figures == figs
         assert outcome.passed is False
 
     def test_figures_default_is_not_shared(self):
         """Ensure each instance gets its own figures list."""
-        o1 = ValidationOutcome(name="a", passed=True, details="")
-        o2 = ValidationOutcome(name="b", passed=True, details="")
+        o1 = TestResult(name="a", passed=True, details="")
+        o2 = TestResult(name="b", passed=True, details="")
         o1.figures.append(Path("x"))
         assert o2.figures == []
 

@@ -14,11 +14,14 @@
 
 """Validation framework for electrophysiology simulations."""
 
-from bluecellulab.validation.base import ValidationOutcome, ValidationTest
+from bluecellulab.validation.base import TestResult, ValidationTest
 from bluecellulab.validation.criterion import Criterion, GreaterThan
 from bluecellulab.validation.measurement import EfelMeasurement, Measurement
 from bluecellulab.validation.parametric_test import ParametricValidation
 from bluecellulab.validation.protocol import Protocol, SequenceProtocol, StepProtocol
+
+# Backwards-compatible alias (deprecated)
+ValidationOutcome = TestResult
 
 __all__ = [
     "Criterion",
@@ -29,6 +32,7 @@ __all__ = [
     "Protocol",
     "SequenceProtocol",
     "StepProtocol",
+    "TestResult",
     "ValidationOutcome",
     "ValidationTest",
 ]

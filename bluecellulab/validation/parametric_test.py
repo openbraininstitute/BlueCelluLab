@@ -17,7 +17,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from bluecellulab.validation.base import ValidationOutcome, ValidationTest
+from bluecellulab.validation.base import TestResult, ValidationTest
 from bluecellulab.validation.criterion import Criterion
 from bluecellulab.validation.measurement import Measurement
 from bluecellulab.validation.plotting import plot_trace
@@ -51,7 +51,7 @@ class ParametricValidation(ValidationTest):
     def name(self) -> str:
         return self.validation_name
 
-    def run(self, template_params, rheobase: float, out_dir: Path) -> ValidationOutcome:
+    def run(self, template_params, rheobase: float, out_dir: Path) -> TestResult:
         """Execute protocol, extract measurement, evaluate criterion.
 
         Args:
@@ -60,7 +60,7 @@ class ParametricValidation(ValidationTest):
             out_dir: Directory to write output figures.
 
         Returns:
-            A ValidationOutcome with the test result.
+            A TestResult with the test result.
         """
         out_dir = Path(out_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -96,7 +96,7 @@ class ParametricValidation(ValidationTest):
         )
         figures.append(fig_path)
 
-        return ValidationOutcome(
+        return TestResult(
             name=self.name,
             passed=passed,
             details=details,

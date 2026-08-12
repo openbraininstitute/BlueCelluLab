@@ -20,7 +20,7 @@ from pathlib import Path
 
 
 @dataclass
-class ValidationOutcome:
+class TestResult:
     """Standard result of a validation test.
 
     Contains everything needed for OBI-One to register a ValidationResult entity.
@@ -51,7 +51,7 @@ class ValidationTest(ABC):
         """Stable identifier for this validation test."""
 
     @abstractmethod
-    def run(self, template_params, rheobase: float, out_dir: Path) -> ValidationOutcome:
+    def run(self, template_params, rheobase: float, out_dir: Path) -> TestResult:
         """Execute the validation test.
 
         Args:
@@ -60,5 +60,5 @@ class ValidationTest(ABC):
             out_dir: Directory to write output figures.
 
         Returns:
-            A ValidationOutcome with the test result.
+            A TestResult with the test result.
         """
