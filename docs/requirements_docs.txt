@@ -1,5 +1,5 @@
-sphinx>=7.0.1,<9
-sphinx-bluebrain-theme>=0.4.1
+sphinx>=8.2,<10
+obi-sphinx-theme>=2.0.0
 sphinx_autodoc_typehints>=1.23.2
 seaborn>=0.13.2
 pydantic<=2.9.2
