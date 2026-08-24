@@ -49,3 +49,47 @@ def plot_trace(recording, out_dir, fname, title, plot_current=True):
     plt.close(fig)
 
     return outpath
+
+
+def plot_traces(recordings, out_dir, fname, title, labels=None, xlim=None):
+    """Plot multiple traces overlaid with stimulus current.
+
+    Args:
+        recordings: List of Recording objects.
+        out_dir: Output directory for the figure.
+        fname: Filename for the saved figure.
+        title: Title for the plot.
+        labels: Optional labels for each recording.
+        xlim: Optional x-axis limits as (min, max).
+
+    Returns:
+        Path to the saved figure.
+    """
+    out_dir = Path(out_dir)
+    outpath = out_dir / fname
+    fig, ax1 = plt.subplots(figsize=(10, 6))
+    prop_cycle = plt.rcParams["axes.prop_cycle"]
+    colors = prop_cycle.by_key()["color"]
+    n_colors = len(colors)
+    for i, recording in enumerate(recordings):
+        if i == 0:
+            color = "black"
+        else:
+            color = colors[(i - 1) % n_colors]
+        label = labels[i] if labels is not None else None
+        plt.plot(recording.time, recording.voltage, color=color, label=label)
+    current_axis = ax1.twinx()
+    current_axis.plot(recordings[0].time, recordings[0].current, color="gray", alpha=0.6)
+    current_axis.set_ylabel("Stimulus Current [nA]")
+    fig.suptitle(title)
+    ax1.set_xlabel("Time [ms]")
+    ax1.set_ylabel("Voltage [mV]")
+    if labels is not None:
+        ax1.legend()
+    if xlim is not None:
+        ax1.set_xlim(xlim)
+    fig.tight_layout()
+    fig.savefig(outpath)
+    plt.close(fig)
+
+    return outpath

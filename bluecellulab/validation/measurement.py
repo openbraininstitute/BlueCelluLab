@@ -15,7 +15,7 @@
 """Measurements extract quantitative values from simulation recordings."""
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import efel
 
@@ -45,9 +45,12 @@ class EfelMeasurement(Measurement):
 
     Attributes:
         feature_name: The eFEL feature to extract (e.g. "Spikecount", "AP_amplitude").
+        efel_settings: Optional dict of eFEL settings to apply before extraction
+            (e.g. {"depol_block_min_duration": 150}).
     """
 
     feature_name: str
+    efel_settings: dict = field(default_factory=dict)
 
     def extract(self, recording: Recording, stim_start: float, stim_end: float):
         """Extract the eFEL feature value from the recording.
@@ -55,6 +58,9 @@ class EfelMeasurement(Measurement):
         Returns:
             The scalar feature value, or None if extraction fails.
         """
+        for key, value in self.efel_settings.items():
+            efel.set_setting(key, value)
+
         trace = {
             "T": recording.time,
             "V": recording.voltage,

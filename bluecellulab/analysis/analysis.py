@@ -265,11 +265,11 @@ def compute_plot_fi_curve(cell,
 class BPAP:
     # taken from the examples
 
-    def __init__(self, cell: Cell) -> None:
+    def __init__(self, cell: Cell, stim_duration: float = 5.0) -> None:
         self.cell = cell
         self.dt = 0.025
         self.stim_start = 1000
-        self.stim_duration = 5
+        self.stim_duration = stim_duration
         self.basal_cmap = sns.color_palette("crest", as_cmap=True)
         self.apical_cmap = sns.color_palette("YlOrBr_r", as_cmap=True)
 

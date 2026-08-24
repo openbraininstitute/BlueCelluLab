@@ -61,3 +61,41 @@ class GreaterThan(Criterion):
         if passed:
             return f"Value ({display}) is greater than {self.threshold}."
         return f"Value ({display}) is not greater than {self.threshold}."
+
+
+@dataclass
+class EqualTo(Criterion):
+    """Passes if the measured value equals the expected value.
+
+    For scalar comparisons (e.g. Spikecount == 0).
+
+    Attributes:
+        expected: The expected value.
+    """
+
+    expected: float
+
+    def evaluate(self, value) -> bool:
+        return float(np.asarray(value)) == self.expected
+
+    def describe(self, value) -> str:
+        actual = float(np.asarray(value))
+        if self.evaluate(value):
+            return f"Value ({actual:.4g}) equals {self.expected:.4g} as expected."
+        return f"Value ({actual:.4g}) does not equal expected {self.expected:.4g}."
+
+
+@dataclass
+class IsFalse(Criterion):
+    """Passes if the measured value is falsy (0, False, None, empty).
+
+    Useful for boolean features like depol_block_bool where False means pass.
+    """
+
+    def evaluate(self, value) -> bool:
+        return not bool(value)
+
+    def describe(self, value) -> str:
+        if self.evaluate(value):
+            return f"Value ({value}) is falsy as expected."
+        return f"Value ({value}) is truthy (expected falsy)."

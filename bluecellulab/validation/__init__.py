@@ -15,7 +15,7 @@
 """Validation framework for electrophysiology simulations."""
 
 from bluecellulab.validation.base import TestResult, ValidationTest
-from bluecellulab.validation.criterion import Criterion, GreaterThan
+from bluecellulab.validation.criterion import Criterion, EqualTo, GreaterThan, IsFalse
 from bluecellulab.validation.measurement import EfelMeasurement, Measurement
 from bluecellulab.validation.parametric_test import ParametricValidation
 from bluecellulab.validation.protocol import Protocol, SequenceProtocol, StepProtocol
@@ -26,7 +26,9 @@ ValidationOutcome = TestResult
 __all__ = [
     "Criterion",
     "EfelMeasurement",
+    "EqualTo",
     "GreaterThan",
+    "IsFalse",
     "Measurement",
     "ParametricValidation",
     "Protocol",
