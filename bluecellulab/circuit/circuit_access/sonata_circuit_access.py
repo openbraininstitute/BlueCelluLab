@@ -211,6 +211,20 @@ class SonataCircuitAccess(CircuitAccess):
                     if optional_property.to_snap() not in edge_population.property_names:
                         edge_properties.remove(optional_property)
 
+                # Neurodamus-compatible dynamic field discovery: scan all
+                # connection overrides for mod_override values, load each
+                # helper HOC, and request the fields declared via
+                # ``<SUFFIX>Helper_NeededAttributes`` from the edge
+                # population (only if present). Also request the reserved
+                # ``maskValue`` field if the edge population provides it.
+                helper_fields = self._collect_helper_needed_attributes()
+                helper_fields.append("maskValue")
+                edge_properties += [
+                    field for field in helper_fields
+                    if field not in edge_properties
+                    and field in edge_population.property_names
+                ]
+
                 # if all plasticity props are present, add them
                 if all(
                     x in edge_population.property_names
@@ -271,6 +285,43 @@ class SonataCircuitAccess(CircuitAccess):
             return pd.DataFrame()
         else:
             return pd.concat(all_synapses_dfs)  # outer join that creates NaNs
+
+    def _collect_helper_needed_attributes(self) -> list[str]:
+        """Collect SONATA edge fields required by all mod_override helpers.
+
+        Scans connection override entries for ``mod_override`` values,
+        loads each helper HOC, and reads the ``_NeededAttributes``
+        metadata (semicolon-separated field names). This mirrors
+        neurodamus ``SynapseReader.configure_override()``.
+
+        Returns:
+            De-duplicated list of field names declared by all helpers.
+        """
+        fields: list[str] = []
+        seen: set[str] = set()
+        try:
+            entries = self.config.connection_entries()
+        except (AttributeError, NotImplementedError):
+            return fields
+        for entry in entries:
+            mod_override = getattr(entry, "mod_override", None)
+            if not mod_override:
+                continue
+            try:
+                from bluecellulab.synapse.synapse_helpers import (
+                    get_helper_needed_attributes,
+                )
+                for attr in get_helper_needed_attributes(mod_override):
+                    if attr not in seen:
+                        seen.add(attr)
+                        fields.append(attr)
+            except (FileNotFoundError, AttributeError):
+                logger.warning(
+                    "Could not load helper for mod_override='%s'; "
+                    "skipping _NeededAttributes discovery.",
+                    mod_override,
+                )
+        return fields
 
     def target_contains_cell(self, target: str, cell_id: CellId) -> bool:
         return cell_id in self.get_target_cell_ids(target)

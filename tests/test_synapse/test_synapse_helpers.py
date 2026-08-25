@@ -117,6 +117,15 @@ def test_syn_params_adapter_maps_enum_and_string_keys():
     assert adapter.custom_parameter == 3
 
 
+def test_syn_params_adapter_defaults_reserved_fields():
+    """_SynParamsAdapter must default maskValue and location like neurodamus
+    ``SynapseReader._reserved``."""
+    adapter = _SynParamsAdapter(pd.Series())
+
+    assert adapter.maskValue == -1.0
+    assert adapter.location == 0.5
+
+
 def test_syn_params_adapter_ignores_unassignable_attribute():
     _SynParamsAdapter(pd.Series({"__dict__": 3}))
 
@@ -233,3 +242,29 @@ def test_generic_spike_synapse_rejects_helper_without_synapse(monkeypatch):
 
     with pytest.raises(AttributeError, match="does not expose"):
         synapse._build_via_helper("Test")
+
+
+def test_get_helper_needed_attributes_returns_declared_fields(monkeypatch):
+    suffix = "NeededAttrsCoverage"
+    fake_h = SimpleNamespace(
+        load_file=lambda _: 1,
+        NeededAttrsCoverageHelper=object(),
+        NeededAttrsCoverageHelper_NeededAttributes="w_corr;tau_corr;w1_corr",
+    )
+    monkeypatch.setattr(synapse_helpers, "neuron", SimpleNamespace(h=fake_h))
+
+    attrs = synapse_helpers.get_helper_needed_attributes(suffix)
+    assert attrs == ["w_corr", "tau_corr", "w1_corr"]
+    synapse_helpers._loaded_helpers.discard(suffix)
+
+
+def test_get_helper_needed_attributes_empty_when_no_metadata(monkeypatch):
+    suffix = "NoAttrsCoverage"
+    fake_h = SimpleNamespace(
+        load_file=lambda _: 1,
+        NoAttrsCoverageHelper=object(),
+    )
+    monkeypatch.setattr(synapse_helpers, "neuron", SimpleNamespace(h=fake_h))
+
+    assert synapse_helpers.get_helper_needed_attributes(suffix) == []
+    synapse_helpers._loaded_helpers.discard(suffix)

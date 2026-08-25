@@ -22,7 +22,7 @@ from pydantic.dataclasses import dataclass
 
 import neuron
 
-import bluecellulab
+from bluecellulab.exceptions import ConfigError
 
 # libsonata reorganized it's module layout; maintain compatibility with both:
 # https://github.com/BlueBrain/libsonata/pull/345
@@ -249,7 +249,7 @@ class ConnectionOverrides:
     def validate_mod_override(cls, value):
         """Make sure the mod file to override is present in NEURON."""
         if isinstance(value, str) and not hasattr(neuron.h, value):
-            raise bluecellulab.ConfigError(
+            raise ConfigError(
                 f"Mod file (SUFFIX) for mod_override='{value}' is not found in NEURON. "
                 "Ensure the corresponding .mod is compiled and loaded."
             )

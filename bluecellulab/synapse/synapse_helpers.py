@@ -61,3 +61,25 @@ def load_synapse_helper(suffix: str) -> str:
 def helper_available(suffix: str) -> bool:
     """Return True if a helper template is already loaded for the SUFFIX."""
     return hasattr(neuron.h, f"{suffix}Helper")
+
+
+def get_helper_needed_attributes(suffix: str) -> list[str]:
+    """Read the ``_NeededAttributes`` metadata from a loaded helper HOC.
+
+    Neurodamus helper HOCs declare a semicolon-separated global string
+    ``<SUFFIX>Helper_NeededAttributes`` listing the SONATA edge fields
+    the helper requires. This function loads the helper (if not already
+    loaded) and returns those field names.
+
+    Args:
+        suffix: NMODL SUFFIX of the mechanism (e.g. ``"GluSynapse"``).
+
+    Returns:
+        List of attribute names, or an empty list if the helper does not
+        declare ``_NeededAttributes``.
+    """
+    helper_name = load_synapse_helper(suffix)
+    attr_str = getattr(neuron.h, f"{helper_name}_NeededAttributes", None)
+    if attr_str:
+        return [a.strip() for a in attr_str.split(";") if a.strip()]
+    return []

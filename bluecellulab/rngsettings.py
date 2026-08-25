@@ -96,6 +96,10 @@ class RNGSettings:
             self.stimulus_seed = sim_config.stimulus_seed
             self.minis_seed = sim_config.minis_seed
 
+        # Neurodamus-compatible helper HOCs read the synapse seed through
+        # RNGSettings.getSynapseSeed(). Keep the HOC and Python settings in sync.
+        neuron.h.synapseSeed = self.synapse_seed
+
     @property
     def mode(self):
         return self._mode
