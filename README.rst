@@ -173,8 +173,8 @@ The licenses of the morphology files used in this repository are available on: h
                 :target: https://joss.theoj.org/papers/effd553ca48734a2966d9d7ace3b05ff
                 :alt: JOSS
 
-.. |zenodo| image:: https://zenodo.org/badge/640805129.svg
-                 :target: https://zenodo.org/badge/latestdoi/640805129
+.. |zenodo| image:: https://zenodo.org/badge/DOI/10.5281/zenodo.19710421.svg
+                 :target: https://doi.org/10.5281/zenodo.19710421
 
 ..
     The following image is also defined in the index.rst file, as the relative path is

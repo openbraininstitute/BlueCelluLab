@@ -623,6 +623,7 @@ class TestCellV6:
 
         assert sec_name_0 == "soma[0]"
         assert seg_0 == 0.5
+
         assert sec_name_1 == "dend[0]"
         assert seg_1 == 0.25
 
@@ -639,6 +640,27 @@ class TestCellV6:
         assert seg_0 == 0.5
         assert sec_name_1 == "axon[1]"
         assert seg_1 == 0.25
+
+    def test_get_section_id_soma(self):
+        """Test get_section_id returns the correct index for the soma section."""
+        section_id = self.cell.get_section_id(self.cell.soma)
+        assert isinstance(section_id, int)
+        # The soma should match section 0 in the psections mapping
+        assert section_id == 0
+
+    def test_get_section_id_dend(self):
+        """Test get_section_id returns the correct index for a dendrite."""
+        dend_section = self.cell.get_section("dend[0]")
+        section_id = self.cell.get_section_id(dend_section)
+        assert isinstance(section_id, int)
+        # Verify round-trip: get_section_by_id should return the same section
+        assert self.cell.get_section_by_id(section_id) == dend_section
+
+    def test_get_section_id_not_found(self):
+        """Test get_section_id raises ValueError for an unknown section."""
+        fake_section = MagicMock(name="fake_section")
+        with pytest.raises(ValueError, match="not found in cell section mapping"):
+            self.cell.get_section_id(fake_section)
 
     def test_configure_recording_success(self):
         dend = MagicMock(name="dend_section")

@@ -25,12 +25,14 @@ autosummary_mock_imports = [  # these modules are not publicly available
 
 suppress_warnings = [
     'autosummary.import_cycle',
+    'sphinx_autodoc_typehints.forward_reference',
+    'sphinx_autodoc_typehints.guarded_import',
 ]
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = "sphinx-bluebrain-theme"
+html_theme = "obi_sphinx_theme"
 html_static_path = ['_static']
 
 # If true, links to the reST sources are added to the pages.

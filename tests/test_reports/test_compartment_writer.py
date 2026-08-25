@@ -32,7 +32,7 @@ script_dir = Path(__file__).parent.parent
 def mock_cell():
     cell = MagicMock()
     cell.report_sites = {
-        "test_report": [{"rec_name": "rec_0", "section": "soma[0]", "segx": 0.5}]
+        "test_report": [{"rec_name": "rec_0", "section": "soma[0]", "segx": 0.5, "section_id": 0}]
     }
     cell.get_recording = MagicMock(return_value=np.ones(10, dtype=np.float32))
     return cell
@@ -125,12 +125,12 @@ def test_write_compartment_set(tmp_path, mock_config_compartment_set):
 
     c1 = make_cell_for_report(
         report_name="test_report",
-        rec_sites=[{"rec_name": "rec_1", "section": "dend[0]", "segx": 0.3}],
+        rec_sites=[{"rec_name": "rec_1", "section": "dend[0]", "segx": 0.3, "section_id": 0}],
         rec_to_trace={"rec_1": make_trace(10, 1.0)},
     )
     c2 = make_cell_for_report(
         report_name="test_report",
-        rec_sites=[{"rec_name": "rec_2", "section": "soma[0]", "segx": 0.5}],
+        rec_sites=[{"rec_name": "rec_2", "section": "soma[0]", "segx": 0.5, "section_id": 1}],
         rec_to_trace={"rec_2": make_trace(10, 2.0)},
     )
 
@@ -163,17 +163,17 @@ def test_compartment_set_multinode_order(tmp_path):
     cells = {
         ("NodeA", 2): make_cell_for_report(
             report_name="trace_merge",
-            rec_sites=[{"rec_name": "r2", "section": "soma[0]", "segx": 0.5}],
+            rec_sites=[{"rec_name": "r2", "section": "soma[0]", "segx": 0.5, "section_id": 2}],
             rec_to_trace={"r2": make_trace(tlen, 30.0)},
         ),
         ("NodeA", 0): make_cell_for_report(
             report_name="trace_merge",
-            rec_sites=[{"rec_name": "r0", "section": "soma[0]", "segx": 0.5}],
+            rec_sites=[{"rec_name": "r0", "section": "soma[0]", "segx": 0.5, "section_id": 0}],
             rec_to_trace={"r0": make_trace(tlen, 10.0)},
         ),
         ("NodeA", 1): make_cell_for_report(
             report_name="trace_merge",
-            rec_sites=[{"rec_name": "r1", "section": "soma[0]", "segx": 0.5}],
+            rec_sites=[{"rec_name": "r1", "section": "soma[0]", "segx": 0.5, "section_id": 1}],
             rec_to_trace={"r1": make_trace(tlen, 20.0)},
         ),
     }
@@ -211,10 +211,10 @@ def test_compartment_set_multisegment_single_node(tmp_path):
     tlen = 10
 
     sites = [
-        {"rec_name": "rsoma", "section": "soma[0]", "segx": 0.5},
-        {"rec_name": "rdend2", "section": "dend[0]", "segx": 0.2},
-        {"rec_name": "rdend3", "section": "dend[0]", "segx": 0.3},
-        {"rec_name": "raxon7", "section": "axon[1]", "segx": 0.7},
+        {"rec_name": "rsoma", "section": "soma[0]", "segx": 0.5, "section_id": 11},
+        {"rec_name": "rdend2", "section": "dend[0]", "segx": 0.2, "section_id": 17},
+        {"rec_name": "rdend3", "section": "dend[0]", "segx": 0.3, "section_id": 17},
+        {"rec_name": "raxon7", "section": "axon[1]", "segx": 0.7, "section_id": 25},
     ]
     rec_to_trace = {s["rec_name"]: make_trace(tlen, 42.0) for s in sites}
 
@@ -248,10 +248,210 @@ def test_compartment_set_multisegment_single_node(tmp_path):
         ptrs = np.array(f["/report/NodeA/mapping/index_pointers"])
 
         assert data.shape == (tlen, 4)
-        assert node_ids.tolist() == [0, 0, 0, 0]
-        assert elem_ids.tolist() == [0, 1, 2, 3]
-        assert ptrs.tolist() == [0, 1, 2, 3, 4]
+        assert node_ids.tolist() == [0]
+        assert elem_ids.tolist() == [11, 17, 17, 25]
+        assert ptrs.tolist() == [0, 4]
         assert np.allclose(data, 42.0)
+
+
+def test_compartment_set_multinode_multiple_locations(tmp_path):
+    out = tmp_path / "trace_multinode_multisegment.h5"
+    tlen = 10
+
+    cells = {
+        ("NodeA", 0): make_cell_for_report(
+            report_name="trace_multinode_multisegment",
+            rec_sites=[
+                {"rec_name": "r0a", "section": "soma[0]", "segx": 0.5, "section_id": 10},
+                {"rec_name": "r0b", "section": "dend[0]", "segx": 0.25, "section_id": 20},
+            ],
+            rec_to_trace={
+                "r0a": make_trace(tlen, 10.0),
+                "r0b": make_trace(tlen, 11.0),
+            },
+        ),
+        ("NodeA", 1): make_cell_for_report(
+            report_name="trace_multinode_multisegment",
+            rec_sites=[
+                {"rec_name": "r1a", "section": "soma[0]", "segx": 0.5, "section_id": 12},
+                {"rec_name": "r1b", "section": "dend[1]", "segx": 0.75, "section_id": 21},
+                {"rec_name": "r1c", "section": "axon[0]", "segx": 0.1, "section_id": 33},
+            ],
+            rec_to_trace={
+                "r1a": make_trace(tlen, 20.0),
+                "r1b": make_trace(tlen, 21.0),
+                "r1c": make_trace(tlen, 22.0),
+            },
+        ),
+    }
+
+    report_cfg = {
+        "name": "trace_multinode_multisegment",
+        "type": "compartment_set",
+        "compartment_set": "NodeA",
+        "variable_name": "v",
+        "start_time": 0.0,
+        "end_time": 1.0,
+        "dt": 0.1,
+        "_source_sets": {"NodeA": {"population": "NodeA"}},
+    }
+
+    writer = CompartmentReportWriter(report_cfg=report_cfg, output_path=out, sim_dt=0.1)
+    writer.write(cells=cells, tstart=0.0)
+
+    assert out.exists()
+    with h5py.File(out, "r") as f:
+        data = np.array(f["/report/NodeA/data"])
+        node_ids = np.array(f["/report/NodeA/mapping/node_ids"])
+        elem_ids = np.array(f["/report/NodeA/mapping/element_ids"])
+        ptrs = np.array(f["/report/NodeA/mapping/index_pointers"])
+
+        assert data.shape == (tlen, 5)
+        assert node_ids.tolist() == [0, 1]
+        assert elem_ids.tolist() == [10, 20, 12, 21, 33]
+        assert ptrs.tolist() == [0, 2, 5]
+        assert np.allclose(data[:, 0], 10.0)
+        assert np.allclose(data[:, 1], 11.0)
+        assert np.allclose(data[:, 2], 20.0)
+        assert np.allclose(data[:, 3], 21.0)
+        assert np.allclose(data[:, 4], 22.0)
+
+
+def test_compartment_writer_sorts_element_ids_per_node(tmp_path):
+    """Element IDs must be sorted within each node per SONATA spec."""
+    out = tmp_path / "trace_unsorted.h5"
+    tlen = 10
+
+    # Deliberately unsorted section IDs: [25, 11]
+    sites = [
+        {"rec_name": "raxon", "section": "axon[1]", "segx": 0.7, "section_id": 25},
+        {"rec_name": "rsoma", "section": "soma[0]", "segx": 0.5, "section_id": 11},
+    ]
+    rec_to_trace = {"raxon": make_trace(tlen, 99.0), "rsoma": make_trace(tlen, 42.0)}
+
+    cells = {
+        ("NodeA", 0): make_cell_for_report(
+            report_name="trace_unsorted",
+            rec_sites=sites,
+            rec_to_trace=rec_to_trace,
+        )
+    }
+
+    report_cfg = {
+        "name": "trace_unsorted",
+        "type": "compartment_set",
+        "compartment_set": "NodeA",
+        "variable_name": "v",
+        "start_time": 0.0,
+        "end_time": 1.0,
+        "dt": 0.1,
+        "_source_sets": {"NodeA": {"population": "NodeA"}},
+    }
+
+    writer = CompartmentReportWriter(report_cfg=report_cfg, output_path=out, sim_dt=0.1)
+    writer.write(cells=cells, tstart=0.0)
+
+    assert out.exists()
+    with h5py.File(out, "r") as f:
+        data = np.array(f["/report/NodeA/data"])
+        elem_ids = np.array(f["/report/NodeA/mapping/element_ids"])
+
+        # element_ids must be sorted within the node
+        assert elem_ids.tolist() == [11, 25]
+        # Data columns must follow the sorted order (rsoma=42 first, raxon=99 second)
+        assert np.allclose(data[:, 0], 42.0)
+        assert np.allclose(data[:, 1], 99.0)
+
+
+def test_compartment_writer_skips_entries_with_missing_section_id(tmp_path, caplog):
+    """Entries with section_id=None should be skipped with a warning."""
+    out = tmp_path / "trace_missing_section_id.h5"
+    tlen = 10
+
+    sites = [
+        {"rec_name": "r_good", "section": "soma[0]", "segx": 0.5, "section_id": 5},
+        {"rec_name": "r_bad", "section": "dend[0]", "segx": 0.3, "section_id": None},
+    ]
+
+    cells = {
+        ("NodeA", 0): make_cell_for_report(
+            report_name="trace_skip",
+            rec_sites=sites,
+            rec_to_trace={
+                "r_good": make_trace(tlen, 1.0),
+                "r_bad": make_trace(tlen, 2.0),
+            },
+        )
+    }
+
+    report_cfg = {
+        "name": "trace_skip",
+        "type": "compartment_set",
+        "compartment_set": "NodeA",
+        "variable_name": "v",
+        "start_time": 0.0,
+        "end_time": 1.0,
+        "dt": 0.1,
+        "_source_sets": {"NodeA": {"population": "NodeA"}},
+    }
+
+    import logging
+    with caplog.at_level(logging.WARNING):
+        writer = CompartmentReportWriter(report_cfg=report_cfg, output_path=out, sim_dt=0.1)
+        writer.write(cells=cells, tstart=0.0)
+
+    assert "Missing section_id" in caplog.text
+    assert "r_bad" in caplog.text
+
+    assert out.exists()
+    with h5py.File(out, "r") as f:
+        data = np.array(f["/report/NodeA/data"])
+        node_ids = np.array(f["/report/NodeA/mapping/node_ids"])
+        elem_ids = np.array(f["/report/NodeA/mapping/element_ids"])
+        ptrs = np.array(f["/report/NodeA/mapping/index_pointers"])
+
+        # Only the good entry should be written
+        assert data.shape == (tlen, 1)
+        assert node_ids.tolist() == [0]
+        assert elem_ids.tolist() == [5]
+        assert ptrs.tolist() == [0, 1]
+        assert np.allclose(data[:, 0], 1.0)
+
+
+def test_compartment_writer_all_entries_missing_section_id(tmp_path, caplog):
+    """If all entries have section_id=None, no file should be written."""
+    out = tmp_path / "trace_all_missing.h5"
+    tlen = 10
+
+    cells = {
+        ("NodeA", 0): make_cell_for_report(
+            report_name="trace_empty",
+            rec_sites=[
+                {"rec_name": "r1", "section": "soma[0]", "segx": 0.5, "section_id": None},
+            ],
+            rec_to_trace={"r1": make_trace(tlen, 1.0)},
+        )
+    }
+
+    report_cfg = {
+        "name": "trace_empty",
+        "type": "compartment_set",
+        "compartment_set": "NodeA",
+        "variable_name": "v",
+        "start_time": 0.0,
+        "end_time": 1.0,
+        "dt": 0.1,
+        "_source_sets": {"NodeA": {"population": "NodeA"}},
+    }
+
+    import logging
+    with caplog.at_level(logging.WARNING):
+        writer = CompartmentReportWriter(report_cfg=report_cfg, output_path=out, sim_dt=0.1)
+        writer.write(cells=cells, tstart=0.0)
+
+    assert "Missing section_id" in caplog.text
+    assert "No data for report" in caplog.text
+    assert not out.exists()
 
 
 class TestSimCompartmentSet:
