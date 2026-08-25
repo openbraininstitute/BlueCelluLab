@@ -591,9 +591,20 @@ class _SynParamsAdapter:
     }
 
     def __init__(self, syn_description: pd.Series):
+        # Neurodamus reserves these helper parameters and defaults them
+        # when the corresponding fields are absent from the SONATA edge
+        # population. See neurodamus SynapseReader._reserved.
+        setattr(self, "maskValue", -1.0)
+        setattr(self, "location", 0.5)
+
         for key, value in syn_description.items():
             attr = self._ENUM_TO_ATTR.get(key, str(key) if not isinstance(key, str) else key)
             try:
                 setattr(self, attr, value)
+                # Existing BlueCelluLab code exposes the SONATA NRRP field as
+                # ``Nrrp``, while the shipped Neurodamus-style helpers use
+                # the lowercase ``nrrp`` spelling. Keep both aliases.
+                if key == SynapseProperty.NRRP:
+                    setattr(self, "nrrp", value)
             except (TypeError, AttributeError):
                 pass
