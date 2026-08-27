@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Parametric validation test: composes protocol + measurement + criterion."""
 
 from dataclasses import dataclass
@@ -26,7 +25,8 @@ from bluecellulab.validation.protocol import Protocol
 
 @dataclass
 class ParametricValidation(ValidationTest):
-    """A composable validation test built from protocol + measurement + criterion.
+    """A composable validation test built from protocol + measurement +
+    criterion.
 
     This class allows users to define custom validations by combining:
     - A Protocol (how to stimulate the cell)

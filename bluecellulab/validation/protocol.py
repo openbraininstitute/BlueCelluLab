@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Protocols define how to stimulate a cell and obtain a recording."""
 
 from abc import ABC, abstractmethod
@@ -147,7 +146,8 @@ class SequenceProtocol(Protocol):
         """Return the (start, end) time window in ms for feature extraction.
 
         If measurement_phase is set, the window covers only that phase.
-        Otherwise it covers the full stimulus (first phase start to last phase end).
+        Otherwise it covers the full stimulus (first phase start to last
+        phase end).
         """
         if self.measurement_phase is not None:
             if not 0 <= self.measurement_phase < len(self.phases):

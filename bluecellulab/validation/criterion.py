@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Criteria for determining pass/fail of a validation measurement."""
 
 from abc import ABC, abstractmethod
@@ -89,7 +88,8 @@ class EqualTo(Criterion):
 class IsFalse(Criterion):
     """Passes if the measured value is falsy (0, False, None, empty).
 
-    Useful for boolean features like depol_block_bool where False means pass.
+    Useful for boolean features like depol_block_bool where False means
+    pass.
     """
 
     def evaluate(self, value) -> bool:
