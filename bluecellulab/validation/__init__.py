@@ -20,9 +20,6 @@ from bluecellulab.validation.measurement import EfelMeasurement, Measurement
 from bluecellulab.validation.parametric_test import ParametricValidation
 from bluecellulab.validation.protocol import Protocol, SequenceProtocol, StepProtocol
 
-# Backwards-compatible alias (deprecated)
-ValidationOutcome = TestResult
-
 __all__ = [
     "Criterion",
     "EfelMeasurement",
@@ -35,6 +32,5 @@ __all__ = [
     "SequenceProtocol",
     "StepProtocol",
     "TestResult",
-    "ValidationOutcome",
     "ValidationTest",
 ]
