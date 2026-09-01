@@ -1,6 +1,7 @@
 """Unit test for the validation module."""
 
 import itertools
+import efel
 import pytest
 from unittest.mock import MagicMock, patch
 import pathlib
@@ -98,6 +99,7 @@ def test_depolarization_block_test(
     mock_efel, mock_run_stimulus, mock_plot_trace, dummy_template_params, dummy_out_dir
 ):
     # passed case
+    original_duration = efel.get_settings().depol_block_min_duration
     rec = MagicMock()
     mock_run_stimulus.return_value = rec
     mock_plot_trace.return_value = dummy_out_dir / "depol.pdf"
@@ -113,6 +115,7 @@ def test_depolarization_block_test(
     )
     assert len(result["figures"]) == 1
     assert result["figures"][0] == dummy_out_dir / "depol.pdf"
+    assert efel.get_settings().depol_block_min_duration == original_duration
 
     # failed case
     mock_run_stimulus.return_value = rec
@@ -158,6 +161,7 @@ def test_ais_spiking_test(
     mock_Cell, mock_run_multi, mock_plot_traces, mock_efel, dummy_template_params, dummy_out_dir
 ):
     # passed case
+    original_threshold = efel.get_settings().Threshold
     cell = MagicMock()
     cell.axonal = [1]
     cell.sections = {"axon[0]": MagicMock()}
@@ -176,6 +180,7 @@ def test_ais_spiking_test(
     assert len(result["figures"]) == 2
     assert result["figures"][0] == dummy_out_dir / "ais1.pdf"
     assert result["figures"][1] == dummy_out_dir / "ais2.pdf"
+    assert efel.get_settings().Threshold == original_threshold
 
     # soma spikes first case
     rec1 = MagicMock(spike=[3])

@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 import efel
 
 from bluecellulab.analysis.inject_sequence import Recording
+from bluecellulab.utils import efel_settings
 
 
 class Measurement(ABC):
@@ -45,7 +46,10 @@ class EfelMeasurement(Measurement):
     Attributes:
         feature_name: The eFEL feature to extract (e.g. "Spikecount", "AP_amplitude").
         efel_settings: Optional dict of eFEL settings to apply before extraction
-            (e.g. {"depol_block_min_duration": 150}).
+            (e.g. {"depol_block_min_duration": 150}). Settings are temporary and
+            restored after extraction. eFEL's default spike ``Threshold`` is
+            -20 mV; pass ``{"Threshold": -40.0}`` when matching the legacy
+            BlueCelluLab validation threshold.
     """
 
     feature_name: str
@@ -57,20 +61,37 @@ class EfelMeasurement(Measurement):
         Returns:
             The scalar feature value, or None if extraction fails.
         """
-        for key, value in self.efel_settings.items():
-            efel.set_setting(key, value)
-
         trace = {
             "T": recording.time,
             "V": recording.voltage,
             "stim_start": [stim_start],
             "stim_end": [stim_end],
         }
-        features_results = efel.get_feature_values([trace], [self.feature_name])
-        result = features_results[0][self.feature_name]
-        if result is None or len(result) == 0:
+        try:
+            # eFEL settings are process-global, so they are restored on exit to
+            # keep this measurement from influencing later validations.
+            with efel_settings(self.efel_settings):
+                features_results = efel.get_feature_values(
+                    [trace], [self.feature_name]
+                )
+            if not features_results:
+                return None
+
+            result = features_results[0].get(self.feature_name)
+            if result is None or len(result) == 0:
+                return None
+            # For scalar features (e.g. Spikecount), return the single value.
+            if len(result) == 1:
+                return result[0]
+            return result
+        except (
+            AttributeError,
+            IndexError,
+            KeyError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+        ):
+            # eFEL reports invalid features and some extraction failures as
+            # exceptions. Treat those the same as an empty feature result.
             return None
-        # For scalar features (e.g. Spikecount), return the single value.
-        if len(result) == 1:
-            return result[0]
-        return result

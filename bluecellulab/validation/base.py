@@ -31,6 +31,10 @@ class TestResult:
         figures: Paths to generated figure files (plots, traces, etc.).
     """
 
+    # The ``Test`` prefix makes pytest try to collect this dataclass as a test
+    # class wherever it is imported. It is a result container, not a test.
+    __test__ = False
+
     name: str
     passed: bool
     details: str

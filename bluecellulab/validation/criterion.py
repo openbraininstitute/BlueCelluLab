@@ -45,13 +45,20 @@ class GreaterThan(Criterion):
     threshold: float
 
     def evaluate(self, value) -> bool:
-        result = np.all(np.asarray(value) > self.threshold)
-        return bool(result)
+        arr = np.asarray(value)
+        if arr.size == 0:
+            return False
+        return bool(np.all(arr > self.threshold))
 
     def describe(self, value) -> str:
         passed = self.evaluate(value)
         # Summarize array values
         arr = np.asarray(value)
+        if arr.size == 0:
+            return (
+                "No observations were produced; value is not greater than "
+                f"{self.threshold}."
+            )
         if arr.ndim == 0 or arr.size == 1:
             display = f"{float(arr):.4g}"
         else:

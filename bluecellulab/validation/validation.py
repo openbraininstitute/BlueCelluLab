@@ -31,8 +31,19 @@ from bluecellulab.stimulus.factory import StimulusFactory
 from bluecellulab.tools import calculate_input_resistance
 from bluecellulab.tools import calculate_rheobase
 from bluecellulab.utils import NestedPool
+from bluecellulab.utils import efel_settings
 
 logger = logging.getLogger(__name__)
+
+# Spike detection threshold used by the validations in this module. It is
+# deliberately more permissive than eFEL's own default ``Threshold`` of -20 mV,
+# because some cells never reach -20 mV. Feature extraction that should match
+# these validations has to set the eFEL ``Threshold`` setting explicitly, for
+# example via ``EfelMeasurement(..., efel_settings={"Threshold": ...})``.
+DEFAULT_SPIKE_THRESHOLD_VOLTAGE = -40.0
+
+# eFEL's built-in default, kept here so the difference is explicit.
+EFEL_DEFAULT_SPIKE_THRESHOLD_VOLTAGE = -20.0
 
 
 def plot_trace(recording, out_dir, fname, title, plot_current=True):
@@ -84,7 +95,10 @@ def plot_traces(recordings, out_dir, fname, title, labels=None, xlim=None):
     return outpath
 
 
-def spiking_test(template_params, rheobase, out_dir, spike_threshold_voltage=-40.):
+def spiking_test(
+    template_params, rheobase, out_dir,
+    spike_threshold_voltage=DEFAULT_SPIKE_THRESHOLD_VOLTAGE,
+):
     """Spiking test: cell should spike."""
     stim_factory = StimulusFactory(dt=1.0)
     step_stimulus = stim_factory.idrest(threshold_current=rheobase, threshold_percentage=130)
@@ -136,8 +150,10 @@ def depolarization_block_test(template_params, rheobase, out_dir):
         "stim_start": [IDRestTimings.PRE_DELAY.value],
         "stim_end": [IDRestTimings.PRE_DELAY.value + IDRestTimings.DURATION.value],
     }
-    efel.set_setting("depol_block_min_duration", 150)
-    features_results = efel.get_feature_values([trace], ["depol_block_bool"])
+    # eFEL settings are process-global; restore them so this validation cannot
+    # change the outcome of validations that run later in the same process.
+    with efel_settings({"depol_block_min_duration": 150}):
+        features_results = efel.get_feature_values([trace], ["depol_block_bool"])
     depol_block = bool(features_results[0]["depol_block_bool"][0])
 
     # plotting
@@ -204,7 +220,10 @@ def bpap_test(template_params, rheobase, out_dir="./"):
     }
 
 
-def ais_spiking_test(template_params, rheobase, out_dir, spike_threshold_voltage=-40.):
+def ais_spiking_test(
+    template_params, rheobase, out_dir,
+    spike_threshold_voltage=DEFAULT_SPIKE_THRESHOLD_VOLTAGE,
+):
     """AIS spiking test: axon should spike before soma."""
     name = "Simulatable Neuron AIS Spiking Validation"
     # Check that the cell has an axon
@@ -263,8 +282,10 @@ def ais_spiking_test(template_params, rheobase, out_dir, spike_threshold_voltage
             "stim_end": [IDRestTimings.PRE_DELAY.value + IDRestTimings.DURATION.value],
         }
     ]
-    efel.set_setting("Threshold", spike_threshold_voltage)
-    features_results = efel.get_feature_values(traces, ["peak_time"])
+    # Restore the global eFEL threshold afterwards so later feature extraction
+    # (in this process) keeps using its own configured threshold.
+    with efel_settings({"Threshold": spike_threshold_voltage}):
+        features_results = efel.get_feature_values(traces, ["peak_time"])
     axon_spike_time = features_results[0]["peak_time"]
     soma_spike_time = features_results[1]["peak_time"]
 
@@ -365,7 +386,7 @@ def iv_test(
     template_params,
     rheobase,
     out_dir,
-    spike_threshold_voltage=-40.,
+    spike_threshold_voltage=DEFAULT_SPIKE_THRESHOLD_VOLTAGE,
     n_processes=None,
     celsius=None,
     v_init=None
@@ -415,7 +436,7 @@ def fi_test(
     template_params,
     rheobase,
     out_dir,
-    spike_threshold_voltage=-40.,
+    spike_threshold_voltage=DEFAULT_SPIKE_THRESHOLD_VOLTAGE,
     n_processes=None,
     celsius=None,
     v_init=None,
@@ -494,7 +515,7 @@ def thumbnail_test(template_params, rheobase, out_dir):
 def run_validations(
     cell,
     cell_name,
-    spike_threshold_voltage=-40,
+    spike_threshold_voltage=DEFAULT_SPIKE_THRESHOLD_VOLTAGE,
     v_init=-80.0,
     celsius=34.0,
     output_dir="./memodel_validation_figures",
