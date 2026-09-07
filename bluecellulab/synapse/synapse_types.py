@@ -542,16 +542,22 @@ class GenericSpikeSynapse(Synapse):
         params = _SynParamsAdapter(self.syn_description)
 
         # Match neurodamus calling convention. tgid+1 mirrors the legacy
-        # 1-based GID used by neurodamus seeding.
-        helper = helper_cls(
-            self.post_gid + 1,
-            params,
-            self.hoc_args.location,
-            self.syn_id.sid,
-            base_seed,
-            self.source_popid,
-            self.target_popid,
-        )
+        # 1-based GID used by neurodamus seeding. Keep the target section
+        # active while the helper constructs its point process because the
+        # helper API receives x but not an explicit section argument.
+        self.hoc_args.section.push()
+        try:
+            helper = helper_cls(
+                self.post_gid + 1,
+                params,
+                self.hoc_args.location,
+                self.syn_id.sid,
+                base_seed,
+                self.source_popid,
+                self.target_popid,
+            )
+        finally:
+            neuron.h.pop_section()
         # Helper must expose the point process as ``synapse``.
         if not hasattr(helper, "synapse"):
             raise AttributeError(

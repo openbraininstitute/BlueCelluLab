@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import importlib_resources as resources
 import pandas as pd
 import pytest
 
@@ -36,6 +37,117 @@ def test_mod_override_rejects_unknown_mech():
             target="B",
             mod_override="DefinitelyNotAMech_XYZ",
         )
+
+
+def test_bundled_helper_files_are_package_resources():
+    for suffix in ("AMPANMDA", "Exp2Syn", "GABAAB", "GluSynapse"):
+        helper = resources.files("bluecellulab").joinpath(
+            "hoc", f"{suffix}Helper.hoc"
+        )
+        assert helper.is_file()
+
+
+def test_bundled_hoc_directory_is_appended_to_search_path(monkeypatch):
+    monkeypatch.delenv("HOC_LIBRARY_PATH", raising=False)
+
+    bundled_dir = synapse_helpers._ensure_bundled_hoc_directory_on_search_path()
+
+    assert bundled_dir in synapse_helpers.os.environ["HOC_LIBRARY_PATH"].split(
+        synapse_helpers.os.pathsep
+    )
+
+
+def test_load_synapse_helper_prefers_external_helper(monkeypatch):
+    suffix = "ExternalPrecedenceCoverage"
+    calls = []
+
+    class FakeH:
+        ExternalPrecedenceCoverageHelper = object()
+
+        def load_file(self, filename):
+            calls.append(filename)
+            return 1
+
+    monkeypatch.setattr(synapse_helpers, "neuron", SimpleNamespace(h=FakeH()))
+
+    assert synapse_helpers.load_synapse_helper(suffix) == f"{suffix}Helper"
+    assert calls == [f"{suffix}Helper.hoc"]
+    synapse_helpers._loaded_helpers.discard(suffix)
+
+
+def test_load_synapse_helper_falls_back_to_bundled_path(monkeypatch):
+    suffix = "BundledFallbackCoverage"
+    calls = []
+
+    class FakeH:
+        BundledFallbackCoverageHelper = object()
+
+        def load_file(self, filename):
+            calls.append(filename)
+            return int(synapse_helpers.os.path.isabs(filename))
+
+    monkeypatch.setattr(synapse_helpers, "neuron", SimpleNamespace(h=FakeH()))
+
+    assert synapse_helpers.load_synapse_helper(suffix) == f"{suffix}Helper"
+    assert calls[0] == f"{suffix}Helper.hoc"
+    assert calls[1].endswith(f"{suffix}Helper.hoc")
+    assert calls[1] != calls[0]
+    synapse_helpers._loaded_helpers.discard(suffix)
+
+
+def test_external_helper_wins_over_bundled_with_real_neuron(tmp_path, monkeypatch):
+    """Integration test using the real NEURON loader.
+
+    When a helper HOC is discoverable through HOC_LIBRARY_PATH *and* a helper
+    with the same name exists in the bundled directory, the external one must
+    win. This locks in the user-override precedence guarantee end-to-end
+    (real ``h.load_file`` + real HOC_LIBRARY_PATH resolution), rather than
+    just the control flow of ``load_synapse_helper``.
+    """
+    import neuron
+
+    suffix = "ExternalWinsRealNrn"
+    helper_file = f"{suffix}Helper.hoc"
+
+    external_dir = tmp_path / "external"
+    bundled_dir = tmp_path / "bundled"
+    external_dir.mkdir()
+    bundled_dir.mkdir()
+
+    # Both files define the same template but set a distinct marker global so
+    # we can tell which file NEURON actually loaded.
+    (external_dir / helper_file).write_text(
+        f"external_marker_{suffix} = 1\n"
+        f"begintemplate {suffix}Helper\n"
+        "public synapse\n"
+        "objref synapse\n"
+        "proc init() {}\n"
+        f"endtemplate {suffix}Helper\n"
+    )
+    (bundled_dir / helper_file).write_text(
+        f"bundled_marker_{suffix} = 1\n"
+        f"begintemplate {suffix}Helper\n"
+        "public synapse\n"
+        "objref synapse\n"
+        "proc init() {}\n"
+        f"endtemplate {suffix}Helper\n"
+    )
+
+    # External dir listed first; the loader appends the bundled dir after it.
+    monkeypatch.setenv("HOC_LIBRARY_PATH", str(external_dir))
+    monkeypatch.setattr(
+        synapse_helpers, "_bundled_hoc_directory", lambda: str(bundled_dir)
+    )
+    synapse_helpers._loaded_helpers.discard(suffix)
+
+    try:
+        assert synapse_helpers.load_synapse_helper(suffix) == f"{suffix}Helper"
+        # The external file executed (its marker global is defined) ...
+        assert hasattr(neuron.h, f"external_marker_{suffix}")
+        # ... and the bundled file was not loaded.
+        assert not hasattr(neuron.h, f"bundled_marker_{suffix}")
+    finally:
+        synapse_helpers._loaded_helpers.discard(suffix)
 
 
 def test_load_synapse_helper_missing_raises():
@@ -177,16 +289,31 @@ def test_generic_spike_synapse_update_removes_invalid_optional_values():
 
 
 def test_generic_spike_synapse_builds_from_helper(monkeypatch):
+    active_section = {}
+
+    class Section:
+        def push(self):
+            active_section["section"] = self
+
     class Helper:
         def __init__(self, *args):
             self.args = args
+            self.created_in_section = active_section.get("section")
             self.synapse = "point-process"
 
     monkeypatch.setattr(synapse_helpers, "load_synapse_helper", lambda _: "TestHelper")
-    monkeypatch.setattr(synapse_types.neuron, "h", SimpleNamespace(TestHelper=Helper))
+    monkeypatch.setattr(
+        synapse_types.neuron,
+        "h",
+        SimpleNamespace(
+            TestHelper=Helper,
+            pop_section=lambda: active_section.pop("section", None),
+        ),
+    )
+    section = Section()
     synapse = GenericSpikeSynapse.__new__(GenericSpikeSynapse)
     synapse.post_gid = 41
-    synapse.hoc_args = SimpleNamespace(location=0.25)
+    synapse.hoc_args = SimpleNamespace(location=0.25, section=section)
     synapse.syn_id = SynapseID("projection", 7)
     synapse.source_popid = 2
     synapse.target_popid = 3
@@ -198,6 +325,8 @@ def test_generic_spike_synapse_builds_from_helper(monkeypatch):
     assert synapse.hsynapse == "point-process"
     assert synapse.mech_name == "Test"
     assert synapse.persistent[0].args[0] == 42
+    assert synapse.persistent[0].created_in_section is section
+    assert active_section == {}
 
 
 def test_factory_uses_generic_synapse_for_mod_override(monkeypatch):
@@ -225,15 +354,23 @@ def test_factory_uses_generic_synapse_for_mod_override(monkeypatch):
 
 
 def test_generic_spike_synapse_rejects_helper_without_synapse(monkeypatch):
+    class Section:
+        def push(self):
+            pass
+
     class Helper:
         def __init__(self, *args):
             pass
 
     monkeypatch.setattr(synapse_helpers, "load_synapse_helper", lambda _: "TestHelper")
-    monkeypatch.setattr(synapse_types.neuron, "h", SimpleNamespace(TestHelper=Helper))
+    monkeypatch.setattr(
+        synapse_types.neuron,
+        "h",
+        SimpleNamespace(TestHelper=Helper, pop_section=lambda: None),
+    )
     synapse = GenericSpikeSynapse.__new__(GenericSpikeSynapse)
     synapse.post_gid = 41
-    synapse.hoc_args = SimpleNamespace(location=0.25)
+    synapse.hoc_args = SimpleNamespace(location=0.25, section=Section())
     synapse.syn_id = SynapseID("projection", 7)
     synapse.source_popid = 2
     synapse.target_popid = 3

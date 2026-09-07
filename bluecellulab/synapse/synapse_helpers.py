@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import os
 
+import importlib_resources as resources
 import neuron
 
 logger = logging.getLogger(__name__)
@@ -25,25 +26,41 @@ logger = logging.getLogger(__name__)
 _loaded_helpers: set[str] = set()
 
 
+def _bundled_hoc_directory() -> str:
+    return str(resources.files("bluecellulab").joinpath("hoc"))
+
+
+def _ensure_bundled_hoc_directory_on_search_path() -> str:
+    """Make bundled helper dependencies available to relative HOC loads."""
+    bundled_dir = _bundled_hoc_directory()
+    current_paths = os.environ.get("HOC_LIBRARY_PATH", "").split(os.pathsep)
+    current_paths = [path for path in current_paths if path]
+    if bundled_dir not in current_paths:
+        current_paths.append(bundled_dir)
+        os.environ["HOC_LIBRARY_PATH"] = os.pathsep.join(current_paths)
+    return bundled_dir
+
+
 def load_synapse_helper(suffix: str) -> str:
-    """Load the helper HOC template for a given mechanism SUFFIX.
+    """Load a packaged or externally supplied synapse helper HOC template.
 
-    Args:
-        suffix: NMODL SUFFIX of the mechanism (e.g. ``"GluSynapse"``).
-
-    Returns:
-        The helper template name (``"{suffix}Helper"``).
-
-    Raises:
-        FileNotFoundError: if the helper HOC cannot be loaded.
-        AttributeError: if the helper template is missing after load.
+    External helpers found through ``HOC_LIBRARY_PATH`` take precedence over
+    the standard helpers bundled with BlueCelluLab. The matching compiled MOD
+    mechanism is still required separately.
     """
     helper_name = f"{suffix}Helper"
     if suffix in _loaded_helpers:
         return helper_name
 
     helper_file = f"{helper_name}.hoc"
+    bundled_dir = _ensure_bundled_hoc_directory_on_search_path()
+
+    # Search HOC_LIBRARY_PATH first, preserving support for custom helpers.
     loaded = neuron.h.load_file(helper_file)
+    if not loaded:
+        bundled_path = os.path.join(bundled_dir, helper_file)
+        loaded = neuron.h.load_file(bundled_path)
+
     if not loaded:
         raise FileNotFoundError(
             f"Could not load HOC helper '{helper_file}' for mod_override '{suffix}'. "
