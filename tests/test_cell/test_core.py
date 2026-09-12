@@ -560,6 +560,17 @@ class TestCellV6:
         with pytest.raises(BluecellulabError, match="get_voltage_recording: Voltage recording .* was not added previously using add_voltage_recording"):
             self.cell.get_voltage_recording(self.cell.soma, segx=1.5)
 
+    def test_get_section_list(self):
+        """Cell Test get_section_list resolves named hoc SectionLists."""
+        somatic = self.cell.get_section_list("somatic")
+        assert [s.name() for s in somatic] == [s.name() for s in self.cell.somatic]
+        assert len(self.cell.get_section_list("all")) == len(self.cell.sections)
+        myelinated = self.cell.get_section_list("myelinated")
+        assert len(myelinated) > 0
+        assert all("myelin" in s.name() for s in myelinated)
+        with pytest.raises(AttributeError, match="no 'nonexistent' section list"):
+            self.cell.get_section_list("nonexistent")
+
     def test_get_sections_direct_match(self):
         """Test get_sections with a direct section name match."""
         section = self.cell.get_sections("soma[0]")
@@ -725,6 +736,12 @@ class TestWithinCircuit:
         """Test get_pre_gids within a circuit."""
         pre_gids = self.cell.pre_gids()
         assert pre_gids == [0, 1]
+
+    def test_get_section_list_myelinated(self):
+        """Test get_section_list returns the myelinated sections."""
+        myelinated = self.cell.get_section_list("myelinated")
+        assert len(myelinated) > 0
+        assert all("myelin" in s.name() for s in myelinated)
 
     def test_pre_gid_synapse_ids(self):
         """Test pre_gid_synapse_ids within a circuit."""

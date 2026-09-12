@@ -42,8 +42,13 @@ from bluecellulab.circuit.config.sections import (
 
 logger = logging.getLogger(__name__)
 
-# Mapping from SONATA section list names to Cell property names
+# Mapping from SONATA section list names to SectionList attribute names on
+# the hoc cell object. Covers all section lists defined in the hoc-emodel
+# spec (all, somatic, axonal, basal, apical, myelinated) and neurodamus
+# (AIS, nodal), plus aliases using the NEURON section base names
+# (soma, dend, apic, axon, myelin, ais, node).
 SECTION_LIST_MAP: dict[str, str] = {
+    "all": "all",
     "somatic": "somatic",
     "soma": "somatic",
     "basal": "basal",
@@ -52,6 +57,12 @@ SECTION_LIST_MAP: dict[str, str] = {
     "apic": "apical",
     "axonal": "axonal",
     "axon": "axonal",
+    "myelinated": "myelinated",
+    "myelin": "myelinated",
+    "AIS": "AIS",
+    "ais": "AIS",
+    "nodal": "nodal",
+    "node": "nodal",
 }
 
 
@@ -246,8 +257,8 @@ def _apply_section_list(
             f"{mixed_prefixes}. All statements must reference the same section list '{list_name}'."
         )
 
-    prop_name = SECTION_LIST_MAP.get(list_name)
-    if prop_name is None:
+    section_list_name = SECTION_LIST_MAP.get(list_name)
+    if section_list_name is None:
         raise ValueError(
             f"section_list modification '{mod.name}': unknown section list name '{list_name}'. "
             f"Supported: {list(SECTION_LIST_MAP.keys())}"
@@ -269,13 +280,13 @@ def _apply_section_list(
     for cell_id in target_cell_ids:
         cell = cells[cell_id]
         try:
-            section_list = getattr(cell, prop_name)
+            section_list = cell.get_section_list(section_list_name)
         except AttributeError:
             logger.warning(
-                "section_list '%s': cell %s has no '%s' property, skipping",
+                "section_list '%s': cell %s has no '%s' section list, skipping",
                 mod.name,
                 cell_id,
-                prop_name,
+                section_list_name,
             )
             continue
 
