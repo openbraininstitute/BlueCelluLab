@@ -251,6 +251,36 @@ def test_bpap_get_recordings():
     assert "apic[1]" in apic and apic["apic[1]"] == [-65, -65, -65, -65, -65, -65, -20, -15, -20, -70, -65]
 
 
+def test_bpap_run_replays_holding_current_before_pulse():
+    """The holding replay must cover the 1000 ms pre-stimulus interval."""
+    cell = MagicMock()
+    simulation = MagicMock()
+    holding_stimulus = MagicMock()
+    bpap = BPAP(cell, stim_duration=2.0)
+
+    with (
+        patch("bluecellulab.analysis.analysis.Simulation", return_value=simulation),
+        patch(
+            "bluecellulab.analysis.analysis.Hyperpolarizing",
+            return_value=holding_stimulus,
+        ) as hyperpolarizing,
+    ):
+        bpap.run(duration=1500.0, amplitude=0.8)
+
+    cell.add_step.assert_called_once_with(
+        start_time=1000.0,
+        stop_time=1002.0,
+        level=0.8,
+    )
+    hyperpolarizing.assert_called_once_with(
+        "single-cell",
+        delay=0,
+        duration=1500.0,
+    )
+    cell.add_replay_hypamp.assert_called_once_with(holding_stimulus)
+    simulation.run.assert_called_once_with(1500.0, dt=0.025, cvode=False)
+
+
 def test_bpap_run(mock_cell):
     """Test the run method of the BPAP class."""
     bpap = BPAP(mock_cell)
@@ -443,7 +473,7 @@ def test_plot_one_axis_recordings():
         dist=dummy_dend_dist,
         cmap=bpap.basal_cmap,
     )
-    assert ax.get_xlim() == (-0.1, 30.)
+    assert ax.get_xlim() == (-0.1, 30.0)
     assert ax.get_ylim() == (-72, -8)
     assert len(ax.collections) > 0
     assert ax.collections[-1].colorbar is not None
