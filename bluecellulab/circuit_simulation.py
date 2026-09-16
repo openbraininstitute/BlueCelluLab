@@ -59,7 +59,7 @@ from bluecellulab.stimulus.circuit_stimulus_definitions import (
     ShotNoise,
 )
 import bluecellulab.stimulus.circuit_stimulus_definitions as circuit_stimulus_definitions
-from bluecellulab.exceptions import BluecellulabError
+from bluecellulab.exceptions import BluecellulabError, SectionDoesNotExistError
 from bluecellulab.simulation import (
     set_global_condition_parameters,
 )
@@ -283,6 +283,8 @@ class CircuitSimulation:
 
         # convert to CellId objects
         cell_ids: list[CellId] = create_cell_ids(cells)
+        # virtual populations cannot be instantiated as biophysical cells
+        cell_ids = self._filter_out_virtual_cells(cell_ids)
         if intersect_pre_gids is not None:
             pre_gids: Optional[list[CellId]] = create_cell_ids(intersect_pre_gids)
         else:
@@ -610,19 +612,43 @@ class CircuitSimulation:
                 f"No presynaptic cells found for gid {cell_id}, no synapses added"
             )
         else:
+            n_added = 0
+            skipped_section_ids: set[int] = set()
             for idx, syn_description in syn_descriptions.iterrows():
                 popids = (
                     syn_description["source_popid"],
                     syn_description["target_popid"],
                 )
-                self._instantiate_synapse(
-                    cell_id=cell_id,
-                    syn_id=idx,  # type: ignore
-                    syn_description=syn_description,
-                    add_minis=add_minis,
-                    popids=popids,
+                try:
+                    self._instantiate_synapse(
+                        cell_id=cell_id,
+                        syn_id=idx,  # type: ignore
+                        syn_description=syn_description,
+                        add_minis=add_minis,
+                        popids=popids,
+                    )
+                except SectionDoesNotExistError as e:
+                    # Synapse targets a section that is absent from the
+                    # instantiated cell (typically on the replaced axon).
+                    # neurodamus skips these too, see Connection.add_synapses:
+                    # "We may need to skip invalid synapses (e.g. on Axon)".
+                    skipped_section_ids.add(e.section_id)
+                    logger.debug(
+                        f"Skipped synapse {idx} for gid {cell_id}: {e}"
+                    )
+                else:
+                    n_added += 1
+
+            n_skipped = len(syn_descriptions) - n_added
+            if n_skipped:
+                logger.warning(
+                    f"Skipped {n_skipped}/{len(syn_descriptions)} synapse(s) for "
+                    f"gid {cell_id} targeting {len(skipped_section_ids)} section(s) "
+                    "that do not exist on the instantiated cell "
+                    f"(section ids {sorted(skipped_section_ids)}). These sections "
+                    "were most likely removed when the axon was replaced by a stub."
                 )
-            logger.info(f"Added {syn_descriptions} synapses for gid {cell_id}")
+            logger.info(f"Added {n_added} synapses for gid {cell_id}")
             if add_minis:
                 logger.info(f"Added minis for {cell_id=}")
 
@@ -868,6 +894,42 @@ class CircuitSimulation:
 
             if len(self.cells[post_gid].connections) > 0:
                 logger.debug(f"Added synaptic connections for target {post_gid}")
+
+    def _filter_out_virtual_cells(self, cell_ids: list[CellId]) -> list[CellId]:
+        """Drop cell ids that belong to virtual node populations.
+
+        Virtual populations have no morphology, no emodel template and no
+        ``dynamics_params``, so they cannot be instantiated as biophysical
+        cells. Attempting to do so previously raised
+        ``KeyError: '@dynamics:threshold_current'``.
+
+        This mirrors neurodamus, where ``CircuitManager.new_node_manager``
+        returns a lightweight ``VirtualCellPopulation`` and never reads node
+        data for virtual populations. The cells are still fully usable as
+        presynaptic sources for synapses and spike replay, which is handled
+        through the edge populations rather than through ``Cell`` objects.
+        """
+        is_virtual = getattr(self.circuit_access, "is_virtual_population", None)
+        if is_virtual is None:  # circuit access without virtual support
+            return cell_ids
+
+        real_cell_ids: list[CellId] = []
+        virtual_populations: set[str] = set()
+        for cell_id in cell_ids:
+            if is_virtual(cell_id.population_name) is True:
+                virtual_populations.add(cell_id.population_name)
+            else:
+                real_cell_ids.append(cell_id)
+
+        if virtual_populations:
+            n_skipped = len(cell_ids) - len(real_cell_ids)
+            logger.warning(
+                f"Skipping {n_skipped} cell(s) belonging to virtual node "
+                f"population(s) {sorted(virtual_populations)}: virtual cells "
+                "are not instantiated, they are only used as synapse / spike "
+                "replay sources."
+            )
+        return real_cell_ids
 
     def _add_cells(self, cell_ids: list[CellId]) -> None:
         """Instantiate cells from a gid list."""

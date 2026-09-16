@@ -45,6 +45,18 @@ class MissingSonataPropertyError(BluecellulabError):
     """Raise when a property is missing from SONATA."""
 
 
+class SectionDoesNotExistError(BluecellulabError):
+    """Raise when a section id cannot be resolved on the instantiated cell.
+
+    Typically happens for synapses that target sections removed while
+    building the cell, e.g. the axon replaced by a stub in ``replace_axon()``.
+    """
+
+    def __init__(self, section_id: int, message: str = ""):
+        self.section_id = section_id
+        super().__init__(message or f"Section id {section_id} does not exist on the cell.")
+
+
 class ExtraDependencyMissingError(BluecellulabError):
     """Raise when an extra dependency is missing."""
 

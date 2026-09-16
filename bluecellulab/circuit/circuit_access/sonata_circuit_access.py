@@ -63,7 +63,33 @@ class SonataCircuitAccess(CircuitAccess):
     def available_cell_properties(self) -> set:
         return self._circuit.nodes.property_names
 
+    def is_virtual_population(self, population_name: str) -> bool:
+        """Return True if the SONATA node population is virtual.
+
+        Virtual populations (e.g. afferent spike sources) carry no
+        morphology, no emodel template and no ``dynamics_params`` group. Per
+        the SONATA spec, ``threshold_current`` / ``holding_current`` are
+        mandatory only for the *biophysical* node group.
+
+        Following neurodamus, virtual populations must never be instantiated
+        as biophysical cells; they only serve as synapse / spike-replay
+        sources. See ``CircuitManager.new_node_manager``, which returns a
+        ``VirtualCellPopulation`` before any node data is read.
+        """
+        try:
+            return self._circuit.nodes[population_name].type == "virtual"
+        except (KeyError, BluepySnapError, AttributeError):
+            # Unknown population, or a snap version without a `type` field:
+            # fall back to treating it as a regular (non-virtual) population.
+            return False
+
     def get_emodel_properties(self, cell_id: CellId) -> Optional[EmodelProperties]:
+        # Virtual cells have no emodel at all - neurodamus never reads node
+        # dynamics for them (io/cell_readers.py is only reached for real
+        # populations), so there is nothing to return here.
+        if self.is_virtual_population(cell_id.population_name):
+            return None
+
         cell_properties = self._circuit.nodes[cell_id.population_name].get(cell_id.id)
         if "@dynamics:AIS_scaler" in cell_properties:
             AIS_scaler = cell_properties["@dynamics:AIS_scaler"]
@@ -74,9 +100,30 @@ class SonataCircuitAccess(CircuitAccess):
         else:
             soma_scaler = 1.0
 
+        # neurodamus treats threshold/holding currents as optional and falls
+        # back to 0.0 when the population has no such dynamics attributes
+        # (io/cell_readers.py sets them to None, metype.py substitutes 0.0).
+        # Mirror that instead of raising a KeyError.
+        if "@dynamics:threshold_current" in cell_properties:
+            threshold_current = cell_properties["@dynamics:threshold_current"]
+        else:
+            threshold_current = 0.0
+            logger.warning(
+                f"'@dynamics:threshold_current' not found for {cell_id}, "
+                "defaulting to 0.0"
+            )
+        if "@dynamics:holding_current" in cell_properties:
+            holding_current = cell_properties["@dynamics:holding_current"]
+        else:
+            holding_current = 0.0
+            logger.warning(
+                f"'@dynamics:holding_current' not found for {cell_id}, "
+                "defaulting to 0.0"
+            )
+
         return EmodelProperties(
-            cell_properties["@dynamics:threshold_current"],
-            cell_properties["@dynamics:holding_current"],
+            threshold_current,
+            holding_current,
             AIS_scaler,
             soma_scaler,
         )

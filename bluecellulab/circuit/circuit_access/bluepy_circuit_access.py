@@ -76,6 +76,10 @@ class BluepyCircuitAccess(CircuitAccess):
         """Return the emodel info for a gid."""
         return self._bluepy_circuit.emodels.get_mecombo_info(gid)
 
+    def is_virtual_population(self, population_name: str) -> bool:
+        """Legacy (non-SONATA) circuits have no virtual node populations."""
+        return False
+
     def get_emodel_properties(self, cell_id: CellId) -> Optional[EmodelProperties]:
         """Get emodel_properties either from node properties or mecombo tsv."""
         gid = cell_id.id
