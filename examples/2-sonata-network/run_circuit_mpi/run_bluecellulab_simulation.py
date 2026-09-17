@@ -536,11 +536,18 @@ def get_instantiate_gids_params(
                     params["add_minis"] = True
                     break
 
-    # Check for spike replay in inputs
+    # Check for spike replay in inputs.
+    # NOTE: a SONATA "synapse_replay" input is applied by bluecellulab through
+    # the stimuli path (Cell.add_synapse_replay), reading the spike file named
+    # by that input. It must NOT enable instantiate_gids(add_replay=True),
+    # which is a different feature: replaying the spike output of a previous
+    # large-scale simulation from <output_dir>/<spikes_file>. Setting it here
+    # made every config with a synapse_replay input fail with
+    # "Unable to open file .../output/spikes.h5".
+    # Synapses are still required for the replay to land on something.
     if "inputs" in simulation_config_data:
         for input_def in simulation_config_data["inputs"].values():
             if input_def.get("module") == "synapse_replay":
-                params["add_replay"] = True
                 params["add_synapses"] = True
                 break
 

@@ -23,7 +23,7 @@ import numpy as np
 import pandas as pd
 
 import bluecellulab
-from bluecellulab.exceptions import BluecellulabError
+from bluecellulab.exceptions import BluecellulabError, SectionDoesNotExistError
 from bluecellulab.synapse import Synapse, GabaabSynapse, AmpanmdaSynapse, GluSynapse, Exp2Syn
 from bluecellulab.circuit.config.sections import Conditions
 from bluecellulab.circuit.synapse_properties import SynapseProperties, SynapseProperty
@@ -115,9 +115,28 @@ class SynapseFactory:
 
     @classmethod
     def determine_synapse_location(cls, syn_description: pd.Series, cell: bluecellulab.Cell) -> SynapseHocArgs:
-        """Returns the location of the synapse."""
+        """Returns the location of the synapse.
+
+        Raises:
+            SectionDoesNotExistError: if the section the synapse targets is
+                not present on the instantiated cell. This happens for
+                synapses placed on sections that were removed while building
+                the cell, most commonly the axon replaced by a stub in the
+                emodel's ``replace_axon()``. Callers are expected to skip
+                such synapses, as neurodamus does.
+        """
         isec = int(syn_description[SynapseProperty.POST_SECTION_ID])  # numpy int to int
-        section: NeuronSection = cell.get_psection(section_id=isec).hsection
+        try:
+            section: NeuronSection = cell.get_psection(section_id=isec).hsection
+        except KeyError as e:
+            # The morphology declared this section (it is within nSecAll) but
+            # it no longer exists on the instantiated cell.
+            raise SectionDoesNotExistError(
+                isec,
+                f"Synapse targets section id {isec}, which does not exist on "
+                f"cell {cell.cell_id}. The section was most likely removed "
+                "when the axon was replaced by a stub.",
+            ) from e
 
         # old circuits don't have it, it needs to be computed via synlocation_to_segx
         if (SynapseProperty.AFFERENT_SECTION_POS in syn_description and

@@ -76,6 +76,13 @@ class CircuitAccess(Protocol):
     def available_cell_properties(self) -> set:
         raise NotImplementedError
 
+    def is_virtual_population(self, population_name: str) -> bool:
+        """Return True if the node population is virtual.
+
+        Virtual populations have no morphology and no emodel.
+        """
+        raise NotImplementedError
+
     def get_emodel_properties(self, cell_id: CellId) -> Optional[EmodelProperties]:
         raise NotImplementedError
 

@@ -25,6 +25,30 @@ logger = logging.getLogger(__name__)
 X, Y, R = 0, 1, 3
 
 
+_KNOWN_MORPHOLOGY_EXTENSIONS = (".h5", ".asc", ".swc")
+
+
+def _split_container_entry_name(relative_path: str) -> tuple[str, str]:
+    """Split a bare H5-container entry name into ``(name, extension)``.
+
+    Container entry names are not filesystem paths: they frequently contain
+    literal dots (e.g. from a ``_Scale_x1.000_y0.950_z1.000_`` suffix), so
+    splitting on the *last* dot the way ``os.path.splitext`` does would
+    mangle them (e.g. ``dend-..._Clone_0`` gets truncated to
+    ``dend-..._Clone_0.000_-_Clone_0`` style breakage). Instead, only strip
+    a trailing extension when it matches one of the known morphology
+    extensions; otherwise the whole entry name is returned as-is with an
+    empty extension, which is the common case for container entries that
+    carry no extension at all.
+    """
+    lower = relative_path.lower()
+    for ext in _KNOWN_MORPHOLOGY_EXTENSIONS:
+        if lower.endswith(ext):
+            split_idx = len(relative_path) - len(ext)
+            return relative_path[:split_idx], relative_path[split_idx:]
+    return relative_path, ""
+
+
 def split_morphology_path(morphology_path):
     """Split a morphology path into collection directory, name, and extension.
 
@@ -35,7 +59,10 @@ def split_morphology_path(morphology_path):
       extension.
     - **H5 container entry** (path does not exist on disk): walks up via
       ``os.path.dirname`` until an existing filesystem entry (the container)
-      is found, then derives the cell name and extension relative to it.
+      is found, then derives the cell name and extension relative to it
+      using :func:`_split_container_entry_name` (not ``os.path.splitext``,
+      since container entry names may contain dots that are not part of an
+      extension, e.g. ``dend-..._Scale_x1.000_y0.950_z1.000_-_Clone_0``).
 
     Args:
         morphology_path: Path to a morphology file, or to a cell entry
@@ -62,7 +89,8 @@ def split_morphology_path(morphology_path):
             raise BluecellulabError("Failed to split path.")
         collection_path = os.path.dirname(collection_path)
 
-    morph_name, morph_ext = os.path.splitext(os.path.relpath(morphology_path, collection_path))
+    relative_path = os.path.relpath(morphology_path, collection_path)
+    morph_name, morph_ext = _split_container_entry_name(relative_path)
 
     return collection_path, morph_name, morph_ext
 
