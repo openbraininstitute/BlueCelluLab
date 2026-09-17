@@ -200,8 +200,13 @@ class TestFilterOutVirtualCells:
         simulation = self._simulation()
         assert simulation._filter_out_virtual_cells([]) == []
 
-    def test_circuit_access_without_virtual_support_is_passed_through(self):
-        """Custom CircuitAccess implementations need not provide the method."""
+    def test_circuit_access_missing_the_method_raises(self):
+        """``is_virtual_population`` is part of the CircuitAccess protocol.
+
+        Every implementation (Bluepy, SONATA) provides it, so a
+        circuit_access object missing it is a programming error and should
+        surface as such rather than being silently tolerated.
+        """
         from bluecellulab.circuit_simulation import CircuitSimulation
 
         simulation = CircuitSimulation.__new__(CircuitSimulation)
@@ -211,7 +216,8 @@ class TestFilterOutVirtualCells:
 
         simulation.circuit_access = MinimalCircuitAccess()
         cell_ids = [CellId(VIRTUAL_POP, 0), CellId(BIOPHYSICAL_POP, 0)]
-        assert simulation._filter_out_virtual_cells(cell_ids) == cell_ids
+        with pytest.raises(AttributeError):
+            simulation._filter_out_virtual_cells(cell_ids)
 
 
 def test_bluepy_circuit_access_has_no_virtual_populations():

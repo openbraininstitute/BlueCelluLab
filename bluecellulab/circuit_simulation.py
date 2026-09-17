@@ -909,14 +909,10 @@ class CircuitSimulation:
         presynaptic sources for synapses and spike replay, which is handled
         through the edge populations rather than through ``Cell`` objects.
         """
-        is_virtual = getattr(self.circuit_access, "is_virtual_population", None)
-        if is_virtual is None:  # circuit access without virtual support
-            return cell_ids
-
         real_cell_ids: list[CellId] = []
         virtual_populations: set[str] = set()
         for cell_id in cell_ids:
-            if is_virtual(cell_id.population_name) is True:
+            if self.circuit_access.is_virtual_population(cell_id.population_name):
                 virtual_populations.add(cell_id.population_name)
             else:
                 real_cell_ids.append(cell_id)
