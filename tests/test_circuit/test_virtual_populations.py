@@ -101,12 +101,13 @@ class TestGetEmodelPropertiesDefaults:
 
     def _circuit_access_returning(self, properties: pd.Series) -> SonataCircuitAccess:
         circuit_access = SonataCircuitAccess(hipp_circuit_with_projections)
-        # Replace the snap circuit so `nodes[pop].get(id)` yields our series,
-        # and make sure the population is not treated as virtual.
+        # Replace the snap circuit so `nodes[pop].get(id)` yields our series.
+        # `type` is set explicitly so the population is not treated as virtual.
         mocked_circuit = MagicMock()
-        mocked_circuit.nodes.__getitem__.return_value.get.return_value = properties
+        mocked_population = mocked_circuit.nodes.__getitem__.return_value
+        mocked_population.get.return_value = properties
+        mocked_population.type = "biophysical"
         circuit_access._circuit = mocked_circuit
-        circuit_access.is_virtual_population = lambda _population_name: False
         return circuit_access
 
     def test_missing_currents_default_to_zero(self, caplog):
