@@ -10,6 +10,42 @@ from multiprocessing import pool
 import numpy as np
 
 
+_MISSING_SETTING = object()
+
+
+@contextlib.contextmanager
+def efel_settings(settings: dict | None = None):
+    """Temporarily apply eFEL settings and restore the previous values.
+
+    eFEL settings are process-global, so leaving them modified makes later
+    feature extractions depend on execution order. This context manager
+    snapshots every setting it changes and restores it on exit, including when
+    the body raises.
+
+    Args:
+        settings: Mapping of eFEL setting names to values. ``None`` or an empty
+            mapping applies nothing and still restores cleanly.
+    """
+    import efel
+
+    settings = settings or {}
+    current = efel.get_settings()
+    previous = {
+        key: getattr(current, key, _MISSING_SETTING) for key in settings
+    }
+    try:
+        for key, value in settings.items():
+            efel.set_setting(key, value)
+        yield
+    finally:
+        for key, previous_value in previous.items():
+            if previous_value is _MISSING_SETTING:
+                if hasattr(current, key):
+                    delattr(current, key)
+            else:
+                efel.set_setting(key, previous_value)
+
+
 def run_once(func):
     """A decorator to ensure a function is only called once."""
 

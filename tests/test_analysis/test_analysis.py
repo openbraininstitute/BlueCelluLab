@@ -228,6 +228,17 @@ def test_bpap_init_and_properties():
     assert bpap.end_index == int((1000 + 5) / 0.025)
 
 
+@pytest.mark.parametrize("stim_duration", [0.0, -1.0, float("nan"), float("inf")])
+def test_bpap_rejects_invalid_stim_duration(stim_duration):
+    with pytest.raises(ValueError):
+        BPAP(DummyCell(), stim_duration=stim_duration)
+
+
+def test_bpap_rejects_non_numeric_stim_duration():
+    with pytest.raises(TypeError):
+        BPAP(DummyCell(), stim_duration="5")
+
+
 def test_bpap_get_recordings():
     """Test the get_recordings method of the BPAP class."""
     cell = DummyCell()
@@ -351,10 +362,21 @@ def test_validate(mock_bpap_amplitude_distance):
         "relative to soma.\nApical validation passed: apical amplitude is decaying with distance "
         "relative to soma.\n"
     )
-    # empty data: validated is True, but we have some logging in notes
+    # empty data: nothing could be assessed, so this must not pass
     validated, notes = bpap.validate([100], None, None, None, None)
+    assert validated is False
+    assert notes == (
+        "No dendritic recordings found.\nNo apical recordings found.\n"
+        "Validation failed: no dendritic or apical recordings were available, "
+        "so back-propagation could not be assessed.\n"
+    )
+    # a single assessed branch is enough to reach a verdict
+    validated, notes = bpap.validate(
+        [100], mock_bpap_amplitude_distance[1], mock_bpap_amplitude_distance[2], None, None
+    )
     assert validated is True
-    assert notes == "No dendritic recordings found.\nNo apical recordings found.\n"
+    assert "No apical recordings found." in notes
+    assert "could not be assessed" not in notes
     # bad data: validated is False, and we have some logging in notes
     validated, notes = bpap.validate([100], [110, 120], [10, 20], [110, 120], [10, 20])
     assert validated is False
@@ -369,10 +391,14 @@ def test_validate(mock_bpap_amplitude_distance):
         "relative to soma.\nApical validation passed: apical amplitude is decaying with distance "
         "relative to soma.\n"
     )
-    # empty data: validated is True, but we have some logging in notes
+    # empty data: nothing could be assessed, so this must not pass
     validated, notes = bpap.validate([100], None, None, None, None, validate_with_fit=False)
-    assert validated is True
-    assert notes == "No dendritic recordings found.\nNo apical recordings found.\n"
+    assert validated is False
+    assert notes == (
+        "No dendritic recordings found.\nNo apical recordings found.\n"
+        "Validation failed: no dendritic or apical recordings were available, "
+        "so back-propagation could not be assessed.\n"
+    )
     # bad data: validated is False, and we have some logging in notes
     validated, notes = bpap.validate([100], [110, 120], [10, 20], [110, 120], [10, 20], validate_with_fit=False)
     assert validated is False
