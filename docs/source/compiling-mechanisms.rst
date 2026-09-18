@@ -5,6 +5,50 @@ Welcome to a brief tutorial on compiling mechanisms in BlueCelluLab!
 
 In order to facilitate smooth simulations with this tool, one must navigate through specific steps, especially given its dependency on the NEURON simulator. This guide aims to detail the necessary steps and considerations for compiling neuron mechanisms in BlueCelluLab.
 
+Automatic Compilation for SONATA Circuits
+------------------------------------------
+
+When you load a SONATA circuit via :class:`bluecellulab.CircuitSimulation`, BlueCelluLab will
+automatically discover and compile the circuit's MOD files, so in most cases you do **not** need
+to run ``nrnivmodl`` yourself.
+
+This works by reading the ``mechanisms_dir`` declared under ``components`` in the circuit's
+``circuit_config.json`` (see the `SONATA config documentation
+<https://sonata-extension.readthedocs.io/en/latest/sonata_config.html>`_):
+
+.. code-block:: json
+
+   {
+       "components": {
+           "mechanisms_dir": "/path/to/mod/files"
+       }
+   }
+
+If a ``mechanisms_dir`` is found, BlueCelluLab gathers the ``.mod`` files it contains, and compiles
+them with ``nrnivmodl`` into a shared library that is loaded automatically before any cell is
+instantiated. The compiled library is cached (keyed by the content of the mod files and the
+compilation options) under ``~/.cache/bluecellulab/mods/`` by default, so subsequent runs against
+the same circuit reuse the compiled library instead of recompiling. The cache directory can be
+relocated with the ``BLUECELLULAB_MOD_BUILD_DIR`` environment variable. ``BLUECELLULAB_MOD_LIBRARY_PATH``
+(described below) still takes precedence over this automatic behavior, if set.
+
+If two processes attempt to compile the same circuit's mod files at the same time (e.g. multiple
+MPI ranks, or parallel workers), the first one to start compiling wins and the others wait for it
+to finish and reuse the result, rather than racing on ``nrnivmodl``.
+
+This automatic behavior is scoped to SONATA circuits declaring a ``mechanisms_dir``. If the
+circuit config does not declare one, or if you are working with a bare :class:`bluecellulab.Cell`
+outside of a circuit (e.g. single-cell examples), the manual workflow described below still
+applies.
+
+Note that, like any NEURON mechanism library, mod files can only be loaded once per Python
+process. If your workflow instantiates more than one :class:`bluecellulab.CircuitSimulation` for
+*different* circuits in the same process, only the mod files from whichever circuit is loaded
+first will take effect; BlueCelluLab logs a warning if it detects this situation.
+
+Manual Compilation (non-SONATA / single-cell workflows)
+---------------------------------------------------------
+
 Importance of the Working Directory
 -----------------------------------
 
@@ -56,12 +100,16 @@ Replace ``"YOUR/DIRECTORY/x86_64"`` with the path to your specific compiled mech
 Important Note on Path Specification
 ------------------------------------
 
-Be mindful to adhere to the condition that **either** the current working directory should contain the compiled mechanisms **or** the ``BLUECELLULAB_MOD_LIBRARY_PATH`` environment variable should be set—**not both**. Setting the environment variable and importing BlueCelluLab from a directory containing (e.g.) an "x86_64" folder results in an error.
+Be mindful to adhere to the condition that **either** the current working directory should contain the compiled mechanisms **or** the ``BLUECELLULAB_MOD_LIBRARY_PATH`` environment variable should be set—**not both**. Setting the environment variable and importing BlueCelluLab from a directory containing (e.g.) an "x86_64" folder results in an error. The same restriction applies when loading a SONATA circuit that declares a ``mechanisms_dir``: it cannot be combined with an ``x86_64`` folder in the current working directory either.
 
-In summary:
+In summary, BlueCelluLab resolves mechanisms in the following order:
 
-- Ensure your working directory is aptly considered when utilizing BlueCelluLab and NEURON.
-- Employ ``nrnivmodl`` for mechanism compilation and verify the resultant architecture-specific folder.
-- Opt between utilizing the working directory or the ``BLUECELLULAB_MOD_LIBRARY_PATH`` for mechanism location, observing the necessity to avoid using both simultaneously.
+1. ``BLUECELLULAB_MOD_LIBRARY_PATH``, if set (explicit override, works for any workflow).
+2. For SONATA circuits with a declared ``mechanisms_dir``: automatic discovery, compilation and
+   caching, as described above.
+3. An architecture-specific folder ("x86_64", etc.) in the current working directory, for manual
+   ``nrnivmodl`` workflows.
+
+Only one of these should apply at a time; combining them raises an error.
 
 May your simulations run smoothly with BlueCelluLab!

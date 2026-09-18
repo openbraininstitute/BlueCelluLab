@@ -16,19 +16,38 @@
 import importlib_resources as resources
 import logging
 import os
+from pathlib import Path
 from types import ModuleType
+from typing import Optional
 
 import neuron
 
 from bluecellulab.exceptions import BluecellulabError
+from bluecellulab.mod_compilation import ModCompilationError, compile_mechanisms
 from bluecellulab.utils import CaptureOutput, run_once
 
 
 logger = logging.getLogger(__name__)
 
 
-def import_mod_lib(neuron: ModuleType) -> str:
-    """Import mod files."""
+def import_mod_lib(
+    neuron: ModuleType, mechanisms_dirs: Optional[list[Path]] = None
+) -> str:
+    """Import mod files.
+
+    Resolution order:
+    1. ``BLUECELLULAB_MOD_LIBRARY_PATH`` env var, if set (explicit override).
+    2. `mechanisms_dirs` (e.g. a SONATA circuit's ``mechanisms_dir``), if not
+       ``None``: the mod files found there, plus BlueCelluLab's own bundled
+       "technical" mod files (see `bluecellulab.mod_compilation`), are
+       compiled (or a cached compilation is reused) and the resulting
+       library is loaded. Note this branch is taken whenever a SONATA
+       circuit is loaded, even if it declares no `mechanisms_dir` of its own
+       (i.e. `mechanisms_dirs == []`), since BlueCelluLab's own mod files
+       still need to be compiled and loaded in that case.
+    3. An ``x86_64`` folder in the current working directory, for manual
+       ``nrnivmodl`` workflows (e.g. single-cell, non-SONATA usage).
+    """
     res = ""
     if 'BLUECELLULAB_MOD_LIBRARY_PATH' in os.environ:
         # Check if the current directory contains 'x86_64'.
@@ -43,6 +62,25 @@ def import_mod_lib(neuron: ModuleType) -> str:
         else:
             neuron.load_mechanisms(mod_lib_path)
         res = mod_lib_path
+    elif mechanisms_dirs is not None:
+        if os.path.isdir('x86_64'):
+            raise BluecellulabError(
+                "A SONATA circuit is being loaded and the current"
+                " directory contains an x86_64 folder. Please remove the"
+                " x86_64 folder, or load mechanisms manually via"
+                " BLUECELLULAB_MOD_LIBRARY_PATH instead."
+            )
+
+        try:
+            libnrnmech = compile_mechanisms(mechanisms_dirs)
+        except ModCompilationError as e:
+            raise BluecellulabError(f"Failed to compile circuit mod files: {e}") from e
+
+        if libnrnmech is None:
+            res = "No mechanisms are loaded."
+        else:
+            neuron.h.nrn_load_dll(str(libnrnmech))
+            res = str(libnrnmech)
     elif os.path.isdir('x86_64'):
         # NEURON 8.* automatically load these mechamisms
         res = os.path.abspath('x86_64')
@@ -102,11 +140,43 @@ def print_header(neuron: ModuleType, mod_lib_path: str) -> None:
 
 
 @run_once
-def _load_mod_files() -> None:
-    """Import hoc and mod files."""
+def _load_mod_files(mechanisms_dirs: Optional[list[Path]] = None) -> None:
+    """Import hoc and mod files.
+
+    NEURON only allows mechanisms to be loaded once per process, so this is
+    guarded with `run_once`: only the first call (whichever happens first)
+    actually loads anything, later calls are no-ops. `mechanisms_dirs` is
+    only meaningful on that first call.
+    """
     logger.debug("Loading the mod files.")
-    mod_lib_paths = import_mod_lib(neuron)
+    mod_lib_paths = import_mod_lib(neuron, mechanisms_dirs)
+    _load_mod_files.loaded_with = mechanisms_dirs
     print_header(neuron, mod_lib_paths)
+
+
+_load_mod_files.loaded_with = None
+
+
+def load_mod_files_for_circuit(mechanisms_dirs: Optional[list[Path]]) -> None:
+    """Load mod files declared by a circuit (e.g. SONATA `mechanisms_dir`).
+
+    If mod files were already loaded earlier in this process with a
+    different set of directories, logs a warning: NEURON does not support
+    swapping out mechanisms once loaded, so the earlier set stays in effect.
+    """
+    if (
+        _load_mod_files.has_run
+        and mechanisms_dirs
+        and mechanisms_dirs != _load_mod_files.loaded_with
+    ):
+        logger.warning(
+            "Mod files were already loaded (with %s) earlier in this process;"
+            " the requested mechanisms_dirs %s cannot also be loaded."
+            " NEURON only supports loading mechanisms once per process.",
+            _load_mod_files.loaded_with,
+            mechanisms_dirs,
+        )
+    _load_mod_files(mechanisms_dirs)
 
 
 def load_mod_files(func):

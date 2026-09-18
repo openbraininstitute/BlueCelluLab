@@ -61,8 +61,8 @@ class SonataCircuitAccess(CircuitAccess):
             self.config = simulation_config
         else:
             self.config = SonataSimulationConfig(simulation_config)
-        circuit_config = self.config.impl.config["network"]
-        self._circuit = SnapCircuit(circuit_config)
+        self.circuit_config_path = self.config.impl.config["network"]
+        self._circuit = SnapCircuit(self.circuit_config_path)
         self.helper_dirs: tuple[str, ...] = self._circuit_helper_dirs()
         self._warned_edge_populations: set[str] = set()
         self._helper_fields_cache: dict[tuple[str, tuple[str, ...]], list[str]] = {}
