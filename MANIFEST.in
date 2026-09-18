@@ -1,4 +1,5 @@
 recursive-include bluecellulab/hoc *.hoc
 recursive-include bluecellulab/cell/ballstick *.asc *.hoc
+recursive-include bluecellulab/data/mod *.mod
 recursive-exclude examples *
 recursive-exclude tests *

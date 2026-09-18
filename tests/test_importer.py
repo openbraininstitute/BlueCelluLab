@@ -19,6 +19,7 @@ from types import ModuleType
 from unittest.mock import MagicMock, patch
 from bluecellulab import importer
 from bluecellulab.exceptions import BluecellulabError
+from bluecellulab.mod_compilation import ModCompilationError
 
 
 @patch("os.path.isdir", return_value=False)  # when x86_64 isdir returns False
@@ -64,6 +65,103 @@ def test_import_mod_lib_no_env_with_folder():
             assert importer.import_mod_lib(mock_neuron).endswith("x86_64")
 
 
+def test_import_mod_lib_mechanisms_dirs_compiles_and_loads():
+    """When mechanisms_dirs is given (and no env var), compile + load it."""
+    mock_neuron = MagicMock()
+    mechanisms_dirs = [Path("/fake/mod")]
+    with patch.dict(os.environ, {}, clear=True):
+        with patch("os.path.isdir", return_value=False):
+            with patch(
+                "bluecellulab.importer.compile_mechanisms",
+                return_value=Path("/fake/build/x86_64/libnrnmech.so"),
+            ) as mocked_compile:
+                res = importer.import_mod_lib(mock_neuron, mechanisms_dirs)
+
+    mocked_compile.assert_called_once_with(mechanisms_dirs)
+    mock_neuron.h.nrn_load_dll.assert_called_with("/fake/build/x86_64/libnrnmech.so")
+    assert res == "/fake/build/x86_64/libnrnmech.so"
+
+
+def test_import_mod_lib_mechanisms_dirs_no_mods_found():
+    """compile_mechanisms returning None (no mechanisms_dir mods) is handled."""
+    mock_neuron = MagicMock()
+    mechanisms_dirs = [Path("/fake/mod")]
+    with patch.dict(os.environ, {}, clear=True):
+        with patch("os.path.isdir", return_value=False):
+            with patch("bluecellulab.importer.compile_mechanisms", return_value=None):
+                res = importer.import_mod_lib(mock_neuron, mechanisms_dirs)
+
+    assert res == "No mechanisms are loaded."
+    mock_neuron.h.nrn_load_dll.assert_not_called()
+
+
+def test_import_mod_lib_empty_mechanisms_dirs_still_compiles():
+    """A SONATA circuit with no `mechanisms_dir` of its own (empty list, not
+    None) still triggers compilation, since BlueCelluLab's own bundled mod
+    files still need to be compiled/loaded."""
+    mock_neuron = MagicMock()
+    with patch.dict(os.environ, {}, clear=True):
+        with patch("os.path.isdir", return_value=False):
+            with patch(
+                "bluecellulab.importer.compile_mechanisms",
+                return_value=Path("/fake/build/x86_64/libnrnmech.so"),
+            ) as mocked_compile:
+                res = importer.import_mod_lib(mock_neuron, [])
+
+    mocked_compile.assert_called_once_with([])
+    assert res == "/fake/build/x86_64/libnrnmech.so"
+
+
+def test_import_mod_lib_none_mechanisms_dirs_skips_compile_path():
+    """`mechanisms_dirs=None` (no SONATA circuit at all) takes the manual
+    x86_64/no-mechanisms fallback instead of compiling anything."""
+    mock_neuron = MagicMock()
+    with patch.dict(os.environ, {}, clear=True):
+        with patch("os.path.isdir", return_value=False):
+            with patch("bluecellulab.importer.compile_mechanisms") as mocked_compile:
+                res = importer.import_mod_lib(mock_neuron, None)
+
+    mocked_compile.assert_not_called()
+    assert res == "No mechanisms are loaded."
+
+
+def test_import_mod_lib_mechanisms_dirs_and_x86_64_folder_raises():
+    """Circuit-driven mods and a manual x86_64 folder can't coexist."""
+    mock_neuron = MagicMock()
+    mechanisms_dirs = [Path("/fake/mod")]
+    with patch.dict(os.environ, {}, clear=True):
+        with patch("os.path.isdir", return_value=True):
+            with pytest.raises(BluecellulabError, match="SONATA circuit"):
+                importer.import_mod_lib(mock_neuron, mechanisms_dirs)
+
+
+def test_import_mod_lib_mechanisms_dirs_compile_error_wrapped():
+    """A ModCompilationError from compilation is wrapped as BluecellulabError."""
+    mock_neuron = MagicMock()
+    mechanisms_dirs = [Path("/fake/mod")]
+    with patch.dict(os.environ, {}, clear=True):
+        with patch("os.path.isdir", return_value=False):
+            with patch(
+                "bluecellulab.importer.compile_mechanisms",
+                side_effect=ModCompilationError("boom"),
+            ):
+                with pytest.raises(BluecellulabError, match="Failed to compile circuit mod files"):
+                    importer.import_mod_lib(mock_neuron, mechanisms_dirs)
+
+
+def test_import_mod_lib_env_var_takes_precedence_over_mechanisms_dirs():
+    """The env var override wins even if mechanisms_dirs is also given."""
+    mock_neuron = MagicMock()
+    mechanisms_dirs = [Path("/fake/mod")]
+    with patch.dict(os.environ, {"BLUECELLULAB_MOD_LIBRARY_PATH": "/fake/path"}):
+        with patch("os.path.isdir", return_value=False):
+            with patch("bluecellulab.importer.compile_mechanisms") as mocked_compile:
+                res = importer.import_mod_lib(mock_neuron, mechanisms_dirs)
+
+    mocked_compile.assert_not_called()
+    assert res == "/fake/path"
+
+
 @patch.object(
     importer.resources,
     "files",
@@ -102,6 +200,49 @@ def test_print_header_with_decorator(caplog):
         x()
 
     assert caplog.text.count("Loading the mod files.") == 1
+
+
+class TestLoadModFilesForCircuit:
+    """Tests for `load_mod_files_for_circuit`, isolating the module-level
+    `run_once` state of `_load_mod_files` between tests."""
+
+    def setup_method(self):
+        importer._load_mod_files.has_run = False
+        importer._load_mod_files.loaded_with = None
+
+    def teardown_method(self):
+        importer._load_mod_files.has_run = False
+        importer._load_mod_files.loaded_with = None
+
+    def test_first_call_loads_with_given_dirs(self):
+        mechanisms_dirs = [Path("/fake/mod")]
+        with patch("bluecellulab.importer.import_mod_lib", return_value="loaded") as mocked:
+            importer.load_mod_files_for_circuit(mechanisms_dirs)
+
+        mocked.assert_called_once_with(importer.neuron, mechanisms_dirs)
+        assert importer._load_mod_files.loaded_with == mechanisms_dirs
+
+    def test_second_call_with_same_dirs_is_noop_and_does_not_warn(self, caplog):
+        mechanisms_dirs = [Path("/fake/mod")]
+        with patch("bluecellulab.importer.import_mod_lib", return_value="loaded") as mocked:
+            importer.load_mod_files_for_circuit(mechanisms_dirs)
+            with caplog.at_level(logging.WARNING):
+                importer.load_mod_files_for_circuit(mechanisms_dirs)
+
+        assert mocked.call_count == 1
+        assert "cannot also be loaded" not in caplog.text
+
+    def test_second_call_with_different_dirs_warns(self, caplog):
+        first_dirs = [Path("/fake/mod_a")]
+        second_dirs = [Path("/fake/mod_b")]
+        with patch("bluecellulab.importer.import_mod_lib", return_value="loaded") as mocked:
+            importer.load_mod_files_for_circuit(first_dirs)
+            with caplog.at_level(logging.WARNING):
+                importer.load_mod_files_for_circuit(second_dirs)
+
+        # underlying loader still only runs once (NEURON constraint)
+        assert mocked.call_count == 1
+        assert "cannot also be loaded" in caplog.text
 
 
 class TestLegacyMorphioWrapperAlias:
