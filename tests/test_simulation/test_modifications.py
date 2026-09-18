@@ -153,16 +153,9 @@ def _make_mock_cell(sections=None, section_lists=None, enable_ttx=True):
         sections = {}
     cell.sections = sections
 
-    # Section list properties
-    for list_name in ["somatic", "basal", "apical", "axonal"]:
-        if section_lists and list_name in section_lists:
-            setattr(
-                type(cell),
-                list_name,
-                mock.PropertyMock(return_value=section_lists[list_name]),
-            )
-        else:
-            setattr(type(cell), list_name, mock.PropertyMock(return_value=[]))
+    if section_lists is None:
+        section_lists = {}
+    cell.get_section_list.side_effect = lambda name: section_lists.get(name, [])
 
     if enable_ttx:
         cell.enable_ttx = mock.MagicMock()
@@ -301,6 +294,38 @@ class TestApplySectionList:
         with pytest.raises(ValueError, match="unknown section list name"):
             _apply_section_list({}, mod, _make_circuit_access([]))
 
+    @pytest.mark.parametrize(
+        "list_name, hoc_name",
+        [
+            ("myelinated", "myelinated"),
+            ("myelin", "myelinated"),
+            ("AIS", "AIS"),
+            ("ais", "AIS"),
+            ("nodal", "nodal"),
+            ("node", "nodal"),
+            ("all", "all"),
+        ],
+    )
+    def test_extended_section_lists(self, list_name, hoc_name):
+        """Section lists from the hoc-emodel spec and neurodamus (myelinated,
+        AIS, nodal, all) plus section-name aliases resolve to the right hoc
+        SectionList attribute."""
+        sec = _make_mock_section("myelin[0]", {"gbar": 1.0})
+        cell_id = mock.MagicMock()
+        cell = _make_mock_cell(section_lists={hoc_name: [sec]})
+        cells = {cell_id: cell}
+        mod = ModificationSectionList(
+            name="extended_lists",
+            type="section_list",
+            node_set="target",
+            section_configure=f"{list_name}.gbar = 0",
+        )
+        ca = _make_circuit_access(target_cell_ids=[cell_id])
+
+        _apply_section_list(cells, mod, ca)
+        cell.get_section_list.assert_called_once_with(hoc_name)
+        assert sec.gbar == 0
+
 
 class TestApplySection:
     def test_applies_to_named_section(self):
@@ -368,14 +393,13 @@ class _CellWithoutApical:
 
     sections: dict[str, object] = {}
 
-    @property
-    def apical(self):
-        raise AttributeError("no apical property")
+    def get_section_list(self, name):
+        raise AttributeError(f"no '{name}' section list")
 
 
 class TestApplySectionListAttributeError:
-    def test_warns_missing_property(self, caplog):
-        """Test the AttributeError branch when cell lacks the section list property."""
+    def test_warns_missing_section_list(self, caplog):
+        """Test the AttributeError branch when cell lacks the section list."""
         import logging
 
         cell_id = mock.MagicMock()
@@ -391,7 +415,7 @@ class TestApplySectionListAttributeError:
 
         with caplog.at_level(logging.WARNING):
             _apply_section_list(cells, mod, ca)
-        assert "has no 'apical' property" in caplog.text
+        assert "has no 'apical' section list" in caplog.text
 
     def test_invalid_section_configure_raises(self):
         mod = ModificationSectionList(
@@ -412,8 +436,7 @@ class TestApplySectionListMixedPrefixes:
         cell_id = mock.MagicMock()
         sec = mock.MagicMock()
         sec.name.return_value = "Cell.soma[0]"
-        cell = mock.MagicMock()
-        cell.somatic = [sec]
+        cell = _make_mock_cell(section_lists={"somatic": [sec]})
         cells = {cell_id: cell}
         mod = ModificationSectionList(
             name="scale",

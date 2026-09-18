@@ -180,21 +180,43 @@ class Cell(InjectableMixin, PlottableMixin):
             res[key_name] = section
         return res
 
+    def get_section_list(self, name: str) -> list[NeuronSection]:
+        """Return the sections contained in the named hoc SectionList.
+
+        Args:
+            name: SectionList attribute name on the hoc cell object
+                (e.g. 'somatic', 'apical', 'axonal', 'basal', 'myelinated',
+                'AIS', 'nodal', 'all').
+
+        Returns:
+            List of NEURON sections in the section list.
+
+        Raises:
+            AttributeError: If the hoc cell has no section list with that name.
+        """
+        hoc_cell = public_hoc_cell(self.cell)
+        try:
+            return list(getattr(hoc_cell, name))
+        except AttributeError as e:
+            raise AttributeError(
+                f"Cell's hoc object has no '{name}' section list"
+            ) from e
+
     @property
     def somatic(self) -> list[NeuronSection]:
-        return list(public_hoc_cell(self.cell).somatic)
+        return self.get_section_list("somatic")
 
     @property
     def basal(self) -> list[NeuronSection]:
-        return list(public_hoc_cell(self.cell).basal)
+        return self.get_section_list("basal")
 
     @property
     def apical(self) -> list[NeuronSection]:
-        return list(public_hoc_cell(self.cell).apical)
+        return self.get_section_list("apical")
 
     @property
     def axonal(self) -> list[NeuronSection]:
-        return list(public_hoc_cell(self.cell).axonal)
+        return self.get_section_list("axonal")
 
     @property
     def sections(self) -> SectionMapping:
