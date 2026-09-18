@@ -22,7 +22,7 @@ from pydantic.dataclasses import dataclass
 
 import neuron
 
-import bluecellulab
+from bluecellulab.exceptions import ConfigError
 
 # libsonata reorganized it's module layout; maintain compatibility with both:
 # https://github.com/BlueBrain/libsonata/pull/345
@@ -242,14 +242,17 @@ class ConnectionOverrides:
     synapse_delay_override: Optional[float] = None
     spont_minis: Optional[float] = None
     synapse_configure: Optional[str] = None
-    mod_override: Optional[Literal["GluSynapse"]] = None
+    mod_override: Optional[str] = None
 
     @field_validator("mod_override")
     @classmethod
     def validate_mod_override(cls, value):
-        """Make sure the mod file to override is present."""
+        """Make sure the mod file to override is present in NEURON."""
         if isinstance(value, str) and not hasattr(neuron.h, value):
-            raise bluecellulab.ConfigError(f"Mod file for {value} is not found.")
+            raise ConfigError(
+                f"Mod file (SUFFIX) for mod_override='{value}' is not found in NEURON. "
+                "Ensure the corresponding .mod is compiled and loaded."
+            )
         return value
 
     @classmethod
@@ -276,5 +279,7 @@ class ConnectionOverrides:
             synapse_delay_override=conn_entry.get("synapse_delay_override", None),
             spont_minis=conn_entry.get("spont_minis", None),
             synapse_configure=conn_entry.get("synapse_configure", None),
-            mod_override=conn_entry.get("mod_override", None),
+            mod_override=conn_entry.get(
+                "modoverride", conn_entry.get("mod_override", None)
+            ),
         )
