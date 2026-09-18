@@ -48,7 +48,8 @@ from bluecellulab.circuit.simulation_access import (
     SonataSimulationAccess,
     _sample_array,
 )
-from bluecellulab.importer import load_mod_files
+from bluecellulab.importer import load_mod_files_for_circuit
+from bluecellulab.mod_compilation import extract_mechanisms_dir
 from bluecellulab.rngsettings import RNGSettings
 from bluecellulab.simulation.neuron_globals import NeuronGlobals
 from bluecellulab.stimulus.circuit_stimulus_definitions import (
@@ -79,7 +80,6 @@ class SSim:
 class CircuitSimulation:
     """Class that loads a circuit simulation to do cell simulations."""
 
-    @load_mod_files
     def __init__(
         self,
         simulation_config: str | Path | SimulationConfig,
@@ -120,11 +120,17 @@ class CircuitSimulation:
 
         self.circuit_format = determine_circuit_format(simulation_config)
         if self.circuit_format == CircuitFormat.SONATA:
-            self.circuit_access: CircuitAccess = SonataCircuitAccess(simulation_config)
+            sonata_circuit_access = SonataCircuitAccess(simulation_config)
+            self.circuit_access: CircuitAccess = sonata_circuit_access
             self.simulation_access: SimulationAccess = SonataSimulationAccess(
                 simulation_config
             )
+            mechanisms_dirs = extract_mechanisms_dir(
+                sonata_circuit_access.circuit_config_path
+            )
+            load_mod_files_for_circuit(mechanisms_dirs)
         else:
+            load_mod_files_for_circuit(None)
             self.circuit_access = BluepyCircuitAccess(simulation_config)
             self.simulation_access = BluepySimulationAccess(simulation_config)
             SimulationValidator(self.circuit_access).validate()

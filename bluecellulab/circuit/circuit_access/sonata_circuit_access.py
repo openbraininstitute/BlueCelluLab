@@ -52,8 +52,8 @@ class SonataCircuitAccess(CircuitAccess):
             self.config = simulation_config
         else:
             self.config = SonataSimulationConfig(simulation_config)
-        circuit_config = self.config.impl.config["network"]
-        self._circuit = SnapCircuit(circuit_config)
+        self.circuit_config_path = self.config.impl.config["network"]
+        self._circuit = SnapCircuit(self.circuit_config_path)
         self._inner_edge_pop_names = {
             name for name, epop in self._circuit.edges.items()
             if getattr(epop.source, "type", None) != "virtual"
