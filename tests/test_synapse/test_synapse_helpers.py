@@ -150,6 +150,80 @@ def test_external_helper_wins_over_bundled_with_real_neuron(tmp_path, monkeypatc
         synapse_helpers._loaded_helpers.discard(suffix)
 
 
+@pytest.fixture
+def clean_helper_search_dirs():
+    """Isolate the registered helper search dirs around a test."""
+    synapse_helpers.clear_helper_search_dirs()
+    yield
+    synapse_helpers.clear_helper_search_dirs()
+
+
+def test_registered_dir_searched_between_hoc_path_and_bundled(
+    tmp_path, monkeypatch, clean_helper_search_dirs
+):
+    """Registered dirs are tried after HOC_LIBRARY_PATH and before bundled."""
+    suffix = "RegisteredDirOrder"
+    helper_file = f"{suffix}Helper.hoc"
+    helper_dir = tmp_path / "circuit_mods"
+    helper_dir.mkdir()
+    (helper_dir / helper_file).write_text("// helper\n")
+    synapse_helpers.register_helper_search_dirs([helper_dir])
+
+    calls = []
+    bundled_dir = synapse_helpers._bundled_hoc_directory()
+
+    class FakeH:
+        def load_file(self, filename):
+            calls.append(filename)
+            # only the bundled absolute path "loads"
+            return int(
+                synapse_helpers.os.path.dirname(filename) == bundled_dir
+            )
+
+    fake_h = FakeH()
+    monkeypatch.setattr(synapse_helpers, "neuron", SimpleNamespace(h=fake_h))
+    monkeypatch.setattr(
+        fake_h, f"{suffix}Helper", object(), raising=False
+    )
+
+    assert synapse_helpers.load_synapse_helper(suffix) == f"{suffix}Helper"
+    assert calls == [
+        helper_file,  # HOC_LIBRARY_PATH / cwd
+        str(helper_dir / helper_file),  # registered circuit dir
+        synapse_helpers.os.path.join(bundled_dir, helper_file),  # bundled
+    ]
+    synapse_helpers._loaded_helpers.discard(suffix)
+
+
+def test_register_helper_search_dirs_dedupes_and_ignores_missing(
+    tmp_path, clean_helper_search_dirs
+):
+    existing = tmp_path / "exists"
+    existing.mkdir()
+    missing = tmp_path / "does_not_exist"
+
+    synapse_helpers.register_helper_search_dirs(
+        [existing, existing, missing, str(existing)]
+    )
+
+    assert synapse_helpers._extra_search_dirs == [str(existing)]
+
+
+def test_missing_helper_error_lists_registered_dirs(
+    tmp_path, monkeypatch, clean_helper_search_dirs
+):
+    helper_dir = tmp_path / "circuit_mods"
+    helper_dir.mkdir()
+    synapse_helpers.register_helper_search_dirs([helper_dir])
+
+    suffix = "MissingRegisteredDirCoverage"
+    fake_h = SimpleNamespace(load_file=lambda _: 0)
+    monkeypatch.setattr(synapse_helpers, "neuron", SimpleNamespace(h=fake_h))
+
+    with pytest.raises(FileNotFoundError, match=str(helper_dir)):
+        synapse_helpers.load_synapse_helper(suffix)
+
+
 def test_load_synapse_helper_missing_raises():
     """load_synapse_helper raises FileNotFoundError when the helper HOC cannot
     be located on HOC_LIBRARY_PATH."""
