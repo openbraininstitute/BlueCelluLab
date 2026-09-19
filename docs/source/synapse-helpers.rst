@@ -38,12 +38,21 @@ call site that the four helpers depend on.
 External helpers
 ----------------
 
-BlueCelluLab first searches for a helper by its filename using
-``HOC_LIBRARY_PATH``. This preserves the ability to override a bundled helper
-with a project-specific implementation. If no external helper is found, the
-matching helper from the installed BlueCelluLab package is loaded. The
-bundled HOC directory is added to the HOC search path so helper dependencies,
-such as ``RNGSettings.hoc``, can also be resolved.
+Resolution order for ``<Suffix>Helper.hoc``:
+
+1. ``HOC_LIBRARY_PATH`` / the current working directory (external helpers
+   always win, preserving the ability to override a bundled helper with a
+   project-specific implementation);
+2. directories registered via ``register_helper_search_dirs`` —
+   :class:`SonataCircuitAccess` automatically registers each node
+   population's ``mechanisms_dir`` and ``biophysical_neuron_models_dir``
+   (plus the circuit-level ``components`` entries), so circuits that ship
+   their own helper HOCs are found without setting ``HOC_LIBRARY_PATH``;
+3. the bundled ``bluecellulab/hoc`` directory.
+
+The bundled HOC directory is added to the HOC search path so helper
+dependencies, such as ``RNGSettings.hoc``, can also be resolved — including
+for circuit-provided helpers.
 
 Compiled mechanisms are still required
 --------------------------------------

@@ -54,10 +54,38 @@ class SonataCircuitAccess(CircuitAccess):
             self.config = SonataSimulationConfig(simulation_config)
         circuit_config = self.config.impl.config["network"]
         self._circuit = SnapCircuit(circuit_config)
+        self._register_circuit_helper_dirs()
         self._inner_edge_pop_names = {
             name for name, epop in self._circuit.edges.items()
             if getattr(epop.source, "type", None) != "virtual"
         }
+
+    def _register_circuit_helper_dirs(self) -> None:
+        """Register circuit-provided dirs for synapse helper HOC lookup.
+
+        Circuits that ship their own ``<SUFFIX>Helper.hoc`` files (e.g.
+        sonata_simplify filter helpers) place them under ``mechanisms_dir``
+        and/or ``biophysical_neuron_models_dir``; register those directories
+        so :func:`load_synapse_helper` can find them without the user having
+        to set ``HOC_LIBRARY_PATH``. Never raises: helper lookup must not
+        break circuit loading.
+        """
+        try:
+            from bluecellulab.synapse.synapse_helpers import register_helper_search_dirs
+
+            dirs: list[str] = []
+            components = self._circuit.config.get("components", {}) or {}
+            for key in ("mechanisms_dir", "biophysical_neuron_models_dir"):
+                if components.get(key):
+                    dirs.append(components[key])
+            for pop_name in self._circuit.nodes:
+                pop_cfg = self._circuit.nodes[pop_name].config or {}
+                for key in ("mechanisms_dir", "biophysical_neuron_models_dir"):
+                    if pop_cfg.get(key):
+                        dirs.append(pop_cfg[key])
+            register_helper_search_dirs(dirs)
+        except Exception as exc:  # noqa: BLE001 - must never break loading
+            logger.debug("Could not register circuit helper search dirs: %s", exc)
 
     @property
     def available_cell_properties(self) -> set:
@@ -218,9 +246,21 @@ class SonataCircuitAccess(CircuitAccess):
                 # population (only if present). Also request the reserved
                 # ``maskValue`` field if the edge population provides it.
                 helper_fields = self._collect_helper_needed_attributes()
-                helper_fields.append("maskValue")
-                edge_properties += [
+                missing_helper_fields = [
                     field for field in helper_fields
+                    if field not in edge_population.property_names
+                ]
+                if missing_helper_fields:
+                    suffixes = sorted({helper_fields[f] for f in missing_helper_fields})
+                    logger.warning(
+                        "Edge population '%s' lacks attribute(s) %s declared by "
+                        "mod_override helper(s) %s; the fields will not be "
+                        "extracted and the helper will receive defaults.",
+                        edge_population_name, missing_helper_fields, suffixes,
+                    )
+                helper_field_names = list(helper_fields) + ["maskValue"]
+                edge_properties += [
+                    field for field in helper_field_names
                     if field not in edge_properties
                     and field in edge_population.property_names
                 ]
@@ -286,7 +326,7 @@ class SonataCircuitAccess(CircuitAccess):
         else:
             return pd.concat(all_synapses_dfs)  # outer join that creates NaNs
 
-    def _collect_helper_needed_attributes(self) -> list[str]:
+    def _collect_helper_needed_attributes(self) -> dict[str, str]:
         """Collect SONATA edge fields required by all mod_override helpers.
 
         Scans connection override entries for ``mod_override`` values,
@@ -295,10 +335,10 @@ class SonataCircuitAccess(CircuitAccess):
         neurodamus ``SynapseReader.configure_override()``.
 
         Returns:
-            De-duplicated list of field names declared by all helpers.
+            De-duplicated mapping of field name -> the mod_override SUFFIX
+            whose helper declared it.
         """
-        fields: list[str] = []
-        seen: set[str] = set()
+        fields: dict[str, str] = {}
         try:
             entries = self.config.connection_entries()
         except (AttributeError, NotImplementedError):
@@ -312,9 +352,7 @@ class SonataCircuitAccess(CircuitAccess):
                     get_helper_needed_attributes,
                 )
                 for attr in get_helper_needed_attributes(mod_override):
-                    if attr not in seen:
-                        seen.add(attr)
-                        fields.append(attr)
+                    fields.setdefault(attr, mod_override)
             except (FileNotFoundError, AttributeError):
                 logger.warning(
                     "Could not load helper for mod_override='%s'; "
