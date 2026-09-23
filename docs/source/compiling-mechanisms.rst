@@ -51,6 +51,9 @@ BlueCelluLab generates Ornstein-Uhlenbeck and shot-noise stimuli in Python and i
 NEURON's own ``IClamp``/``SEClamp``, which is why the two source mechanisms are not needed for
 those.
 
+The first three are used by :class:`bluecellulab.Cell` itself, independently of any circuit, so
+they are supplied for bare single-cell workflows as well as for circuits.
+
 Circuits often ship these same mechanisms under different filenames: ``VecStim.mod`` for
 ``VecStim`` and ``netstim_inhpoisson.mod`` for ``InhPoissonStim``. They are recognised by the
 mechanism they declare rather than by filename, so they are resolved against the bundled copies
@@ -95,9 +98,6 @@ mechanisms. They are tolerated if a circuit happens to ship them: ``SonataReport
 ``SonataReportHelper.mod`` include ``bbp/sonata/reports.h``, which is unavailable here and would
 otherwise fail the whole compilation, so BlueCelluLab passes ``-DDISABLE_REPORTINGLIB`` to
 ``nrnivmodl`` by default. Those files then compile to inert stubs and the circuit still runs.
-
-The first three are used by :class:`bluecellulab.Cell` itself, independently of any circuit, so
-they are supplied for bare single-cell workflows too.
 
 Circuit MOD files (SONATA)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -194,8 +194,13 @@ circuit shipping a customised technical MOD file, set:
 
    export BLUECELLULAB_MOD_PRECEDENCE=circuit
 
-BlueCelluLab still fills in any technical mechanism the circuit does not provide, so this only
-changes which copy is used where both exist.
+``BLUECELLULAB_MOD_PRECEDENCE`` takes one of two keywords, ``simulator`` (the default) or
+``circuit``. It is **not** a path, unlike ``BLUECELLULAB_MOD_LIBRARY_PATH`` and
+``BLUECELLULAB_MOD_BUILD_DIR``. Any other value is ignored with a warning, and ``simulator`` is
+used.
+
+This only changes which copy is used where both the circuit and BlueCelluLab provide the same
+mechanism. BlueCelluLab still fills in any technical mechanism the circuit does not provide.
 
 To leave out the bundled files altogether, call the compilation entry point directly:
 
