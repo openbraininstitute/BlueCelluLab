@@ -11,16 +11,21 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from contextlib import contextmanager
+"""Tests for test-only operating-system helpers."""
+
 import os
 
+import pytest
 
-@contextmanager
-def cwd(path):
-    """Temporarily change the working directory and always restore it."""
-    old_dir = os.getcwd()
-    os.chdir(path)
-    try:
-        yield
-    finally:
-        os.chdir(old_dir)
+from tests.helpers.os_utils import cwd
+
+
+def test_cwd_restores_directory_when_body_raises(tmp_path):
+    original = os.getcwd()
+
+    with pytest.raises(RuntimeError, match="expected failure"):
+        with cwd(tmp_path):
+            assert os.getcwd() == str(tmp_path)
+            raise RuntimeError("expected failure")
+
+    assert os.getcwd() == original
