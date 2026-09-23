@@ -243,6 +243,77 @@ def test_select_mod_files_missing_dir(tmp_path, caplog):
     assert "does not exist" in caplog.text
 
 
+def test_declared_ions(tmp_path):
+    path = write(
+        tmp_path / "a.mod",
+        "NEURON {\n\tSUFFIX Chan\n\tUSEION na READ ena WRITE ina\n"
+        "\tUSEION ttx READ ttxo, ttxi VALENCE 1\n}\n",
+    )
+    assert mc.declared_ions(path) == {"na", "ttx"}
+
+
+def test_declared_ions_none(tmp_path):
+    path = write(tmp_path / "a.mod", mod("a", "Point"))
+    assert mc.declared_ions(path) == set()
+
+
+def test_declared_ions_on_bundled_files():
+    """Only TTXDynamicsSwitch is ion coupled, so only it cannot be split off.
+
+    The other four are point processes and artificial cells, which is why
+    supplying them separately from a circuit's own library is safe.
+    """
+    internal = mc._internal_mods_path()
+    ions = {f.name: mc.declared_ions(f) for f in internal.glob("*.mod")}
+    assert ions == {
+        "TTXDynamicsSwitch.mod": {"ttx"},
+        "vecevent.mod": set(),
+        "InhPoissonStim.mod": set(),
+        "ConductanceSource.mod": set(),
+        "MembraneCurrentSource.mod": set(),
+    }
+
+
+def test_warn_on_split_ion_coupling_warns_when_ion_already_present(tmp_path, caplog):
+    """NEURON cannot share an ion across separately compiled libraries.
+
+    A mechanism writing `ttx` in one library and one reading it in another do
+    not see each other and the simulation runs on with the coupling silently
+    absent, so this has to be loud. NEURON exposes a used ion as `<name>_ion`.
+    """
+    path = write(
+        tmp_path / "TTXDynamicsSwitch.mod",
+        "NEURON {\n\tSUFFIX TTXDynamicsSwitch\n\tUSEION ttx WRITE ttxo, ttxi\n}\n",
+    )
+    with caplog.at_level(logging.WARNING):
+        mc._warn_on_split_ion_coupling([path], {"NaTs2_t", "ttx_ion"})
+
+    assert "uses the 'ttx' ion" in caplog.text
+    assert "silently inactive" in caplog.text
+
+
+def test_warn_on_split_ion_coupling_silent_when_ion_absent(tmp_path, caplog):
+    """Nothing else uses the ion, so compiling it here is fine."""
+    path = write(
+        tmp_path / "TTXDynamicsSwitch.mod",
+        "NEURON {\n\tSUFFIX TTXDynamicsSwitch\n\tUSEION ttx WRITE ttxo, ttxi\n}\n",
+    )
+    with caplog.at_level(logging.WARNING):
+        mc._warn_on_split_ion_coupling([path], {"pas", "hh", "na_ion", "k_ion"})
+
+    assert caplog.text == ""
+
+
+def test_warn_on_split_ion_coupling_ignores_non_ion_mods(tmp_path, caplog):
+    """The four point-process technical mods are always safe to supply."""
+    internal = mc._internal_mods_path()
+    safe = [f for f in internal.glob("*.mod") if f.name != "TTXDynamicsSwitch.mod"]
+    with caplog.at_level(logging.WARNING):
+        mc._warn_on_split_ion_coupling(safe, {"ttx_ion", "na_ion", "k_ion"})
+
+    assert caplog.text == ""
+
+
 def test_default_incflags_disables_reportinglib():
     """Neurodamus's Class 1 reporting mods must not break a circuit build.
 
