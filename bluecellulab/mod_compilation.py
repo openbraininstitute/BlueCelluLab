@@ -81,11 +81,20 @@ MOD_PRECEDENCE_ENV_VAR = "BLUECELLULAB_MOD_PRECEDENCE"
 _LOCK_TIMEOUT_S = 600
 _LOCK_POLL_INTERVAL_S = 0.5
 
+# Mechanisms this process had to compile apart from others sharing one of their
+# ions, and which are therefore present but inert. See
+# `mechanisms_with_split_ion_coupling`.
+_SPLIT_ION_MECHANISMS: set[str] = set()
+
 # NMODL declares the name a file provides with exactly one of these keywords.
 _MECH_DECL_RE = re.compile(
     r"^[ \t]*(?:SUFFIX|POINT_PROCESS|ARTIFICIAL_CELL)[ \t]+([A-Za-z_]\w*)",
     re.MULTILINE,
 )
+
+# Ions a file reads or writes. A mechanism sharing an ion with one in another
+# compiled library does not see it, so this is needed to warn about that.
+_USEION_RE = re.compile(r"^[ \t]*USEION[ \t]+([A-Za-z_]\w*)", re.MULTILINE)
 
 # COMMENT ... ENDCOMMENT blocks must be stripped before looking for the above,
 # or documentation that happens to quote a declaration is picked up as real.
@@ -151,6 +160,65 @@ def declared_mechanisms(path: str | Path) -> set[str]:
         logger.warning("Could not read mod file %s: %s", path, e)
         return set()
     return set(_MECH_DECL_RE.findall(_COMMENT_BLOCK_RE.sub("", text)))
+
+
+def declared_ions(path: str | Path) -> set[str]:
+    """Return the ion name(s) a MOD file declares with ``USEION``.
+
+    Used to detect the one case where compiling a file separately is not
+    safe; see `_warn_on_split_ion_coupling`.
+    """
+    try:
+        text = Path(path).read_text(errors="replace")
+    except OSError as e:
+        logger.warning("Could not read mod file %s: %s", path, e)
+        return set()
+    return set(_USEION_RE.findall(_COMMENT_BLOCK_RE.sub("", text)))
+
+
+def mechanisms_with_split_ion_coupling() -> set[str]:
+    """Mechanisms compiled apart from others sharing one of their ions.
+
+    Such a mechanism is present in NEURON but inert: it cannot reach the
+    mechanisms it is meant to influence. Callers whose feature depends on one
+    of these should refuse to run rather than produce a result that looks fine
+    (see ``Cell.enable_ttx``).
+    """
+    return set(_SPLIT_ION_MECHANISMS)
+
+
+def _warn_on_split_ion_coupling(
+    mod_files: Iterable[Path], already_registered: set[str]
+) -> None:
+    """Warn when a MOD file using an already-present ion must be compiled
+    apart.
+
+    NEURON does not share a custom ion between separately compiled libraries.
+    If a mechanism writing the ion ends up in one library and a mechanism
+    reading it in another, they simply do not see each other and the
+    simulation runs on silently with the coupling absent. ``TTXDynamicsSwitch``
+    writing ``ttx`` while ``NaTs2_t`` or ``NaTg`` read it is the case that
+    matters in practice.
+
+    NEURON exposes a used ion as a ``<name>_ion`` mechanism, so an ion already
+    being present means some library we did not build is already using it.
+    """
+    for path in mod_files:
+        for ion in sorted(declared_ions(path)):
+            if f"{ion}_ion" not in already_registered:
+                continue
+            _SPLIT_ION_MECHANISMS.update(declared_mechanisms(path))
+            logger.warning(
+                "'%s' uses the '%s' ion, which mechanisms already loaded in NEURON"
+                " also use. NEURON cannot share an ion between separately compiled"
+                " libraries, so compiling this file on its own would leave the"
+                " coupling silently inactive. Compile it together with those"
+                " mechanisms instead, by adding %s to your own nrnivmodl"
+                " invocation.",
+                path.name,
+                ion,
+                path.parent,
+            )
 
 
 def registered_mechanisms() -> set[str]:
@@ -507,6 +575,16 @@ def _build_mod_files(
         return libnrnmech
 
 
+def internal_mods_path() -> Path:
+    """Public accessor for BlueCelluLab's bundled technical MOD directory.
+
+    Useful to a caller that compiles mechanisms itself and wants to include
+    these files in its own ``nrnivmodl`` invocation, which is the only way to
+    get a working ``ttx`` modification when the mechanisms are pre-compiled.
+    """
+    return _internal_mods_path()
+
+
 def _internal_mods_path() -> Path:
     """Get the path to BlueCelluLab's own bundled "technical" mod files.
 
@@ -582,6 +660,8 @@ def compile_mechanisms(
     if not mod_files:
         logger.debug("No mod files left to compile, NEURON already has everything needed")
         return None
+
+    _warn_on_split_ion_coupling(mod_files, set(already_registered))
 
     options = options or Options()
     output_dir = default_mod_build_dir(mod_files)

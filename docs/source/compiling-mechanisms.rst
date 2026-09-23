@@ -35,7 +35,10 @@ the "Class 1 / Class 2" classification in `prod-build-circuit#32
      - Spontaneous synaptic events (minis)
    * - ``TTXDynamicsSwitch``
      - ``TTXDynamicsSwitch.mod``
-     - The ``ttx`` modification, i.e. ``Cell.enable_ttx``
+     - The ``ttx`` modification, i.e. ``Cell.enable_ttx``. The only one of the five
+       that is ion coupled, so it cannot be supplied separately from a library that
+       already contains sodium channels; see `Ion coupling: one limit on what can be
+       supplied separately`_.
    * - ``ConductanceSource``
      - ``ConductanceSource.mod``
      - Not used directly. Bundled to keep the set aligned with neurodamus, and so a
@@ -133,6 +136,35 @@ environment variable.
 If two processes try to compile the same set of files at once (multiple MPI ranks, or parallel
 workers), the first to start wins and the others wait for it and reuse the result, rather than
 racing on ``nrnivmodl``.
+
+Ion coupling: one limit on what can be supplied separately
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+NEURON does not share an ion between separately compiled libraries. If a
+mechanism that writes an ion sits in one library and a mechanism that reads it
+sits in another, they do not see each other, and the simulation runs on with the
+coupling simply absent rather than reporting an error.
+
+Of the five bundled files only ``TTXDynamicsSwitch`` is affected: it writes the
+custom ``ttx`` ion, which the sodium channels of a circuit read
+(``USEION ttx READ ttxo, ttxi``). The other four are point processes and
+artificial cells with no ion coupling, so BlueCelluLab can always supply them.
+
+In practice this only matters if you pre-compile. When BlueCelluLab does the
+compiling it puts the circuit's MOD files and the bundled ones into a single
+library, so the coupling is intact. But if you compile a directory yourself and
+it contains sodium channels without ``TTXDynamicsSwitch.mod``, then the ``ttx``
+modification will not work, because BlueCelluLab can only add its copy in a
+second library. Include ``TTXDynamicsSwitch.mod`` in your own ``nrnivmodl``
+invocation in that case; :func:`bluecellulab.mod_compilation.internal_mods_path`
+returns the directory to take it from.
+
+BlueCelluLab does not let this pass quietly. It warns when it detects the split
+while loading, and :meth:`bluecellulab.Cell.enable_ttx` and
+:meth:`~bluecellulab.Cell.disable_ttx` raise
+:class:`~bluecellulab.exceptions.BluecellulabError` rather than run a simulation
+whose sodium channels are never actually blocked. Workflows that do not use the
+``ttx`` modification are unaffected.
 
 Mechanisms NEURON already has are left alone
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
