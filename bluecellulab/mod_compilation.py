@@ -11,19 +11,36 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Discover and compile NEURON MOD files declared by a SONATA circuit.
+"""Discover and compile the NEURON MOD files needed to run a simulation.
 
-This mirrors the approach used by neurodamus's
-``neurodamus.utils.compile_mods`` module: MOD files referenced by a
-circuit's ``mechanisms_dir`` are gathered, fingerprinted, and compiled with
-``nrnivmodl`` into a shared library that NEURON can load directly. Repeated
-calls with the same inputs and options reuse the previously compiled
-library instead of recompiling.
+This mirrors neurodamus's ``neurodamus.utils.compile_mods``: MOD files are
+gathered from one or more directories, fingerprinted, and compiled with
+``nrnivmodl`` into a shared library that NEURON can load. Repeated calls with
+the same inputs reuse the previous build instead of recompiling.
 
-This module is intentionally scoped to SONATA circuits: unlike neurodamus,
-BlueCelluLab has no natural "install directory" to build into and does not
-bundle its own MOD files, so there is no equivalent of neurodamus's
-``--with-internal-mods`` and no CoreNEURON support.
+Like neurodamus, BlueCelluLab bundles the shared "technical" MOD files that
+circuits should not have to carry themselves (``bluecellulab/data/mod``, see
+`_internal_mods_path`), and includes them in every compilation. Unlike
+neurodamus there is no CLI and no CoreNEURON support: compilation is driven
+from `bluecellulab.importer` when a `Cell` or `CircuitSimulation` is created.
+
+Two behaviours are deliberately stricter than neurodamus, both because
+BlueCelluLab runs against circuits as it finds them rather than against
+inputs curated by a launcher:
+
+* Duplicate mechanisms are resolved by the mechanism name each MOD file
+  *declares*, not just by filename. Two differently named files can define
+  the same mechanism (the legacy ``VecStim.mod`` and the current
+  ``vecevent.mod`` both declare ``ARTIFICIAL_CELL VecStim``). ``nrnivmodl``
+  compiles such a pair without complaint and NEURON then refuses to load the
+  result with "The user defined name already exists".
+* MOD files whose mechanism NEURON has already registered are skipped. NEURON
+  auto-loads a compiled directory found in the current working directory at
+  import time, which is what the ``nrnivmodl`` step in our example notebooks
+  produces, and mechanisms cannot be registered twice in one process.
+
+Which copy wins when a circuit and BlueCelluLab both supply a mechanism is
+controlled by ``BLUECELLULAB_MOD_PRECEDENCE`` (see `circuit_mods_take_precedence`).
 """
 
 from __future__ import annotations
@@ -34,6 +51,7 @@ import json
 import logging
 import os
 import platform
+import re
 import shutil
 import subprocess  # noqa: S404
 import sys
@@ -55,36 +73,109 @@ MOD_FILES_PATH = "mod_files"
 # Env var to override the default cache location.
 MOD_BUILD_DIR_ENV_VAR = "BLUECELLULAB_MOD_BUILD_DIR"
 
+# Env var selecting which copy wins when a circuit and BlueCelluLab both
+# provide the same mechanism. "simulator" (default) or "circuit".
+MOD_PRECEDENCE_ENV_VAR = "BLUECELLULAB_MOD_PRECEDENCE"
+
 # How long to wait for another process to finish compiling before giving up.
 _LOCK_TIMEOUT_S = 600
 _LOCK_POLL_INTERVAL_S = 0.5
+
+# NMODL declares the name a file provides with exactly one of these keywords.
+_MECH_DECL_RE = re.compile(
+    r"^[ \t]*(?:SUFFIX|POINT_PROCESS|ARTIFICIAL_CELL)[ \t]+([A-Za-z_]\w*)",
+    re.MULTILINE,
+)
+
+# COMMENT ... ENDCOMMENT blocks must be stripped before looking for the above,
+# or documentation that happens to quote a declaration is picked up as real.
+_COMMENT_BLOCK_RE = re.compile(
+    r"^[ \t]*COMMENT\b.*?^[ \t]*ENDCOMMENT\b", re.MULTILINE | re.DOTALL
+)
 
 
 class ModCompilationError(Exception):
     """Raised when gathering or compiling MOD files fails."""
 
 
+# Passed to nrnivmodl by default. Neurodamus's "Class 1" reporting MOD files
+# (``SonataReports.mod``, ``SonataReportHelper.mod``) include
+# ``bbp/sonata/reports.h``, which is not available here and makes the whole
+# compilation fail with "file not found" if one of them is present in a
+# circuit's mechanisms directory. They guard that dependency behind
+# ``DISABLE_REPORTINGLIB``, so defining it lets such a circuit still be
+# simulated. BlueCelluLab does not need those mechanisms in any case: it writes
+# SONATA spike and compartment reports with h5py directly.
+DEFAULT_INCFLAGS = "-DDISABLE_REPORTINGLIB"
+
+
 @dataclass
 class Options:
     """Options that influence the compiled output (and thus the cache key)."""
 
-    incflags: str = ""
+    incflags: str = DEFAULT_INCFLAGS
     loadflags: str = ""
 
 
-def default_mod_build_dir(input_dirs: Iterable[Path]) -> Path:
-    """Return the default cache directory for a given set of mod dirs.
+def circuit_mods_take_precedence() -> bool:
+    """Whether a circuit's MOD file wins over BlueCelluLab's own copy.
 
-    Keyed by a hash of the (sorted, absolute) input directories so that
-    different circuits get independent caches. Can be overridden wholesale
-    with the ``BLUECELLULAB_MOD_BUILD_DIR`` environment variable.
+    Defaults to ``False``, matching neurodamus, which appends its internal
+    MOD directory last so that the simulator's copy overrides the circuit's.
+    Set ``BLUECELLULAB_MOD_PRECEDENCE=circuit`` to invert this and keep the
+    circuit's copy, for instance to reproduce results from a circuit that
+    ships a customised technical MOD file.
     """
-    if MOD_BUILD_DIR_ENV_VAR in os.environ:
-        return Path(os.environ[MOD_BUILD_DIR_ENV_VAR]).absolute()
+    value = os.environ.get(MOD_PRECEDENCE_ENV_VAR, "simulator").strip().lower()
+    if value not in ("simulator", "circuit"):
+        logger.warning(
+            "Ignoring unknown %s=%r, expected 'simulator' or 'circuit'.",
+            MOD_PRECEDENCE_ENV_VAR,
+            value,
+        )
+        return False
+    return value == "circuit"
 
-    key = "|".join(sorted(str(Path(d).absolute()) for d in input_dirs))
-    digest = hashlib.sha1(key.encode(), usedforsecurity=False).hexdigest()[:16]  # noqa: S324
-    return Path.home() / ".cache" / "bluecellulab" / "mods" / digest
+
+def declared_mechanisms(path: str | Path) -> set[str]:
+    """Return the mechanism name(s) a MOD file declares.
+
+    A MOD file normally declares exactly one ``SUFFIX``, ``POINT_PROCESS`` or
+    ``ARTIFICIAL_CELL``; a set is returned so an unusual file cannot silently
+    lose a declaration. An empty set means nothing could be parsed, in which
+    case the file is treated as having no mechanism to clash over.
+    """
+    try:
+        text = Path(path).read_text(errors="replace")
+    except OSError as e:
+        logger.warning("Could not read mod file %s: %s", path, e)
+        return set()
+    return set(_MECH_DECL_RE.findall(_COMMENT_BLOCK_RE.sub("", text)))
+
+
+def registered_mechanisms() -> set[str]:
+    """Return the mechanisms NEURON has already registered in this process.
+
+    Covers both distributed mechanisms and point processes. This is the
+    authoritative check: it reflects whatever NEURON actually loaded,
+    including a compiled directory auto-loaded from the current working
+    directory, without having to guess at architecture-specific directory
+    names.
+    """
+    import neuron
+
+    names: set[str] = set()
+    for is_point_process in (0, 1):
+        try:
+            mech_type = neuron.h.MechanismType(is_point_process)
+            buf = neuron.h.ref("")
+            for i in range(int(mech_type.count())):
+                mech_type.select(i)
+                mech_type.selected(buf)
+                names.add(buf[0])
+        except Exception as e:  # noqa: BLE001 - NEURON raises bare RuntimeError
+            logger.debug("Could not enumerate NEURON mechanisms (%s): %s", is_point_process, e)
+    return names
 
 
 def _metadata_path(output_dir: Path) -> Path:
@@ -101,37 +192,168 @@ def _md5sum(path: Path) -> str:
     return h.hexdigest()
 
 
-def _get_mod_files(input_dirs: list[Path]) -> dict[Path, str]:
-    """Get all the mod files, with their md5sum.
+def _warn_conflict(
+    winner: Path, loser: Path, internal_dir: Path | None, mechanism: str | None = None
+) -> None:
+    """Warn that two MOD files provide the same thing, and say which is used.
 
-    Note: files with the same name; the last one "wins".
+    When one of them is a technical MOD file BlueCelluLab bundles, the
+    message tells circuit owners what to do about it; otherwise it just
+    reports which file was chosen, as neurodamus does.
     """
-    files: dict[str, Path] = {}
-    for d in input_dirs:
-        if not Path(d).is_dir():
-            continue
-        for f in sorted(Path(d).glob("*.mod")):
-            if f.name in files:
-                logger.warning(
-                    "Already seen `%s` (%s), overriding with `%s`",
-                    f.name,
-                    files[f.name],
-                    f.absolute(),
-                )
-            files[f.name] = f.absolute()
+    if internal_dir is None or internal_dir not in (winner.parent, loser.parent):
+        # Two circuit files clashing with each other. BlueCelluLab is not
+        # involved, so there is nothing to advise about technical mod files.
+        logger.warning(
+            "The mod files '%s' (%s) and '%s' (%s) both provide %s. Using '%s'.",
+            loser.name,
+            loser.parent,
+            winner.name,
+            winner.parent,
+            f"mechanism '{mechanism}'" if mechanism else "the same mechanism",
+            winner.name,
+        )
+        return
 
-    hashed_files: dict[Path, str] = {}
-    seen_hashes: set[str] = set()
-    for p in files.values():
-        hashed_files[p] = _md5sum(p)
-        if hashed_files[p] in seen_hashes:
-            logger.warning("Already added a file with the same contents: %s", hashed_files[p])
-        seen_hashes.add(hashed_files[p])
-    return hashed_files
+    if winner.parent == internal_dir:
+        circuit_file, internal_file = loser, winner
+        precedence_note = "BlueCelluLab's copy takes precedence."
+        hint = f" To use the circuit's copy instead, set {MOD_PRECEDENCE_ENV_VAR}=circuit."
+    else:
+        circuit_file, internal_file = winner, loser
+        precedence_note = "The circuit copy takes precedence."
+        hint = ""
+
+    if mechanism is None:
+        mechanisms = declared_mechanisms(internal_file) or declared_mechanisms(circuit_file)
+        mechanism = ", ".join(sorted(mechanisms)) if mechanisms else "(unknown)"
+
+    # Avoid the redundant "supplies as 'X.mod'" when both files share a name.
+    also_supplies = (
+        "which BlueCelluLab also supplies"
+        if circuit_file.name == internal_file.name
+        else f"which BlueCelluLab also supplies as '{internal_file.name}'"
+    )
+
+    logger.warning(
+        "The mod file '%s' in %s provides mechanism '%s', %s. %s Technical mod"
+        " files should be removed from circuit mechanisms directories as per OBI"
+        " and neurodamus (OBI's largescale circuit simulator) specifications.%s",
+        circuit_file.name,
+        circuit_file.parent,
+        mechanism,
+        also_supplies,
+        precedence_note,
+        hint,
+    )
+
+
+def select_mod_files(
+    input_dirs: list[Path],
+    internal_dir: Path | None = None,
+    already_registered: Iterable[str] | None = None,
+) -> dict[Path, str]:
+    """Choose which MOD files to compile, with their md5sums.
+
+    `input_dirs` is in increasing order of priority: where two files provide
+    the same thing, the one from the later directory wins. Resolution happens
+    at two levels, filename first (as neurodamus does) and then the mechanism
+    each file declares, so that differently named files defining the same
+    mechanism cannot both be compiled.
+
+    Files whose mechanism appears in `already_registered` are dropped, since
+    NEURON cannot register a mechanism twice in one process.
+
+    `internal_dir` identifies BlueCelluLab's own bundled directory, and is
+    used only to phrase conflict warnings usefully.
+    """
+    priority: dict[Path, int] = {}
+    by_name: dict[str, Path] = {}
+    for index, directory in enumerate(input_dirs):
+        directory = Path(directory)
+        if not directory.is_dir():
+            # A circuit that declares a mechanisms_dir which is not there would
+            # otherwise silently contribute nothing, and only fail much later
+            # with "... is not a MECHANISM".
+            logger.warning(
+                "Mod file directory %s does not exist, no mod files taken from it.",
+                directory,
+            )
+            continue
+        for path in sorted(directory.glob("*.mod")):
+            path = path.absolute()
+            priority[path] = index
+            previous = by_name.get(path.name)
+            if previous is not None:
+                # Directories are in increasing priority, so `path` wins.
+                _warn_conflict(path, previous, internal_dir)
+            by_name[path.name] = path
+
+    # Resolve files that declare the same mechanism under different names.
+    by_mechanism: dict[str, Path] = {}
+    selected: dict[Path, set[str]] = {}
+    for path in by_name.values():
+        mechanisms = declared_mechanisms(path)
+        if not mechanisms:
+            logger.debug("No mechanism declaration found in %s, compiling it anyway", path)
+            selected[path] = set()
+            continue
+
+        superseded = False
+        for mechanism in sorted(mechanisms):
+            incumbent = by_mechanism.get(mechanism)
+            if incumbent is None or incumbent == path:
+                continue
+            if priority[path] >= priority[incumbent]:
+                _warn_conflict(path, incumbent, internal_dir, mechanism)
+                selected.pop(incumbent, None)
+                for m in list(by_mechanism):
+                    if by_mechanism[m] == incumbent:
+                        del by_mechanism[m]
+            else:
+                _warn_conflict(incumbent, path, internal_dir, mechanism)
+                superseded = True
+        if superseded:
+            continue
+        for mechanism in mechanisms:
+            by_mechanism[mechanism] = path
+        selected[path] = mechanisms
+
+    # Drop anything NEURON already has; it cannot be registered again.
+    already = set(already_registered or ())
+    result: dict[Path, str] = {}
+    for path, mechanisms in selected.items():
+        clash = mechanisms & already
+        if clash:
+            logger.debug(
+                "Skipping %s: mechanism(s) %s already registered in NEURON",
+                path,
+                ", ".join(sorted(clash)),
+            )
+            continue
+        result[path] = _md5sum(path)
+    return result
+
+
+def default_mod_build_dir(mod_files: dict[Path, str]) -> Path:
+    """Return the cache directory for a given set of mod files.
+
+    Keyed by the names and contents of the files actually being compiled, so
+    that two runs compiling different subsets (for instance one that had to
+    skip mechanisms NEURON already had) never share a directory and
+    invalidate each other's cache. Can be overridden wholesale with the
+    ``BLUECELLULAB_MOD_BUILD_DIR`` environment variable.
+    """
+    if MOD_BUILD_DIR_ENV_VAR in os.environ:
+        return Path(os.environ[MOD_BUILD_DIR_ENV_VAR]).absolute()
+
+    key = "|".join(f"{p.name}:{h}" for p, h in sorted(mod_files.items(), key=lambda kv: kv[0].name))
+    digest = hashlib.sha1(key.encode(), usedforsecurity=False).hexdigest()[:16]  # noqa: S324
+    return Path.home() / ".cache" / "bluecellulab" / "mods" / digest
 
 
 def _generate_mod_metadata(mod_files: dict[Path, str], options: Options) -> dict:
-    """Create metadata about the compiled mod files, used to track cache hits."""
+    """Create metadata about the compiled mod files, to track cache hits."""
     return {
         "version": VERSION,
         "hashes": sorted([p.name, hash_] for p, hash_ in mod_files.items()),
@@ -140,7 +362,7 @@ def _generate_mod_metadata(mod_files: dict[Path, str], options: Options) -> dict
 
 
 def _get_dynamic_file(output_dir: Path, name: str) -> Path:
-    """Return the path of the compiled file for the current machine/platform."""
+    """Return the path of the compiled file for this machine and platform."""
     base = (output_dir / platform.machine()).absolute()
     ext = ".dylib" if sys.platform == "darwin" else ".so"
     return base / f"{name}{ext}"
@@ -223,17 +445,19 @@ class _CompileLock:
 
 
 def _build_mod_files(
-    input_dirs: list[Path], output_dir: Path, nrnivmodl_path: str | None, options: Options
+    mod_files: dict[Path, str],
+    output_dir: Path,
+    nrnivmodl_path: str | None,
+    options: Options,
 ) -> Path:
-    """Compile the mod files, reusing a cached build if inputs are unchanged.
+    """Compile `mod_files`, reusing a cached build if they are unchanged.
 
     Returns the path to the compiled shared library (``libnrnmech``).
     """
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    mod_files = _get_mod_files(input_dirs)
     if not mod_files:
         raise ModCompilationError("No mod files found to be compiled")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     with _CompileLock(output_dir):
         if _check_cache(mod_files, output_dir, options):
@@ -254,11 +478,24 @@ def _build_mod_files(
         cmd.append(str(mod_dir))
 
         logger.info("Compiling %d mod file(s) with: %s", len(mod_files), " ".join(cmd))
+        # Output is captured rather than inherited: under Jupyter, `sys.stdout`
+        # and `sys.stderr` are ipykernel streams with no usable file
+        # descriptor, and handing one to a subprocess raises. Capturing also
+        # lets the compiler output be reported as part of the failure.
         res = subprocess.run(  # noqa: S603
-            cmd, cwd=str(output_dir), stdout=sys.stderr, check=False
+            cmd,
+            cwd=str(output_dir),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            check=False,
         )
         if res.returncode:
-            raise ModCompilationError(f"Failed to compile mod files (exit code {res.returncode})")
+            raise ModCompilationError(
+                f"Failed to compile mod files (exit code {res.returncode}):\n"
+                f"{res.stdout}"
+            )
+        logger.debug("nrnivmodl output:\n%s", res.stdout)
 
         _write_cache(mod_files, output_dir, options)
 
@@ -306,27 +543,46 @@ def compile_mechanisms(
     nrnivmodl_path: str | None = None,
     options: Options | None = None,
     include_internal_mods: bool = True,
+    already_registered: Iterable[str] | None = None,
 ) -> Path | None:
-    """Discover and compile the mod files found in `input_dirs`.
+    """Discover and compile the mod files needed on top of what NEURON has.
 
-    This is the generic entry point used by the importer once a set of mod
-    directories has been resolved (e.g. via `extract_mechanisms_dir` for a
-    SONATA circuit). BlueCelluLab's own bundled "technical" mod files (see
-    `_internal_mods_path`) are always included unless `include_internal_mods`
-    is set to ``False``, so circuits do not need to carry them in their own
-    `mechanisms_dir`.
+    `input_dirs` are a circuit's mechanisms directories (see
+    `extract_mechanisms_dir`); pass an empty iterable when there is no
+    circuit. BlueCelluLab's own bundled technical mod files are included
+    unless `include_internal_mods` is ``False``, so circuits need not carry
+    them.
 
-    Returns the path to the compiled shared library, or ``None`` if there
-    are no mod files to compile at all (`input_dirs` is empty and internal
-    mods are excluded).
+    `already_registered` is the set of mechanisms NEURON already knows (see
+    `registered_mechanisms`); those are skipped, because NEURON cannot
+    register a mechanism twice in one process. Pass ``None`` to query NEURON.
+
+    Returns the path to the compiled shared library, or ``None`` when there
+    is nothing left to compile because NEURON already provides everything.
     """
-    dirs = [Path(d) for d in input_dirs]
-    if include_internal_mods:
-        dirs.append(_internal_mods_path())
+    circuit_dirs = [Path(d) for d in input_dirs]
+    internal_dir = _internal_mods_path() if include_internal_mods else None
 
-    if not dirs:
+    # Later directories win. neurodamus appends its internal mods last, so
+    # the simulator's copy overrides the circuit's; inverted on request.
+    if internal_dir is None:
+        ordered = circuit_dirs
+    elif circuit_mods_take_precedence():
+        ordered = [internal_dir, *circuit_dirs]
+    else:
+        ordered = [*circuit_dirs, internal_dir]
+
+    if not ordered:
+        return None
+
+    if already_registered is None:
+        already_registered = registered_mechanisms()
+
+    mod_files = select_mod_files(ordered, internal_dir, already_registered)
+    if not mod_files:
+        logger.debug("No mod files left to compile, NEURON already has everything needed")
         return None
 
     options = options or Options()
-    output_dir = default_mod_build_dir(dirs)
-    return _build_mod_files(dirs, output_dir, nrnivmodl_path, options)
+    output_dir = default_mod_build_dir(mod_files)
+    return _build_mod_files(mod_files, output_dir, nrnivmodl_path, options)
