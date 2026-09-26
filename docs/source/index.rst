@@ -16,6 +16,7 @@
    list_of_stim
    api.rst
    compiling-mechanisms.rst
+   synapse-helpers.rst
    changelog
    contributing
 

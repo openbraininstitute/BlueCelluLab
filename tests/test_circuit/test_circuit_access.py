@@ -60,7 +60,46 @@ def test_sonata_circuit_access_file_not_found():
 
 class TestSonataCircuitAccess:
     def setup_method(self):
+        from bluecellulab.synapse import synapse_helpers
+
+        synapse_helpers.clear_helper_search_dirs()
         self.circuit_access = SonataCircuitAccess(hipp_circuit_with_projections)
+
+    def teardown_method(self):
+        from bluecellulab.synapse import synapse_helpers
+
+        synapse_helpers.clear_helper_search_dirs()
+
+    def test_circuit_helper_dirs_registered(self):
+        """The circuit's biophysical_neuron_models_dir is registered for
+        helper HOC lookup (components-level config key)."""
+        from bluecellulab.synapse import synapse_helpers
+
+        expected = (
+            parent_dir
+            / "examples"
+            / "circuit_hipp_mooc_most_central_10_SP_PC"
+            / "components"
+            / "hoc"
+        )
+        assert str(expected) in synapse_helpers._extra_search_dirs
+
+    def test_missing_helper_attribute_warns(self, caplog):
+        """A helper-declared attribute absent from the edge population must
+        produce a warning naming the population and the mod_override SUFFIX."""
+        import logging
+
+        cell_id = CellId("hippocampus_neurons", 1)
+        with patch.object(
+            self.circuit_access,
+            "_collect_helper_needed_attributes",
+            return_value={"w5_corr": "ProbFilt5AMPANMDA_EMS"},
+        ), caplog.at_level(logging.WARNING):
+            self.circuit_access.extract_synapses(cell_id, True)
+
+        assert "w5_corr" in caplog.text
+        assert "ProbFilt5AMPANMDA_EMS" in caplog.text
+        assert "hippocampus_projections__hippocampus_neurons__chemical" in caplog.text
 
     def test_available_cell_properties(self):
         assert self.circuit_access.available_cell_properties == {
