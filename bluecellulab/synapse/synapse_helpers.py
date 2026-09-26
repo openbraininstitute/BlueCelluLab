@@ -35,10 +35,11 @@ _extra_search_dirs: list[str] = []
 
 
 def register_helper_search_dirs(dirs: Iterable[str | os.PathLike]) -> None:
-    """Register circuit-provided directories searched for ``<SUFFIX>Helper.hoc``.
+    """Register circuit dirs searched for ``<SUFFIX>Helper.hoc``.
 
     Registered directories are searched after ``HOC_LIBRARY_PATH`` and before
     the bundled fallback. De-duplicates; ignores non-existent directories.
+    The list is process-global; one circuit should be loaded per process.
     """
     for d in dirs:
         path = os.fspath(d)
