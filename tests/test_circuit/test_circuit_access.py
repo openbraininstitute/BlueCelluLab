@@ -363,6 +363,26 @@ def test_morph_filepath_prefers_asc_over_h5v1():
     assert result == "/data/asc/cell_42.asc"
 
 
+def test_morph_filepath_h5v1_empty_name_falls_back_to_default():
+    access = object.__new__(SonataCircuitAccess)
+
+    def _get_filepath(*_args, **kwargs):
+        if kwargs.get("extension") == "asc":
+            raise BluepySnapError("asc not available")
+        return "/data/swc/cell.swc"
+
+    node_population = SimpleNamespace(
+        config={"alternate_morphologies": {"h5v1": "/data/merged-morphologies.h5"}},
+        get=lambda _: {"morphology": ""},
+        morph=SimpleNamespace(get_filepath=_get_filepath),
+    )
+    access._circuit = SimpleNamespace(nodes={"popA": node_population})
+
+    result = SonataCircuitAccess.morph_filepath(access, CellId("popA", 42))
+
+    assert result == "/data/swc/cell.swc"
+
+
 def test_morph_filepath_asc_error_falls_back_to_default():
     access = object.__new__(SonataCircuitAccess)
 
