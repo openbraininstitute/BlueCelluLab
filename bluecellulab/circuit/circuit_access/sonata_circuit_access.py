@@ -399,36 +399,35 @@ class SonataCircuitAccess(CircuitAccess):
         return cell_ids
 
     def morph_filepath(self, cell_id: CellId) -> str:
-        """Returns the morphology path from 'alternate_morphologies' based on
-        available formats."""
+        """Return the morphology path, preferring ASC over H5 when
+        available."""
         node_population = self._circuit.nodes[cell_id.population_name]
 
-        # Get the alternate morphologies configuration
-        alternate_morphologies = node_population.config.get("alternate_morphologies")
-
-        # Check for H5v1 format first (highest priority for H5 containers)
-        if alternate_morphologies and "h5v1" in alternate_morphologies:
-            h5_container_path = alternate_morphologies["h5v1"]
-            # Get the morphology name for this cell
-            cell_properties = node_population.get(cell_id.id)
-            morphology_name = cell_properties.get("morphology", "")
-            if morphology_name:
-                # Return the H5 container path with cell name and .h5 extension
-                # This format works with os.path.split() in NeuronTemplate.get_cell()
-                # which splits it into (container.h5, CellName.h5) for the template
-                return f"{h5_container_path}/{morphology_name}.h5"
-
-        # Check for neurolucida-asc format
-        try:  # if asc defined in alternate morphology
-            return str(node_population.morph.get_filepath(cell_id.id, extension="asc"))
+        # Prefer Neurolucida ASC when available.
+        try:
+            return str(
+                node_population.morph.get_filepath(
+                    cell_id.id,
+                    extension="asc",
+                )
+            )
         except BluepySnapError:
-            logger.debug(f"No asc morphology found for {cell_id}, trying swc.")
+            logger.debug("No ASC morphology found for %s, trying H5.", cell_id)
 
-        # Fallback to default morphology handling
+        # Try H5v1 alternate morphology.
+        alternate_morphologies = node_population.config.get("alternate_morphologies", {})
+        if "h5v1" in alternate_morphologies:
+            morphology_name = node_population.get(cell_id.id).get("morphology", "")
+            if morphology_name:
+                return f"{alternate_morphologies['h5v1']}/{morphology_name}.h5"
+
+        # Fall back to the default morphology.
         try:
             return str(node_population.morph.get_filepath(cell_id.id))
         except BluepySnapError as e:
-            raise BluepySnapError(f"Could not determine morphology path for cell {cell_id}: {e}")
+            raise BluepySnapError(
+                f"Could not determine morphology path for cell {cell_id}: {e}"
+            ) from e
 
     def emodel_path(self, cell_id: CellId) -> str:
         node_population = self._circuit.nodes[cell_id.population_name]
