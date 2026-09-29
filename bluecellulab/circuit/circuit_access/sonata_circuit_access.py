@@ -399,7 +399,8 @@ class SonataCircuitAccess(CircuitAccess):
         return cell_ids
 
     def morph_filepath(self, cell_id: CellId) -> str:
-        """Return the morphology path, preferring ASC over H5 when available."""
+        """Return the morphology path, preferring ASC over H5 when
+        available."""
         node_population = self._circuit.nodes[cell_id.population_name]
 
         # Prefer Neurolucida ASC when available.
