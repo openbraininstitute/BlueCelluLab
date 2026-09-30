@@ -24,6 +24,8 @@ from bluecellulab.circuit.config.sections import ConnectionOverrides
 
 from helpers.circuit import blueconfig_append_path
 
+from bluepysnap.exceptions import BluepySnapError
+
 parent_dir = Path(__file__).resolve().parent
 proj55_path = "/gpfs/bbp.cscs.ch/project/proj55/"
 
@@ -210,6 +212,29 @@ class TestCircuitAccess:
         cell_id = CellId("", 1)
         res = self.circuit_access.morph_filepath(cell_id).rsplit("/", 1)[-1]
         assert res == "dend-C220197A-P2_axon-C060110A3_-_Clone_2.asc"
+
+    def test_morph_filepath_with_none_alternate_morphologies(self):
+        cell_id = CellId("", 1)
+        node_population = self.circuit_access._circuit.nodes[cell_id.population_name]
+
+        original_get_filepath = node_population.morph.get_filepath
+
+        def get_filepath(cell_id, extension=None):
+            if extension == "asc":
+                raise BluepySnapError("ASC morphology not available")
+            return original_get_filepath(cell_id)
+
+        with (
+            patch.object(node_population.morph, "get_filepath", side_effect=get_filepath),
+            patch.object(
+                node_population.config,
+                "get",
+                return_value=None,
+            ),
+        ):
+            result = self.circuit_access.morph_filepath(cell_id)
+
+        assert result
 
     def test_emodels_dir(self):
         res = self.circuit_access._emodels_dir
