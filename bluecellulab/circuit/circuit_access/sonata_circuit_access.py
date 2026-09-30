@@ -415,7 +415,7 @@ class SonataCircuitAccess(CircuitAccess):
             logger.debug("No ASC morphology found for %s, trying H5.", cell_id)
 
         # Try H5v1 alternate morphology.
-        alternate_morphologies = node_population.config.get("alternate_morphologies", {})
+        alternate_morphologies = node_population.config.get("alternate_morphologies") or {}
         if "h5v1" in alternate_morphologies:
             morphology_name = node_population.get(cell_id.id).get("morphology", "")
             if morphology_name:
