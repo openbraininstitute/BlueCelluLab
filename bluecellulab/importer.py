@@ -16,20 +16,49 @@
 import importlib_resources as resources
 import logging
 import os
+from pathlib import Path
 from types import ModuleType
+from typing import Optional
 
 import neuron
 
 from bluecellulab.exceptions import BluecellulabError
+from bluecellulab.mod_compilation import (
+    ModCompilationError,
+    compile_mechanisms,
+    registered_mechanisms,
+)
 from bluecellulab.utils import CaptureOutput, run_once
 
 
 logger = logging.getLogger(__name__)
 
 
-def import_mod_lib(neuron: ModuleType) -> str:
-    """Import mod files."""
-    res = ""
+def import_mod_lib(
+    neuron: ModuleType, mechanisms_dirs: Optional[list[Path]] = None
+) -> str:
+    """Import mod files.
+
+    Resolution order:
+
+    1. ``BLUECELLULAB_MOD_LIBRARY_PATH``, if set, is loaded verbatim and
+       nothing else happens. This is the full manual override.
+    2. Otherwise the mod files that NEURON does not already provide are
+       compiled and loaded: those in `mechanisms_dirs` (a SONATA circuit's
+       ``mechanisms_dir``) plus BlueCelluLab's own bundled "technical" mod
+       files, which are always included so that circuits need not carry them
+       (see `bluecellulab.mod_compilation`).
+
+    Mechanisms NEURON already knows are never recompiled or reloaded, so a
+    directory compiled by hand with ``nrnivmodl`` in the working directory
+    keeps working unchanged: NEURON auto-loads it at import and it therefore
+    takes precedence over anything BlueCelluLab would supply.
+
+    `mechanisms_dirs` only affects how a compilation failure is treated. A
+    circuit that declares mechanisms cannot run without them, so failure
+    raises; supplying only the bundled technical mod files is best effort, as
+    a caller may never touch the features that need them.
+    """
     if 'BLUECELLULAB_MOD_LIBRARY_PATH' in os.environ:
         # Check if the current directory contains 'x86_64'.
         if os.path.isdir('x86_64'):
@@ -42,14 +71,33 @@ def import_mod_lib(neuron: ModuleType) -> str:
             neuron.h.nrn_load_dll(mod_lib_path)
         else:
             neuron.load_mechanisms(mod_lib_path)
-        res = mod_lib_path
-    elif os.path.isdir('x86_64'):
-        # NEURON 8.* automatically load these mechamisms
-        res = os.path.abspath('x86_64')
-    else:
-        res = "No mechanisms are loaded."
+        return mod_lib_path
 
-    return res
+    preloaded = registered_mechanisms()
+    try:
+        libnrnmech = compile_mechanisms(
+            mechanisms_dirs or [], already_registered=preloaded
+        )
+    except ModCompilationError as e:
+        if mechanisms_dirs:
+            raise BluecellulabError(f"Failed to compile circuit mod files: {e}") from e
+        # Only BlueCelluLab's own technical mod files were involved. Warn and
+        # carry on: the caller may not need them, and failing here would break
+        # workflows that worked before these files were bundled.
+        logger.warning(
+            "Could not compile BlueCelluLab's bundled mod files (%s). Features"
+            " that need them (spike replay, spontaneous minis, ttx) will fail if"
+            " the mechanisms are not already available.",
+            e,
+        )
+        libnrnmech = None
+
+    if libnrnmech is not None:
+        neuron.h.nrn_load_dll(str(libnrnmech))
+        return str(libnrnmech)
+    if preloaded:
+        return f"{len(preloaded)} mechanisms already available in NEURON."
+    return "No mechanisms are loaded."
 
 
 def _register_legacy_morphio_wrapper_alias() -> None:
@@ -102,11 +150,44 @@ def print_header(neuron: ModuleType, mod_lib_path: str) -> None:
 
 
 @run_once
-def _load_mod_files() -> None:
-    """Import hoc and mod files."""
+def _load_mod_files(mechanisms_dirs: Optional[list[Path]] = None) -> None:
+    """Import hoc and mod files.
+
+    NEURON only allows mechanisms to be loaded once per process, so this is
+    guarded with `run_once`: only the first call (whichever happens first)
+    actually loads anything, later calls are no-ops. `mechanisms_dirs` is
+    only meaningful on that first call.
+    """
     logger.debug("Loading the mod files.")
-    mod_lib_paths = import_mod_lib(neuron)
+    mod_lib_paths = import_mod_lib(neuron, mechanisms_dirs)
+    _load_mod_files.loaded_with = mechanisms_dirs
     print_header(neuron, mod_lib_paths)
+
+
+_load_mod_files.loaded_with = None
+
+
+def load_mod_files_for_circuit(mechanisms_dirs: Optional[list[Path]]) -> None:
+    """Load mod files declared by a circuit (e.g. SONATA `mechanisms_dir`).
+
+    If mod files were already loaded earlier in this process with a
+    different set of directories, logs a warning: NEURON does not
+    support swapping out mechanisms once loaded, so the earlier set
+    stays in effect.
+    """
+    if (
+        _load_mod_files.has_run
+        and mechanisms_dirs
+        and mechanisms_dirs != _load_mod_files.loaded_with
+    ):
+        logger.warning(
+            "Mod files were already loaded (with %s) earlier in this process;"
+            " the requested mechanisms_dirs %s cannot also be loaded."
+            " NEURON only supports loading mechanisms once per process.",
+            _load_mod_files.loaded_with,
+            mechanisms_dirs,
+        )
+    _load_mod_files(mechanisms_dirs)
 
 
 def load_mod_files(func):
