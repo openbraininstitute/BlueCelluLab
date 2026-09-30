@@ -6,6 +6,8 @@ except ImportError:
 from itertools import islice
 from itertools import repeat
 import logging
+from math import isfinite
+from numbers import Real
 from matplotlib.collections import LineCollection
 import matplotlib.pyplot as plt
 from multiprocessing import Pool
@@ -24,6 +26,7 @@ from bluecellulab.simulation.neuron_globals import set_neuron_globals
 from bluecellulab.stimulus import StimulusFactory
 from bluecellulab.stimulus.circuit_stimulus_definitions import Hyperpolarizing
 from bluecellulab.tools import calculate_rheobase
+from bluecellulab.utils import efel_settings
 
 
 logger = logging.getLogger(__name__)
@@ -124,18 +127,19 @@ def compute_plot_iv_curve(cell,
         )
 
     steady_states = []
-    # compute steady state response
-    efel.set_setting('Threshold', threshold_voltage)
-    for recording in recordings:
-        trace = {
-            'T': recording.time,
-            'V': recording.voltage,
-            'stim_start': [stim_start],
-            'stim_end': [stim_start + duration]
-        }
-        features_results = efel.get_feature_values([trace], ['steady_state_voltage_stimend'])
-        steady_state = features_results[0]['steady_state_voltage_stimend'][0]
-        steady_states.append(steady_state)
+    # compute steady state response. eFEL settings are process-global, so the
+    # threshold is restored afterwards to avoid leaking into later extractions.
+    with efel_settings({'Threshold': threshold_voltage}):
+        for recording in recordings:
+            trace = {
+                'T': recording.time,
+                'V': recording.voltage,
+                'stim_start': [stim_start],
+                'stim_end': [stim_start + duration]
+            }
+            features_results = efel.get_feature_values([trace], ['steady_state_voltage_stimend'])
+            steady_state = features_results[0]['steady_state_voltage_stimend'][0]
+            steady_states.append(steady_state)
 
     plot_iv_curve(list_amp,
                   steady_states,
@@ -265,11 +269,17 @@ def compute_plot_fi_curve(cell,
 class BPAP:
     # taken from the examples
 
-    def __init__(self, cell: Cell) -> None:
-        self.cell = cell
-        self.dt = 0.025
-        self.stim_start = 1000
-        self.stim_duration = 5
+    def __init__(self, cell: Cell, stim_duration: float = 5.0) -> None:
+        if isinstance(stim_duration, bool) or not isinstance(stim_duration, Real):
+            raise TypeError("stim_duration must be a finite real number.")
+        if not isfinite(float(stim_duration)):
+            raise ValueError("stim_duration must be a finite real number.")
+        if float(stim_duration) <= 0:
+            raise ValueError("stim_duration must be greater than zero.")
+        self.cell: Cell = cell
+        self.dt: float = 0.025
+        self.stim_start: float = 1000.0
+        self.stim_duration: float = float(stim_duration)
         self.basal_cmap = sns.color_palette("crest", as_cmap=True)
         self.apical_cmap = sns.color_palette("YlOrBr_r", as_cmap=True)
 
@@ -375,9 +385,15 @@ class BPAP:
             return None, True
 
     def validate(self, soma_amp, dend_amps, dend_dist, apic_amps, apic_dist, validate_with_fit=True):
-        """Check that the exponential fit is decaying."""
+        """Check that the exponential fit is decaying.
+
+        Missing branches are not assessed because back-propagation
+        cannot be judged from the somatic trace alone. The validation
+        fails if neither basal nor apical recordings can be assessed.
+        """
         validated = True
         notes = ""
+        assessed_branches = 0
         if validate_with_fit:
             popt_dend, dend_fit_error = self.fit(soma_amp, dend_amps, dend_dist)
             popt_apic, apic_fit_error = self.fit(soma_amp, apic_amps, apic_dist)
@@ -392,8 +408,10 @@ class BPAP:
             elif popt_dend[1] <= 0 or popt_dend[0] <= 0:
                 logger.debug("Dendritic fit is not decaying.")
                 validated = False
+                assessed_branches += 1
                 notes += "Dendritic fit is not decaying.\n"
             else:
+                assessed_branches += 1
                 notes += "Dendritic validation passed: dendritic amplitude is decaying with distance relative to soma.\n"
             if popt_apic is None:
                 logger.debug("No apical recordings found.")
@@ -401,11 +419,14 @@ class BPAP:
             elif popt_apic[1] <= 0 or popt_apic[0] <= 0:
                 logger.debug("Apical fit is not decaying.")
                 validated = False
+                assessed_branches += 1
                 notes += "Apical fit is not decaying.\n"
             else:
+                assessed_branches += 1
                 notes += "Apical validation passed: apical amplitude is decaying with distance relative to soma.\n"
         else:
             if dend_amps and dend_dist:
+                assessed_branches += 1
                 furthest_dend_idx = np.argmax(dend_dist)
                 if dend_amps[furthest_dend_idx] < soma_amp[0]:
                     notes += "Dendritic validation passed: dendritic amplitude is decaying with distance relative to soma.\n"
@@ -415,6 +436,7 @@ class BPAP:
             else:
                 notes += "No dendritic recordings found.\n"
             if apic_amps and apic_dist:
+                assessed_branches += 1
                 furthest_apic_idx = np.argmax(apic_dist)
                 if apic_amps[furthest_apic_idx] < soma_amp[0]:
                     notes += "Apical validation passed: apical amplitude is decaying with distance relative to soma.\n"
@@ -423,6 +445,16 @@ class BPAP:
                     notes += "Apical validation failed: apical amplitude is not decaying with distance relative to soma.\n"
             else:
                 notes += "No apical recordings found.\n"
+
+        if assessed_branches == 0:
+            # Without any dendritic or apical recording, attenuation with
+            # distance was never measured, so this cannot count as a pass.
+            logger.debug("No dendritic or apical recordings to assess.")
+            validated = False
+            notes += (
+                "Validation failed: no dendritic or apical recordings were available, "
+                "so back-propagation could not be assessed.\n"
+            )
 
         return validated, notes
 
@@ -519,32 +551,49 @@ class BPAP:
         output_dir="./",
         output_fname="bpap_recordings.pdf",
     ):
-        """Plot the recordings from all dendrites."""
+        """Plot the recordings from all dendrites.
+
+        Only recorded branches get a panel. An absent branch is omitted
+        instead of showing a soma-only panel that could look like
+        dendritic data.
+        """
         soma_rec, dend_rec, apic_rec = self.get_recordings()
-        dend_dist = []
-        apic_dist = []
+
+        # Each panel includes the somatic trace at distance 0 as a reference.
+        panels = []
         if dend_rec:
-            dend_dist = self.distances_to_soma(dend_rec)
+            panels.append((
+                'Basal Dendritic Recordings',
+                [soma_rec] + list(dend_rec.values()),
+                [0] + self.distances_to_soma(dend_rec),
+                self.basal_cmap,
+            ))
         if apic_rec:
-            apic_dist = self.distances_to_soma(apic_rec)
-        # add soma_rec to the lists
-        dend_rec_list = [soma_rec] + list(dend_rec.values())
-        dend_dist = [0] + dend_dist
-        apic_rec_list = [soma_rec] + list(apic_rec.values())
-        apic_dist = [0] + apic_dist
+            panels.append((
+                'Apical Dendritic Recordings',
+                [soma_rec] + list(apic_rec.values()),
+                [0] + self.distances_to_soma(apic_rec),
+                self.apical_cmap,
+            ))
+        if not panels:
+            panels.append((
+                'Somatic Recording (no dendritic or apical recordings)',
+                [soma_rec],
+                [0],
+                self.basal_cmap,
+            ))
 
         outpath = pathlib.Path(output_dir) / output_fname
-        fig, (ax1, ax2) = plt.subplots(figsize=(10, 12), nrows=2, sharex=True)
+        fig, axes = plt.subplots(
+            figsize=(10, 6 * len(panels)), nrows=len(panels), sharex=True, squeeze=False
+        )
+        axes = axes.ravel()
 
-        self.plot_one_axis_recordings(fig, ax1, dend_rec_list, dend_dist, self.basal_cmap)
-        self.plot_one_axis_recordings(fig, ax2, apic_rec_list, apic_dist, self.apical_cmap)
-
-        # plt.setp(ax1.get_xticklabels(), visible=False)
-        ax1.set_title('Basal Dendritic Recordings')
-        ax2.set_title('Apical Dendritic Recordings')
-        ax1.set_ylabel('Voltage (mV)')
-        ax2.set_ylabel('Voltage (mV)')
-        ax2.set_xlabel('Time (ms)')
+        for ax, (title, rec_list, dist, cmap) in zip(axes, panels):
+            self.plot_one_axis_recordings(fig, ax, rec_list, dist, cmap)
+            ax.set_title(title)
+            ax.set_ylabel('Voltage (mV)')
+        axes[-1].set_xlabel('Time (ms)')
         fig.suptitle('Back-propagating Action Potential Recordings')
         fig.tight_layout()
         if save_figure:
