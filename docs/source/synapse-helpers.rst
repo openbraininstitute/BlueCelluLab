@@ -12,10 +12,22 @@ SONATA connection specifies ``modoverride``. The bundled files are:
 As in Neurodamus, the ``modoverride`` value is a *helper prefix*, not a
 mechanism name: ``modoverride = "<Prefix>"`` always loads
 ``<Prefix>Helper.hoc`` and constructs the ``<Prefix>Helper`` template. There
-are no aliases. For example, ``modoverride = "GluSynapse"`` loads
-``GluSynapseHelper.hoc`` and constructs the ``GluSynapseHelper`` template.
+are no aliases. For example, ``modoverride = "AMPANMDA"`` loads
+``AMPANMDAHelper.hoc`` and constructs the ``AMPANMDAHelper`` template, and a
+circuit shipping ``ProbFiltHelper.hoc`` uses ``modoverride = "ProbFilt"``.
 The helper is constructed on the target section and its ``synapse`` object is
 used as the point process.
+
+.. note::
+
+   Exception (differs from Neurodamus): ``modoverride = "GluSynapse"`` and
+   ``modoverride = "Exp2Syn"`` do **not** go through ``GluSynapseHelper`` /
+   ``Exp2SynHelper``. They keep BlueCelluLab's native ``GluSynapse`` and
+   ``Exp2Syn`` classes, which are selected from the edge data (plasticity
+   fields present, or Allen ``tau1``/``tau2``/``erev`` fields), so existing
+   plasticity and Allen simulations are unchanged. The bundled
+   ``GluSynapseHelper.hoc`` and ``Exp2SynHelper.hoc`` are shipped for
+   Neurodamus parity but are not used for these two values.
 
 * ``ProbAMPANMDA_EMS`` / ``ProbGABAAB_EMS`` are mechanism names, not helper
   prefixes. They are the default synapse path and need no override; setting

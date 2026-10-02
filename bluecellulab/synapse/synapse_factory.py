@@ -34,6 +34,10 @@ from bluecellulab.type_aliases import NeuronSection
 
 SynapseType = Enum("SynapseType", "GABAAB AMPANMDA GLUSYNAPSE ALLEN_CHEMICAL")
 
+# modoverride values that keep BlueCelluLab's native synapse classes instead
+# of going through "<prefix>Helper" (see docs/source/synapse-helpers.rst).
+NATIVE_MOD_OVERRIDES = ("GluSynapse", "Exp2Syn")
+
 logger = logging.getLogger(__name__)
 
 
@@ -54,12 +58,14 @@ class SynapseFactory:
         """Returns a Synapse object."""
         syn_hoc_args = cls.determine_synapse_location(syn_description, cell)
 
-        # Neurodamus-style mod_override: if set, use a user-provided helper
-        # HOC ("<SUFFIX>Helper") to construct the synapse, bypassing the
-        # built-in GABAAB/AMPANMDA/GluSynapse classes.
+        # Neurodamus-style mod_override: if set, construct the synapse with
+        # the "<prefix>Helper" HOC template, bypassing the built-in classes.
+        # Exception (unlike neurodamus): "GluSynapse" and "Exp2Syn" keep the
+        # native, data-driven GluSynapse/Exp2Syn classes so existing
+        # plasticity and Allen users are not rerouted through helpers.
         synapse: Synapse
         mod_override = connection_modifiers.get("ModOverride")
-        if mod_override and mod_override not in ("GluSynapse", "Exp2Syn"):
+        if mod_override and mod_override not in NATIVE_MOD_OVERRIDES:
             synapse = GenericSpikeSynapse(
                 cell.cell_id, syn_hoc_args, syn_id, syn_description,
                 popids, cell.post_gid, extracellular_calcium,

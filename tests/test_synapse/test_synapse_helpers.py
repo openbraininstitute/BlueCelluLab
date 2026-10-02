@@ -471,6 +471,31 @@ def test_factory_uses_generic_synapse_for_mod_override(monkeypatch):
     assert result is created
 
 
+@pytest.mark.parametrize("mod_override", ["GluSynapse", "Exp2Syn"])
+def test_factory_keeps_native_classes_for_glusynapse_and_exp2syn(monkeypatch, mod_override):
+    """R6 option B: these values keep the native data-driven classes."""
+    native = SimpleNamespace()
+    monkeypatch.setattr(synapse_factory.SynapseFactory, "determine_synapse_location", lambda *_: "location")
+    monkeypatch.setattr(synapse_factory, "GenericSpikeSynapse", pytest.fail)
+    monkeypatch.setattr(
+        synapse_factory.SynapseFactory, "determine_synapse_type",
+        lambda _: synapse_factory.SynapseType.ALLEN_CHEMICAL,
+    )
+    monkeypatch.setattr(synapse_factory, "Exp2Syn", lambda *args, **kwargs: native)
+    monkeypatch.setattr(
+        synapse_factory.SynapseFactory, "apply_connection_modifiers",
+        lambda modifiers, synapse: synapse,
+    )
+    cell = SimpleNamespace(cell_id="cell", post_gid=12)
+
+    result = synapse_factory.SynapseFactory.create_synapse(
+        cell, ("projection", 1), pd.Series(), SimpleNamespace(), (2, 3), None,
+        {"ModOverride": mod_override},
+    )
+
+    assert result is native
+
+
 def test_generic_spike_synapse_rejects_helper_without_synapse(monkeypatch):
     class Section:
         def push(self):

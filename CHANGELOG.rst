@@ -16,6 +16,9 @@ Unreleased
   * ``<Helper>_NeededAttributes`` are mandatory: building an overridden synapse
     with missing attributes raises ``BluecellulabError``. Helper fields survive
     the Allen edge-property fallback.
+  * Exception kept on purpose: ``GluSynapse`` and ``Exp2Syn`` overrides keep
+    the native ``GluSynapse``/``Exp2Syn`` classes (not their helpers), so
+    existing plasticity and Allen simulations are unchanged.
 
 2.5.0
 -----
