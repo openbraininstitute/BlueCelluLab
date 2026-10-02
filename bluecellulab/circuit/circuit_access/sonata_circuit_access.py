@@ -287,17 +287,6 @@ class SonataCircuitAccess(CircuitAccess):
                     if optional_property.to_snap() not in edge_population.property_names:
                         edge_properties.remove(optional_property)
 
-                # Fields declared by modoverride helpers
-                # (``<prefix>Helper_NeededAttributes``) plus the reserved
-                # ``maskValue``, only those this population provides. Missing
-                # needed attributes are reported per overridden synapse when
-                # it is built (GenericSpikeSynapse), not here.
-                edge_properties += [
-                    field for field in self._helper_fields_for_population(
-                        edge_population_name, edge_population.property_names)
-                    if field not in edge_properties
-                ]
-
                 # if all plasticity props are present, add them
                 if all(
                     x in edge_population.property_names
@@ -320,6 +309,19 @@ class SonataCircuitAccess(CircuitAccess):
                         for x in SynapseProperties.allen_point
                     ):
                         edge_properties = list(SynapseProperties.allen_point)
+
+                # Fields declared by modoverride helpers
+                # (``<prefix>Helper_NeededAttributes``) plus the reserved
+                # ``maskValue``, only those this population provides. Added
+                # after the Allen replacement above so they survive it.
+                # Missing needed attributes are reported per overridden
+                # synapse when it is built (GenericSpikeSynapse), not here.
+                requested = set(properties_to_snap(edge_properties))
+                edge_properties += [
+                    field for field in self._helper_fields_for_population(
+                        edge_population_name, edge_population.property_names)
+                    if field not in requested
+                ]
 
                 snap_properties = properties_to_snap(edge_properties)
                 synapses: pd.DataFrame = edge_population.get(afferent_edges, snap_properties)

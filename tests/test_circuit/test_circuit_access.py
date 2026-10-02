@@ -53,6 +53,31 @@ def test_get_synapse_connection_parameters():
     assert syn_configure[1] == "%s.mg = 1.0"
 
 
+def test_helper_fields_survive_allen_fallback():
+    """The Allen fallback replaces the requested properties; helper fields
+    are added afterwards and must still be extracted."""
+    from bluecellulab.circuit.synapse_properties import SynapseProperties
+
+    allen_config = parent_dir / "examples" / "ringtest_allen_v1" / "simulation_config.json"
+    circuit_access = SonataCircuitAccess(allen_config)
+    # Drop "erev" from the Allen list so only the helper can request it.
+    allen_without_erev = tuple(
+        p for p in SynapseProperties.allen_chemical if p != "erev")
+    with patch.object(
+        SynapseProperties, "allen_chemical", allen_without_erev
+    ), patch.object(
+        circuit_access, "_mod_override_suffixes", return_value=("Fake",),
+    ), patch.object(
+        circuit_access, "_collect_helper_needed_attributes",
+        return_value={"erev": "Fake"},
+    ):
+        res = circuit_access.extract_synapses(CellId("RingA", 0), None)
+
+    assert SynapseProperty.U_SYN not in res.columns  # Allen fallback taken
+    assert "erev" in res.columns
+    assert res["erev"].notna().any()
+
+
 def test_sonata_circuit_access_file_not_found():
     with pytest.raises(FileNotFoundError):
         SonataCircuitAccess("non_existing_file")
