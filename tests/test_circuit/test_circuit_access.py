@@ -84,22 +84,57 @@ class TestSonataCircuitAccess:
         )
         assert str(expected) in synapse_helpers._extra_search_dirs
 
-    def test_missing_helper_attribute_warns(self, caplog):
-        """A helper-declared attribute absent from the edge population must
-        produce a warning naming the population and the mod_override SUFFIX."""
+    def test_helper_fields_extracted_only_if_present(self, caplog):
+        """Declared helper fields the population has are extracted; absent
+        ones are skipped without warning (checked per synapse at build)."""
         import logging
 
         cell_id = CellId("hippocampus_neurons", 1)
         with patch.object(
+            self.circuit_access, "_mod_override_suffixes", return_value=("Fake",),
+        ), patch.object(
             self.circuit_access,
             "_collect_helper_needed_attributes",
-            return_value={"w5_corr": "ProbFilt5AMPANMDA_EMS"},
+            return_value={"afferent_center_x": "Fake", "spine_length": "Fake"},
         ), caplog.at_level(logging.WARNING):
-            self.circuit_access.extract_synapses(cell_id, True)
+            res = self.circuit_access.extract_synapses(cell_id, True)
 
-        assert "w5_corr" in caplog.text
-        assert "ProbFilt5AMPANMDA_EMS" in caplog.text
-        assert "hippocampus_projections__hippocampus_neurons__chemical" in caplog.text
+        assert "afferent_center_x" in res.columns
+        assert "spine_length" not in res.columns
+        assert caplog.text == ""
+
+    def test_helper_fields_cached_per_population_and_override_set(self):
+        with patch.object(
+            self.circuit_access, "_mod_override_suffixes", return_value=("Fake",),
+        ), patch.object(
+            self.circuit_access,
+            "_collect_helper_needed_attributes",
+            return_value={"afferent_center_x": "Fake"},
+        ) as collect:
+            cells = [CellId("hippocampus_neurons", 1), CellId("hippocampus_neurons", 2)]
+            for cell_id in cells:
+                self.circuit_access.extract_synapses(cell_id, True)
+            n_calls = collect.call_count
+            for cell_id in cells:
+                self.circuit_access.extract_synapses(cell_id, True)
+
+        # At most one collection per edge population; none for repeated cells.
+        assert 1 <= n_calls <= len(list(self.circuit_access._circuit.edges.keys()))
+        assert collect.call_count == n_calls
+        assert all(call.args == (("Fake",),) for call in collect.call_args_list)
+
+    def test_no_override_extracts_without_helper_fields(self, caplog):
+        """Without modoverride nothing extra is extracted and nothing is
+        logged."""
+        import logging
+
+        assert self.circuit_access._mod_override_suffixes() == ()
+        with caplog.at_level(logging.WARNING):
+            res = self.circuit_access.extract_synapses(CellId("hippocampus_neurons", 1), True)
+
+        assert res.shape == (1742, 16)
+        assert "maskValue" not in res.columns
+        assert caplog.text == ""
 
     def test_available_cell_properties(self):
         assert self.circuit_access.available_cell_properties == {

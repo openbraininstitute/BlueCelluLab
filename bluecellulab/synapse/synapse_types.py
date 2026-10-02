@@ -22,6 +22,7 @@ import pandas as pd
 
 from bluecellulab.circuit import SynapseProperty
 from bluecellulab.circuit.node_id import CellId
+from bluecellulab.exceptions import BluecellulabError
 from bluecellulab.rngsettings import RNGSettings
 from bluecellulab.type_aliases import HocObjectType, NeuronSection
 
@@ -530,16 +531,39 @@ class GenericSpikeSynapse(Synapse):
         return syn_description
 
     def _build_via_helper(self, mod_suffix: str) -> None:
-        """Load helper HOC and invoke it to construct ``self.hsynapse``."""
-        from bluecellulab.synapse.synapse_helpers import load_synapse_helper
+        """Load helper HOC and invoke it to construct ``self.hsynapse``.
+
+        Raises:
+            BluecellulabError: if the synapse lacks an attribute declared in
+                the helper's ``_NeededAttributes`` (mandatory, as in
+                neurodamus; only ``maskValue`` and ``location`` are
+                reserved with defaults).
+        """
+        from bluecellulab.synapse.synapse_helpers import (
+            get_helper_needed_attributes,
+            load_synapse_helper,
+        )
 
         helper_name = load_synapse_helper(mod_suffix)
         helper_cls = getattr(neuron.h, helper_name)
 
+        params = _SynParamsAdapter(self.syn_description)
+        # A NaN value means the field's column is absent from this synapse's
+        # edge population (outer join of populations), i.e. not provided.
+        missing = [
+            attr for attr in get_helper_needed_attributes(mod_suffix)
+            if not hasattr(params, attr) or _is_nan(getattr(params, attr))
+        ]
+        if missing:
+            raise BluecellulabError(
+                f"Helper '{helper_name}' (modoverride '{mod_suffix}') needs "
+                f"attribute(s) {missing} missing for synapse {tuple(self.syn_id)}. "
+                "The edge population must provide every attribute in "
+                f"{helper_name}_NeededAttributes."
+            )
+
         rng_settings = RNGSettings.get_instance()
         base_seed = rng_settings.base_seed
-
-        params = _SynParamsAdapter(self.syn_description)
 
         # Match neurodamus calling convention. tgid+1 mirrors the legacy
         # 1-based GID used by neurodamus seeding. Keep the target section
@@ -568,6 +592,11 @@ class GenericSpikeSynapse(Synapse):
         self.hsynapse = helper.synapse
         self.mech_name = mod_suffix
         self.persistent.append(helper)
+
+
+def _is_nan(value: Any) -> bool:
+    """Return True for a scalar NaN value."""
+    return isinstance(value, float) and value != value
 
 
 class _SynParamsAdapter:

@@ -18,7 +18,7 @@ import hashlib
 from functools import lru_cache
 import logging
 from pathlib import Path
-from typing import Mapping, Optional
+from typing import Iterable, Mapping, Optional
 
 from bluepysnap.bbp import Cell as SnapCell
 from bluepysnap.circuit_ids import CircuitNodeId, CircuitEdgeIds
@@ -55,6 +55,7 @@ class SonataCircuitAccess(CircuitAccess):
         circuit_config = self.config.impl.config["network"]
         self._circuit = SnapCircuit(circuit_config)
         self._register_circuit_helper_dirs()
+        self._helper_fields_cache: dict[tuple[str, tuple[str, ...]], list[str]] = {}
         self._inner_edge_pop_names = {
             name for name, epop in self._circuit.edges.items()
             if getattr(epop.source, "type", None) != "virtual"
@@ -286,30 +287,15 @@ class SonataCircuitAccess(CircuitAccess):
                     if optional_property.to_snap() not in edge_population.property_names:
                         edge_properties.remove(optional_property)
 
-                # Neurodamus-compatible dynamic field discovery: scan all
-                # connection overrides for mod_override values, load each
-                # helper HOC, and request the fields declared via
-                # ``<SUFFIX>Helper_NeededAttributes`` from the edge
-                # population (only if present). Also request the reserved
-                # ``maskValue`` field if the edge population provides it.
-                helper_fields = self._collect_helper_needed_attributes()
-                missing_helper_fields = [
-                    field for field in helper_fields
-                    if field not in edge_population.property_names
-                ]
-                if missing_helper_fields:
-                    suffixes = sorted({helper_fields[f] for f in missing_helper_fields})
-                    logger.warning(
-                        "Edge population '%s' lacks attribute(s) %s declared by "
-                        "mod_override helper(s) %s; the fields will not be "
-                        "extracted and the helper will receive defaults.",
-                        edge_population_name, missing_helper_fields, suffixes,
-                    )
-                helper_field_names = list(helper_fields) + ["maskValue"]
+                # Fields declared by modoverride helpers
+                # (``<prefix>Helper_NeededAttributes``) plus the reserved
+                # ``maskValue``, only those this population provides. Missing
+                # needed attributes are reported per overridden synapse when
+                # it is built (GenericSpikeSynapse), not here.
                 edge_properties += [
-                    field for field in helper_field_names
+                    field for field in self._helper_fields_for_population(
+                        edge_population_name, edge_population.property_names)
                     if field not in edge_properties
-                    and field in edge_population.property_names
                 ]
 
                 # if all plasticity props are present, add them
@@ -373,38 +359,61 @@ class SonataCircuitAccess(CircuitAccess):
         else:
             return pd.concat(all_synapses_dfs)  # outer join that creates NaNs
 
-    def _collect_helper_needed_attributes(self) -> dict[str, str]:
-        """Collect SONATA edge fields required by all mod_override helpers.
-
-        Scans connection override entries for ``mod_override`` values,
-        loads each helper HOC, and reads the ``_NeededAttributes``
-        metadata (semicolon-separated field names). This mirrors
-        neurodamus ``SynapseReader.configure_override()``.
-
-        Returns:
-            De-duplicated mapping of field name -> the mod_override SUFFIX
-            whose helper declared it.
-        """
-        fields: dict[str, str] = {}
+    def _mod_override_suffixes(self) -> tuple[str, ...]:
+        """Sorted, de-duplicated modoverride prefixes of the connection
+        overrides."""
         try:
             entries = self.config.connection_entries()
         except (AttributeError, NotImplementedError):
-            return fields
-        for entry in entries:
-            mod_override = getattr(entry, "mod_override", None)
-            if not mod_override:
-                continue
+            return ()
+        suffixes = {getattr(entry, "mod_override", None) for entry in entries}
+        return tuple(sorted(s for s in suffixes if s))
+
+    def _helper_fields_for_population(
+        self, edge_population_name: str, property_names: Iterable[str]
+    ) -> list[str]:
+        """Helper fields (plus ``maskValue``) that the population provides.
+
+        Cached per (edge population, modoverride set) so helpers are not
+        reloaded for every cell.
+        """
+        key = (edge_population_name, self._mod_override_suffixes())
+        if key not in self._helper_fields_cache:
+            declared = self._collect_helper_needed_attributes(key[1])
+            self._helper_fields_cache[key] = [
+                field for field in [*declared, "maskValue"]
+                if field in property_names
+            ]
+        return list(self._helper_fields_cache[key])
+
+    def _collect_helper_needed_attributes(
+        self, suffixes: Iterable[str]
+    ) -> dict[str, str]:
+        """Collect SONATA edge fields declared by the given modoverride
+        helpers.
+
+        Loads each helper HOC and reads its ``_NeededAttributes`` metadata
+        (semicolon-separated field names), as neurodamus
+        ``SynapseReader.configure_override()`` does. A helper that cannot be
+        loaded is skipped here; building an overridden synapse raises the
+        loader error.
+
+        Returns:
+            De-duplicated mapping of field name -> the modoverride prefix
+            whose helper declared it.
+        """
+        from bluecellulab.synapse.synapse_helpers import get_helper_needed_attributes
+
+        fields: dict[str, str] = {}
+        for suffix in suffixes:
             try:
-                from bluecellulab.synapse.synapse_helpers import (
-                    get_helper_needed_attributes,
-                )
-                for attr in get_helper_needed_attributes(mod_override):
-                    fields.setdefault(attr, mod_override)
+                for attr in get_helper_needed_attributes(suffix):
+                    fields.setdefault(attr, suffix)
             except (FileNotFoundError, AttributeError):
                 logger.warning(
                     "Could not load helper for mod_override='%s'; "
                     "skipping _NeededAttributes discovery.",
-                    mod_override,
+                    suffix,
                 )
         return fields
 

@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 from bluecellulab.circuit.config.sections import ConnectionOverrides
+from bluecellulab.exceptions import BluecellulabError
 from bluecellulab.circuit.synapse_properties import SynapseProperty
 from bluecellulab.synapse import synapse_factory, synapse_helpers, synapse_types
 from bluecellulab.synapse.synapse_types import (
@@ -502,6 +503,70 @@ def test_generic_spike_synapse_rejects_helper_without_synapse(monkeypatch):
 
     with pytest.raises(AttributeError, match="does not expose"):
         synapse._build_via_helper("Test")
+
+
+def _helper_synapse(monkeypatch, description, needed):
+    """GenericSpikeSynapse wired to a fake helper declaring ``needed``."""
+    calls = []
+
+    class Section:
+        def push(self):
+            pass
+
+    class Helper:
+        def __init__(self, *args):
+            calls.append(args)
+            self.synapse = SimpleNamespace()
+
+    monkeypatch.setattr(synapse_helpers, "load_synapse_helper", lambda _: "TestHelper")
+    monkeypatch.setattr(
+        synapse_types.neuron,
+        "h",
+        SimpleNamespace(
+            TestHelper=Helper,
+            TestHelper_NeededAttributes=needed,
+            pop_section=lambda: None,
+        ),
+    )
+    synapse = GenericSpikeSynapse.__new__(GenericSpikeSynapse)
+    synapse.post_gid = 41
+    synapse.hoc_args = SimpleNamespace(location=0.25, section=Section())
+    synapse.syn_id = SynapseID("projection", 7)
+    synapse.source_popid = 2
+    synapse.target_popid = 3
+    synapse.syn_description = pd.Series(description)
+    synapse.persistent = []
+    return synapse, calls
+
+
+@pytest.mark.parametrize(
+    "description",
+    [{"w_corr": 0.1}, {"w_corr": 0.1, "tau_corr": float("nan")}],
+    ids=["absent", "nan"],
+)
+def test_missing_needed_attribute_raises_before_helper(monkeypatch, description):
+    """``_NeededAttributes`` are mandatory: absent (or NaN from the outer
+    join of populations) raises, naming helper, synapse and fields."""
+    synapse, calls = _helper_synapse(monkeypatch, description, "w_corr;tau_corr")
+
+    with pytest.raises(BluecellulabError) as excinfo:
+        synapse._build_via_helper("Test")
+
+    message = str(excinfo.value)
+    assert "TestHelper" in message
+    assert "('projection', 7)" in message
+    assert "['tau_corr']" in message
+    assert calls == []
+
+
+def test_needed_attributes_present_builds(monkeypatch):
+    synapse, calls = _helper_synapse(
+        monkeypatch, {"w_corr": 0.1, "tau_corr": 2.0}, "w_corr;tau_corr;maskValue"
+    )
+
+    synapse._build_via_helper("Test")
+
+    assert len(calls) == 1
 
 
 def test_get_helper_needed_attributes_returns_declared_fields(monkeypatch):
