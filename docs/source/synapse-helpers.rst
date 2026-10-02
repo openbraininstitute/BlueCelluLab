@@ -50,7 +50,9 @@ that provide them, and building an overridden synapse whose attributes are
 missing (or NaN, which is how a column absent from that synapse's edge
 population appears) raises ``BluecellulabError`` naming the helper, the
 synapse and the missing fields. Only ``maskValue`` (``-1``) and ``location``
-(``0.5``) are reserved and defaulted, as in Neurodamus.
+(``0.5``) are reserved and defaulted, as in Neurodamus. If the helper's
+point process exposes a ``conductance`` variable, it is set to the synapse
+weight (``conductance_ratio`` is not applied to overridden synapses).
 
 Provenance
 ----------

@@ -227,6 +227,7 @@ def test_bundled_helpers_build_real_neuron(suffix, mechanism, clean_helper_searc
     assert synapse.hsynapse.Dep == pytest.approx(600.0)
     assert synapse.hsynapse.Nrrp == pytest.approx(2)
     assert synapse.hsynapse.synapseID == 4
+    assert synapse.hsynapse.conductance == pytest.approx(0.7)  # = weight
 
 
 def test_mechanism_name_override_has_no_alias(helper_env):
@@ -586,6 +587,25 @@ def test_needed_attributes_present_builds(monkeypatch):
     synapse._build_via_helper("Test")
 
     assert len(calls) == 1
+    assert not hasattr(synapse.hsynapse, "conductance")  # not exposed: untouched
+
+
+def test_conductance_set_to_weight_when_exposed(monkeypatch):
+    synapse, _ = _helper_synapse(monkeypatch, {SynapseProperty.G_SYNX: 0.9}, "")
+    helper_cls = synapse_types.neuron.h.TestHelper
+
+    class Mechanism:
+        conductance = 0.0
+
+    class HelperWithConductance(helper_cls):
+        def __init__(self, *args):
+            super().__init__(*args)
+            self.synapse = Mechanism()
+
+    synapse_types.neuron.h.TestHelper = HelperWithConductance
+    synapse._build_via_helper("Test")
+
+    assert synapse.hsynapse.conductance == 0.9
 
 
 def test_get_helper_needed_attributes_returns_declared_fields(monkeypatch):

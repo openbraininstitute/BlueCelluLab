@@ -590,6 +590,11 @@ class GenericSpikeSynapse(Synapse):
             )
         self._helper = helper  # keep reference alive
         self.hsynapse = helper.synapse
+        # As neurodamus Connection._create_synapse: conductance = weight when
+        # the mechanism exposes it (no conductance_ratio on overrides).
+        weight = getattr(params, "weight", None)
+        if weight is not None and hasattr(self.hsynapse, "conductance"):
+            self.hsynapse.conductance = weight
         self.mech_name = mod_suffix
         self.persistent.append(helper)
 
