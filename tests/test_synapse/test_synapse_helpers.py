@@ -57,99 +57,6 @@ def test_bundled_hoc_directory_is_appended_to_search_path(monkeypatch):
     )
 
 
-def test_load_synapse_helper_prefers_external_helper(monkeypatch):
-    suffix = "ExternalPrecedenceCoverage"
-    calls = []
-
-    class FakeH:
-        ExternalPrecedenceCoverageHelper = object()
-
-        def load_file(self, filename):
-            calls.append(filename)
-            return 1
-
-    monkeypatch.setattr(synapse_helpers, "neuron", SimpleNamespace(h=FakeH()))
-
-    assert synapse_helpers.load_synapse_helper(suffix) == f"{suffix}Helper"
-    assert calls == [f"{suffix}Helper.hoc"]
-    synapse_helpers._loaded_helpers.discard(suffix)
-
-
-def test_load_synapse_helper_falls_back_to_bundled_path(monkeypatch):
-    suffix = "BundledFallbackCoverage"
-    calls = []
-
-    class FakeH:
-        BundledFallbackCoverageHelper = object()
-
-        def load_file(self, filename):
-            calls.append(filename)
-            return int(synapse_helpers.os.path.isabs(filename))
-
-    monkeypatch.setattr(synapse_helpers, "neuron", SimpleNamespace(h=FakeH()))
-
-    assert synapse_helpers.load_synapse_helper(suffix) == f"{suffix}Helper"
-    assert calls[0] == f"{suffix}Helper.hoc"
-    assert calls[1].endswith(f"{suffix}Helper.hoc")
-    assert calls[1] != calls[0]
-    synapse_helpers._loaded_helpers.discard(suffix)
-
-
-def test_external_helper_wins_over_bundled_with_real_neuron(tmp_path, monkeypatch):
-    """Integration test using the real NEURON loader.
-
-    When a helper HOC is discoverable through HOC_LIBRARY_PATH *and* a helper
-    with the same name exists in the bundled directory, the external one must
-    win. This locks in the user-override precedence guarantee end-to-end
-    (real ``h.load_file`` + real HOC_LIBRARY_PATH resolution), rather than
-    just the control flow of ``load_synapse_helper``.
-    """
-    import neuron
-
-    suffix = "ExternalWinsRealNrn"
-    helper_file = f"{suffix}Helper.hoc"
-
-    external_dir = tmp_path / "external"
-    bundled_dir = tmp_path / "bundled"
-    external_dir.mkdir()
-    bundled_dir.mkdir()
-
-    # Both files define the same template but set a distinct marker global so
-    # we can tell which file NEURON actually loaded.
-    (external_dir / helper_file).write_text(
-        f"external_marker_{suffix} = 1\n"
-        f"begintemplate {suffix}Helper\n"
-        "public synapse\n"
-        "objref synapse\n"
-        "proc init() {}\n"
-        f"endtemplate {suffix}Helper\n"
-    )
-    (bundled_dir / helper_file).write_text(
-        f"bundled_marker_{suffix} = 1\n"
-        f"begintemplate {suffix}Helper\n"
-        "public synapse\n"
-        "objref synapse\n"
-        "proc init() {}\n"
-        f"endtemplate {suffix}Helper\n"
-    )
-
-    # External dir listed first; the loader appends the bundled dir after it.
-    monkeypatch.setenv("HOC_LIBRARY_PATH", str(external_dir))
-    monkeypatch.setattr(
-        synapse_helpers, "_bundled_hoc_directory", lambda: str(bundled_dir)
-    )
-    synapse_helpers._loaded_helpers.discard(suffix)
-
-    try:
-        assert synapse_helpers.load_synapse_helper(suffix) == f"{suffix}Helper"
-        # The external file executed (its marker global is defined) ...
-        assert hasattr(neuron.h, f"external_marker_{suffix}")
-        # ... and the bundled file was not loaded.
-        assert not hasattr(neuron.h, f"bundled_marker_{suffix}")
-    finally:
-        synapse_helpers._loaded_helpers.discard(suffix)
-
-
 @pytest.fixture
 def clean_helper_search_dirs():
     """Isolate the registered helper search dirs around a test."""
@@ -158,41 +65,180 @@ def clean_helper_search_dirs():
     synapse_helpers.clear_helper_search_dirs()
 
 
-def test_registered_dir_searched_between_hoc_path_and_bundled(
-    tmp_path, monkeypatch, clean_helper_search_dirs
-):
-    """Registered dirs are tried after HOC_LIBRARY_PATH and before bundled."""
-    suffix = "RegisteredDirOrder"
-    helper_file = f"{suffix}Helper.hoc"
-    helper_dir = tmp_path / "circuit_mods"
-    helper_dir.mkdir()
-    (helper_dir / helper_file).write_text("// helper\n")
-    synapse_helpers.register_helper_search_dirs([helper_dir])
-
-    calls = []
-    bundled_dir = synapse_helpers._bundled_hoc_directory()
-
-    class FakeH:
-        def load_file(self, filename):
-            calls.append(filename)
-            # only the bundled absolute path "loads"
-            return int(
-                synapse_helpers.os.path.dirname(filename) == bundled_dir
-            )
-
-    fake_h = FakeH()
-    monkeypatch.setattr(synapse_helpers, "neuron", SimpleNamespace(h=fake_h))
+@pytest.fixture
+def helper_env(tmp_path, monkeypatch, clean_helper_search_dirs):
+    """Isolated cwd / HOC_LIBRARY_PATH / registered dirs / fake bundled dir."""
+    dirs = SimpleNamespace(
+        cwd=tmp_path / "cwd",
+        user=tmp_path / "user",
+        registered=tmp_path / "registered",
+        bundled=tmp_path / "bundled",
+    )
+    for directory in vars(dirs).values():
+        directory.mkdir()
+    monkeypatch.chdir(dirs.cwd)
+    monkeypatch.delenv("HOC_LIBRARY_PATH", raising=False)
     monkeypatch.setattr(
-        fake_h, f"{suffix}Helper", object(), raising=False
+        synapse_helpers, "_bundled_hoc_directory", lambda: str(dirs.bundled)
+    )
+    return dirs
+
+
+def _write_helper(directory, suffix, marker):
+    """Write a minimal helper defining ``<suffix>Helper`` and a marker
+    global."""
+    (directory / f"{suffix}Helper.hoc").write_text(
+        f"{marker}_{suffix} = 1\n"
+        f"begintemplate {suffix}Helper\n"
+        "public synapse\n"
+        "objref synapse\n"
+        "proc init() {}\n"
+        f"endtemplate {suffix}Helper\n"
     )
 
-    assert synapse_helpers.load_synapse_helper(suffix) == f"{suffix}Helper"
-    assert calls == [
-        helper_file,  # HOC_LIBRARY_PATH / cwd
-        str(helper_dir / helper_file),  # registered circuit dir
-        synapse_helpers.os.path.join(bundled_dir, helper_file),  # bundled
+
+def _loaded_marker(suffix):
+    import neuron
+
+    markers = [m for m in ("cwd", "user", "registered", "bundled")
+               if hasattr(neuron.h, f"{m}_{suffix}")]
+    assert len(markers) == 1, markers
+    return markers[0]
+
+
+def test_helper_search_dirs_precedence(helper_env, monkeypatch):
+    """Cwd -> user HOC_LIBRARY_PATH (bundled excluded) -> registered ->
+    bundled."""
+    monkeypatch.setenv(
+        "HOC_LIBRARY_PATH",
+        synapse_helpers.os.pathsep.join([str(helper_env.user), str(helper_env.bundled)]),
+    )
+    synapse_helpers.register_helper_search_dirs([helper_env.registered])
+
+    assert synapse_helpers._helper_search_dirs() == [
+        str(helper_env.cwd),
+        str(helper_env.user),
+        str(helper_env.registered),
+        str(helper_env.bundled),
     ]
-    synapse_helpers._loaded_helpers.discard(suffix)
+
+
+def test_cwd_helper_beats_user_hoc_library_path_real_neuron(helper_env, monkeypatch):
+    suffix = "CwdWinsRealNrn"
+    for marker in ("cwd", "user", "registered", "bundled"):
+        _write_helper(getattr(helper_env, marker), suffix, marker)
+    monkeypatch.setenv("HOC_LIBRARY_PATH", str(helper_env.user))
+    synapse_helpers.register_helper_search_dirs([helper_env.registered])
+    try:
+        synapse_helpers.load_synapse_helper(suffix)
+        assert _loaded_marker(suffix) == "cwd"
+        assert synapse_helpers._loaded_helpers[suffix] == str(
+            helper_env.cwd / f"{suffix}Helper.hoc")
+    finally:
+        synapse_helpers._loaded_helpers.pop(suffix, None)
+
+
+def test_user_hoc_library_path_beats_registered_dir_real_neuron(helper_env, monkeypatch):
+    suffix = "UserWinsRealNrn"
+    for marker in ("user", "registered", "bundled"):
+        _write_helper(getattr(helper_env, marker), suffix, marker)
+    monkeypatch.setenv("HOC_LIBRARY_PATH", str(helper_env.user))
+    synapse_helpers.register_helper_search_dirs([helper_env.registered])
+    try:
+        synapse_helpers.load_synapse_helper(suffix)
+        assert _loaded_marker(suffix) == "user"
+    finally:
+        synapse_helpers._loaded_helpers.pop(suffix, None)
+
+
+def test_registered_dir_beats_bundled_real_neuron(helper_env):
+    """No user HOC_LIBRARY_PATH: the bundled dir is appended to the path for
+    dependencies, but a registered circuit dir still wins."""
+    suffix = "RegisteredWinsRealNrn"
+    for marker in ("registered", "bundled"):
+        _write_helper(getattr(helper_env, marker), suffix, marker)
+    synapse_helpers.register_helper_search_dirs([helper_env.registered])
+    try:
+        synapse_helpers.load_synapse_helper(suffix)
+        assert _loaded_marker(suffix) == "registered"
+        assert str(helper_env.bundled) in synapse_helpers.os.environ["HOC_LIBRARY_PATH"]
+    finally:
+        synapse_helpers._loaded_helpers.pop(suffix, None)
+
+
+def test_bundled_helper_used_as_fallback_real_neuron(helper_env):
+    suffix = "BundledFallbackRealNrn"
+    _write_helper(helper_env.bundled, suffix, "bundled")
+    try:
+        synapse_helpers.load_synapse_helper(suffix)
+        assert _loaded_marker(suffix) == "bundled"
+    finally:
+        synapse_helpers._loaded_helpers.pop(suffix, None)
+
+
+def test_helper_loaded_once_without_redefinition(helper_env):
+    """A second load (another population / cell, or after the cache is
+    cleared) must not re-execute the HOC file: redefining a template is a HOC
+    error."""
+    import neuron
+
+    suffix = "LoadOnceRealNrn"
+    _write_helper(helper_env.bundled, suffix, "bundled")
+    try:
+        assert synapse_helpers.load_synapse_helper(suffix) == f"{suffix}Helper"
+        assert synapse_helpers.load_synapse_helper(suffix) == f"{suffix}Helper"
+        # Template already defined in NEURON: skipped even with a cold cache
+        # and a different file of the same name earlier on the search path.
+        synapse_helpers._loaded_helpers.pop(suffix)
+        _write_helper(helper_env.cwd, suffix, "cwd")
+        assert synapse_helpers.load_synapse_helper(suffix) == f"{suffix}Helper"
+        assert synapse_helpers._loaded_helpers[suffix] == "<preloaded>"
+        assert not hasattr(neuron.h, f"cwd_{suffix}")
+    finally:
+        synapse_helpers._loaded_helpers.pop(suffix, None)
+
+
+def _real_section():
+    import neuron
+
+    section = neuron.h.Section(name="helper_test_section")
+    section.insert("pas")
+    return section
+
+
+_TM_DESCRIPTION = {
+    SynapseProperty.PRE_GID: 1,
+    SynapseProperty.G_SYNX: 0.7,
+    SynapseProperty.U_SYN: 0.5,
+    SynapseProperty.D_SYN: 600.0,
+    SynapseProperty.F_SYN: 20.0,
+    SynapseProperty.DTC: 1.7,
+    SynapseProperty.NRRP: 2,
+}
+
+
+@pytest.mark.parametrize(
+    "suffix, mechanism", [("AMPANMDA", "ProbAMPANMDA_EMS"), ("GABAAB", "ProbGABAAB_EMS")]
+)
+def test_bundled_helpers_build_real_neuron(suffix, mechanism, clean_helper_search_dirs):
+    """``AMPANMDA``/``GABAAB`` overrides build from the bundled helpers."""
+    section = _real_section()
+    synapse = GenericSpikeSynapse(
+        SimpleNamespace(id=3), SynapseHocArgs(0.5, section), ("", 4),
+        pd.Series(dict(_TM_DESCRIPTION)), (0, 0), 3, None, suffix,
+    )
+
+    assert synapse.hsynapse.hname().startswith(mechanism)
+    assert synapse.hsynapse.Dep == pytest.approx(600.0)
+    assert synapse.hsynapse.Nrrp == pytest.approx(2)
+    assert synapse.hsynapse.synapseID == 4
+
+
+def test_mechanism_name_override_has_no_alias(helper_env):
+    """``ProbAMPANMDA_EMS`` is a mechanism, not a helper prefix: no alias to
+    ``AMPANMDAHelper``, so a clear missing-helper error is raised."""
+    with pytest.raises(FileNotFoundError, match="ProbAMPANMDA_EMSHelper.hoc.*helper prefix"):
+        synapse_helpers.load_synapse_helper("ProbAMPANMDA_EMS")
 
 
 def test_register_helper_search_dirs_dedupes_and_ignores_missing(
@@ -209,28 +255,30 @@ def test_register_helper_search_dirs_dedupes_and_ignores_missing(
     assert synapse_helpers._extra_search_dirs == [str(existing)]
 
 
-def test_missing_helper_error_lists_registered_dirs(
-    tmp_path, monkeypatch, clean_helper_search_dirs
-):
-    helper_dir = tmp_path / "circuit_mods"
-    helper_dir.mkdir()
-    synapse_helpers.register_helper_search_dirs([helper_dir])
+def test_missing_helper_error_lists_registered_dirs(helper_env):
+    synapse_helpers.register_helper_search_dirs([helper_env.registered])
 
-    suffix = "MissingRegisteredDirCoverage"
-    fake_h = SimpleNamespace(load_file=lambda _: 0)
-    monkeypatch.setattr(synapse_helpers, "neuron", SimpleNamespace(h=fake_h))
-
-    with pytest.raises(FileNotFoundError, match=str(helper_dir)):
-        synapse_helpers.load_synapse_helper(suffix)
+    with pytest.raises(FileNotFoundError, match=str(helper_env.registered)):
+        synapse_helpers.load_synapse_helper("MissingRegisteredDirCoverage")
 
 
 def test_load_synapse_helper_missing_raises():
     """load_synapse_helper raises FileNotFoundError when the helper HOC cannot
-    be located on HOC_LIBRARY_PATH."""
+    be located."""
     from bluecellulab.synapse.synapse_helpers import load_synapse_helper
 
-    with pytest.raises((FileNotFoundError, AttributeError)):
+    with pytest.raises(FileNotFoundError):
         load_synapse_helper("ThisSuffixDoesNotExistAnywhere_XYZ")
+
+
+def test_load_synapse_helper_reports_neuron_load_failure(helper_env, monkeypatch):
+    suffix = "LoadFailureCoverage"
+    _write_helper(helper_env.bundled, suffix, "bundled")
+    fake_h = SimpleNamespace(load_file=lambda _: 0)
+    monkeypatch.setattr(synapse_helpers, "neuron", SimpleNamespace(h=fake_h))
+
+    with pytest.raises(FileNotFoundError, match="NEURON failed to load"):
+        synapse_helpers.load_synapse_helper(suffix)
 
 
 def test_from_sonata_reads_modoverride_one_word():
@@ -262,16 +310,17 @@ def test_from_sonata_modoverride_none_when_absent():
 
 def test_load_synapse_helper_uses_cache(monkeypatch):
     suffix = "CachedHelperCoverage"
-    synapse_helpers._loaded_helpers.add(suffix)
+    synapse_helpers._loaded_helpers[suffix] = "/some/path"
     fake_h = SimpleNamespace(load_file=pytest.fail)
     monkeypatch.setattr(synapse_helpers, "neuron", SimpleNamespace(h=fake_h))
 
     assert synapse_helpers.load_synapse_helper(suffix) == f"{suffix}Helper"
-    synapse_helpers._loaded_helpers.discard(suffix)
+    synapse_helpers._loaded_helpers.pop(suffix, None)
 
 
-def test_load_synapse_helper_rejects_helper_without_template(monkeypatch):
+def test_load_synapse_helper_rejects_helper_without_template(helper_env, monkeypatch):
     suffix = "MissingTemplateCoverage"
+    (helper_env.bundled / f"{suffix}Helper.hoc").write_text("// no template\n")
     fake_h = SimpleNamespace(load_file=lambda _: 1)
     monkeypatch.setattr(synapse_helpers, "neuron", SimpleNamespace(h=fake_h))
 
@@ -279,14 +328,14 @@ def test_load_synapse_helper_rejects_helper_without_template(monkeypatch):
         synapse_helpers.load_synapse_helper(suffix)
 
 
-def test_load_synapse_helper_loads_template(monkeypatch):
+def test_load_synapse_helper_skips_preloaded_template(monkeypatch):
     suffix = "LoadedTemplateCoverage"
-    fake_h = SimpleNamespace(load_file=lambda _: 1, LoadedTemplateCoverageHelper=object())
+    fake_h = SimpleNamespace(load_file=pytest.fail, LoadedTemplateCoverageHelper=object())
     monkeypatch.setattr(synapse_helpers, "neuron", SimpleNamespace(h=fake_h))
 
     assert synapse_helpers.load_synapse_helper(suffix) == f"{suffix}Helper"
     assert synapse_helpers.helper_available(suffix)
-    synapse_helpers._loaded_helpers.discard(suffix)
+    synapse_helpers._loaded_helpers.pop(suffix, None)
 
 
 def test_syn_params_adapter_maps_enum_and_string_keys():
@@ -466,7 +515,7 @@ def test_get_helper_needed_attributes_returns_declared_fields(monkeypatch):
 
     attrs = synapse_helpers.get_helper_needed_attributes(suffix)
     assert attrs == ["w_corr", "tau_corr", "w1_corr"]
-    synapse_helpers._loaded_helpers.discard(suffix)
+    synapse_helpers._loaded_helpers.pop(suffix, None)
 
 
 def test_get_helper_needed_attributes_empty_when_no_metadata(monkeypatch):
@@ -478,4 +527,4 @@ def test_get_helper_needed_attributes_empty_when_no_metadata(monkeypatch):
     monkeypatch.setattr(synapse_helpers, "neuron", SimpleNamespace(h=fake_h))
 
     assert synapse_helpers.get_helper_needed_attributes(suffix) == []
-    synapse_helpers._loaded_helpers.discard(suffix)
+    synapse_helpers._loaded_helpers.pop(suffix, None)

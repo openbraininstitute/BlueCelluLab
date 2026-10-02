@@ -7,12 +7,12 @@
 #     http://www.apache.org/licenses/LICENSE-2.0
 """Neurodamus-compatible synapse helper HOC loading.
 
-Implements the same convention as ``neurodamus``. A SUFFIX (e.g.
-``"GluSynapse"``) names a compiled NMODL mechanism. The companion HOC
-template is ``"{SUFFIX}Helper"``, expected to be loadable via
-``h.load_file("{SUFFIX}Helper.hoc")`` (NEURON searches ``HOC_LIBRARY_PATH``
-/ cwd). Circuits that ship their own helper HOCs can register extra search
-directories via :func:`register_helper_search_dirs`.
+Implements the same convention as ``neurodamus``: a ``modoverride`` value is
+a helper prefix and always resolves to the HOC template ``"{prefix}Helper"``
+defined in ``"{prefix}Helper.hoc"`` (no aliases). The helper file is resolved
+explicitly (see :func:`_resolve_helper_path`) and loaded by absolute path,
+once per prefix. Circuits that ship their own helper HOCs can register extra
+search directories via :func:`register_helper_search_dirs`.
 """
 from __future__ import annotations
 
@@ -26,7 +26,9 @@ import neuron
 
 logger = logging.getLogger(__name__)
 
-_loaded_helpers: set[str] = set()
+# Helper prefix -> resolved helper file path (or "<preloaded>" when the
+# template was already defined in NEURON before BlueCelluLab loaded it).
+_loaded_helpers: dict[str, str] = {}
 
 # Circuit-provided directories searched for ``<SUFFIX>Helper.hoc`` after
 # ``HOC_LIBRARY_PATH`` and before the bundled fallback (e.g. a circuit's
@@ -67,50 +69,76 @@ def _ensure_bundled_hoc_directory_on_search_path() -> str:
     return bundled_dir
 
 
-def load_synapse_helper(suffix: str) -> str:
-    """Load a packaged or externally supplied synapse helper HOC template.
+def _helper_search_dirs() -> list[str]:
+    """Return the helper search directories in precedence order.
 
-    Resolution order: (a) ``HOC_LIBRARY_PATH`` / cwd — external helpers take
-    precedence, (b) each directory registered via
-    :func:`register_helper_search_dirs` (e.g. the circuit's ``mechanisms_dir``
-    or ``biophysical_neuron_models_dir``), (c) the standard helpers bundled
-    with BlueCelluLab. The matching compiled MOD mechanism is still required
-    separately.
+    Order: cwd, user ``HOC_LIBRARY_PATH`` entries (the bundled dir excluded,
+    since BlueCelluLab appends it for dependencies), registered circuit dirs,
+    then the bundled dir.
+    """
+    bundled_dir = os.path.normpath(_bundled_hoc_directory())
+    user_dirs = [
+        path for path in os.environ.get("HOC_LIBRARY_PATH", "").split(os.pathsep)
+        if path and os.path.normpath(path) != bundled_dir
+    ]
+    return [os.getcwd(), *user_dirs, *_extra_search_dirs, bundled_dir]
+
+
+def _resolve_helper_path(suffix: str) -> str | None:
+    """Return the absolute path of the first ``<suffix>Helper.hoc`` found.
+
+    See :func:`_helper_search_dirs` for the precedence. Returns None if no
+    directory contains the helper file.
+    """
+    helper_file = f"{suffix}Helper.hoc"
+    for directory in _helper_search_dirs():
+        candidate = os.path.join(directory, helper_file)
+        if os.path.isfile(candidate):
+            return os.path.abspath(candidate)
+    return None
+
+
+def load_synapse_helper(suffix: str) -> str:
+    """Load the ``<suffix>Helper`` HOC template and return its name.
+
+    ``suffix`` is the ``modoverride`` helper prefix. The helper file is
+    resolved by :func:`_resolve_helper_path` (cwd, user ``HOC_LIBRARY_PATH``,
+    registered circuit dirs, bundled helpers) and loaded by absolute path.
+    Each prefix is loaded at most once; if the template already exists in
+    NEURON it is not loaded again (HOC cannot redefine a template). The
+    bundled dir stays on ``HOC_LIBRARY_PATH`` so helpers can load
+    dependencies such as ``RNGSettings.hoc``. The matching compiled MOD
+    mechanism is still required separately.
     """
     helper_name = f"{suffix}Helper"
     if suffix in _loaded_helpers:
         return helper_name
 
+    _ensure_bundled_hoc_directory_on_search_path()
+
+    if hasattr(neuron.h, helper_name):
+        _loaded_helpers[suffix] = "<preloaded>"
+        return helper_name
+
     helper_file = f"{helper_name}.hoc"
-    # Keep this first: helper HOCs (including circuit-provided ones) load
-    # dependencies such as "RNGSettings.hoc" relatively from the bundled dir.
-    bundled_dir = _ensure_bundled_hoc_directory_on_search_path()
-
-    # Search HOC_LIBRARY_PATH first, preserving support for custom helpers.
-    loaded = neuron.h.load_file(helper_file)
-    if not loaded:
-        for extra_dir in _extra_search_dirs:
-            candidate = os.path.join(extra_dir, helper_file)
-            if os.path.isfile(candidate):
-                loaded = neuron.h.load_file(candidate)
-                if loaded:
-                    break
-    if not loaded:
-        bundled_path = os.path.join(bundled_dir, helper_file)
-        loaded = neuron.h.load_file(bundled_path)
-
-    if not loaded:
+    helper_path = _resolve_helper_path(suffix)
+    if helper_path is None:
         raise FileNotFoundError(
-            f"Could not load HOC helper '{helper_file}' for mod_override '{suffix}'. "
-            f"HOC_LIBRARY_PATH={os.environ.get('HOC_LIBRARY_PATH', '<unset>')}; "
-            f"registered search dirs={_extra_search_dirs or '<none>'}"
+            f"Could not find HOC helper '{helper_file}' for modoverride '{suffix}'. "
+            f"modoverride is a helper prefix resolved to '<modoverride>Helper.hoc' "
+            f"(bundled: AMPANMDA, GABAAB, GluSynapse, Exp2Syn). "
+            f"Searched: {_helper_search_dirs()}"
+        )
+    if not neuron.h.load_file(helper_path):
+        raise FileNotFoundError(
+            f"NEURON failed to load HOC helper '{helper_path}' for modoverride '{suffix}'."
         )
     if not hasattr(neuron.h, helper_name):
         raise AttributeError(
-            f"HOC helper '{helper_file}' did not define template '{helper_name}'."
+            f"HOC helper '{helper_path}' did not define template '{helper_name}'."
         )
-    _loaded_helpers.add(suffix)
-    logger.debug("Loaded synapse helper %s", helper_file)
+    _loaded_helpers[suffix] = helper_path
+    logger.debug("Loaded synapse helper %s", helper_path)
     return helper_name
 
 
