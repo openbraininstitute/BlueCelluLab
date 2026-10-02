@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 from bluecellulab.circuit.config.sections import ConnectionOverrides
-from bluecellulab.exceptions import BluecellulabError
+from bluecellulab.exceptions import BluecellulabError, ConfigError
 from bluecellulab.circuit.synapse_properties import SynapseProperty
 from bluecellulab.synapse import synapse_factory, synapse_helpers, synapse_types
 from bluecellulab.synapse.synapse_types import (
@@ -20,24 +20,18 @@ from bluecellulab.synapse.synapse_types import (
 )
 
 
-def test_mod_override_accepts_arbitrary_existing_mech():
-    """ConnectionOverrides.mod_override only requires the SUFFIX to exist in
-    NEURON; previously it was restricted to ``Literal["GluSynapse"]``."""
-    co = ConnectionOverrides(
-        source="A",
-        target="B",
-        mod_override="IClamp",
-    )
-    assert co.mod_override == "IClamp"
+@pytest.mark.parametrize("prefix", ["AMPANMDA", "GABAAB", "ProbFilt5AMPANMDA_EMS"])
+def test_mod_override_accepts_helper_prefix_before_mechanisms_load(prefix):
+    """Helper prefixes are not NEURON mechanisms and mechanisms may load
+    later: the config must not query NEURON."""
+    co = ConnectionOverrides(source="A", target="B", mod_override=prefix)
+    assert co.mod_override == prefix
 
 
-def test_mod_override_rejects_unknown_mech():
-    with pytest.raises(Exception):
-        ConnectionOverrides(
-            source="A",
-            target="B",
-            mod_override="DefinitelyNotAMech_XYZ",
-        )
+@pytest.mark.parametrize("value", ["", "   "])
+def test_mod_override_rejects_empty(value):
+    with pytest.raises(ConfigError, match="non-empty helper prefix"):
+        ConnectionOverrides(source="A", target="B", mod_override=value)
 
 
 def test_bundled_helper_files_are_package_resources():

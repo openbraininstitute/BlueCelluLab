@@ -1,6 +1,22 @@
 Changelog
 ==========
 
+Unreleased
+----------
+* Generic ``modoverride`` (Neurodamus-compatible synapse helpers, see
+  ``docs/source/synapse-helpers.rst``):
+
+  * The value is a helper prefix, always resolved to ``<modoverride>Helper``;
+    no aliases. ``ProbAMPANMDA_EMS`` is the default path and needs no override;
+    ``AMPANMDA``/``GABAAB`` select the bundled helpers.
+  * The config no longer checks the value against loaded NEURON mechanisms
+    (it rejected ``AMPANMDA``/``GABAAB``); only a non-empty string is required.
+  * Helper resolution order: cwd, user ``HOC_LIBRARY_PATH``, registered circuit
+    dirs, bundled helpers. Loaded by absolute path, once per prefix.
+  * ``<Helper>_NeededAttributes`` are mandatory: building an overridden synapse
+    with missing attributes raises ``BluecellulabError``. Helper fields survive
+    the Allen edge-property fallback.
+
 2.5.0
 -----
 

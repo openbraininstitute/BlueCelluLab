@@ -9,11 +9,36 @@ SONATA connection specifies ``modoverride``. The bundled files are:
 * ``GABAABHelper.hoc``
 * ``GluSynapseHelper.hoc``
 
-For a mechanism suffix ``<Suffix>``, the synapse loader looks for
-``<Suffix>Helper.hoc``. For example, ``modoverride = "GluSynapse"`` loads
+As in Neurodamus, the ``modoverride`` value is a *helper prefix*, not a
+mechanism name: ``modoverride = "<Prefix>"`` always loads
+``<Prefix>Helper.hoc`` and constructs the ``<Prefix>Helper`` template. There
+are no aliases. For example, ``modoverride = "GluSynapse"`` loads
 ``GluSynapseHelper.hoc`` and constructs the ``GluSynapseHelper`` template.
 The helper is constructed on the target section and its ``synapse`` object is
 used as the point process.
+
+* ``ProbAMPANMDA_EMS`` / ``ProbGABAAB_EMS`` are mechanism names, not helper
+  prefixes. They are the default synapse path and need no override; setting
+  ``modoverride = "ProbAMPANMDA_EMS"`` fails with a missing-helper error.
+* ``AMPANMDA`` / ``GABAAB`` select the bundled ``AMPANMDAHelper`` /
+  ``GABAABHelper`` for the overridden connections.
+
+The configuration only checks that the value is a non-empty string; the
+helper (and its compiled mechanism) is resolved when the synapse is built,
+so mechanisms may be loaded after the configuration is parsed.
+
+Needed attributes
+-----------------
+
+A helper may declare a semicolon-separated global string
+``<Prefix>Helper_NeededAttributes`` listing SONATA edge attributes it reads
+(e.g. ``GluSynapseHelper`` declares the plasticity fields). These attributes
+are mandatory and have no defaults: they are extracted from edge populations
+that provide them, and building an overridden synapse whose attributes are
+missing (or NaN, which is how a column absent from that synapse's edge
+population appears) raises ``BluecellulabError`` naming the helper, the
+synapse and the missing fields. Only ``maskValue`` (``-1``) and ``location``
+(``0.5``) are reserved and defaulted, as in Neurodamus.
 
 Provenance
 ----------
@@ -38,21 +63,24 @@ call site that the four helpers depend on.
 External helpers
 ----------------
 
-Resolution order for ``<Suffix>Helper.hoc``:
+``<Prefix>Helper.hoc`` is resolved explicitly, first match wins:
 
-1. ``HOC_LIBRARY_PATH`` / the current working directory (external helpers
-   always win, preserving the ability to override a bundled helper with a
-   project-specific implementation);
-2. directories registered via ``register_helper_search_dirs`` —
+1. the current working directory;
+2. the user's ``HOC_LIBRARY_PATH`` entries, in order (the bundled directory
+   is excluded here, since BlueCelluLab appends it for dependencies);
+3. directories registered via ``register_helper_search_dirs``.
    :class:`SonataCircuitAccess` automatically registers each node
    population's ``mechanisms_dir`` and ``biophysical_neuron_models_dir``
    (plus the circuit-level ``components`` entries), so circuits that ship
    their own helper HOCs are found without setting ``HOC_LIBRARY_PATH``;
-3. the bundled ``bluecellulab/hoc`` directory.
+4. the bundled ``bluecellulab/hoc`` directory.
 
-The bundled HOC directory is added to the HOC search path so helper
-dependencies, such as ``RNGSettings.hoc``, can also be resolved — including
-for circuit-provided helpers.
+The resolved file is loaded by absolute path, once per prefix. If the
+``<Prefix>Helper`` template is already defined in NEURON (e.g. loaded by the
+user), it is reused and no file is loaded, because HOC cannot redefine a
+template. The bundled HOC directory stays on ``HOC_LIBRARY_PATH`` only so
+helper dependencies such as ``RNGSettings.hoc`` resolve, including for
+circuit-provided helpers.
 
 Compiled mechanisms are still required
 --------------------------------------
@@ -67,7 +95,7 @@ corresponding ``.mod`` mechanisms separately:
 * ``Exp2SynHelper`` requires NEURON's ``Exp2Syn`` mechanism.
 
 See :doc:`compiling-mechanisms` for compiling mechanisms and configuring
-``BLUECELLULAB_MOD_LIBRARY_PATH``. A helper can be replaced through
-``HOC_LIBRARY_PATH``, but a replacement must define the expected
-``<Suffix>Helper`` template and expose a ``synapse`` object. The replacement
+``BLUECELLULAB_MOD_LIBRARY_PATH``. A helper can be replaced through the cwd,
+``HOC_LIBRARY_PATH`` or a registered directory, but a replacement must define
+the expected ``<Prefix>Helper`` template and expose a ``synapse`` object. The replacement
 also remains responsible for any compiled mechanisms it uses.

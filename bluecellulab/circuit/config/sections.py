@@ -20,8 +20,6 @@ from typing import Any, Literal, Optional
 from pydantic import field_validator, Field
 from pydantic.dataclasses import dataclass
 
-import neuron
-
 from bluecellulab.exceptions import ConfigError
 
 # libsonata reorganized it's module layout; maintain compatibility with both:
@@ -247,11 +245,16 @@ class ConnectionOverrides:
     @field_validator("mod_override")
     @classmethod
     def validate_mod_override(cls, value):
-        """Make sure the mod file to override is present in NEURON."""
-        if isinstance(value, str) and not hasattr(neuron.h, value):
+        """Check that mod_override is a non-empty helper prefix.
+
+        The value is a helper prefix resolved to ``<value>Helper`` (e.g.
+        ``AMPANMDA``), not a NEURON mechanism name, and mechanisms may be
+        loaded later, so NEURON is not queried here. A missing helper
+        raises when the synapse is built.
+        """
+        if value is not None and (not isinstance(value, str) or not value.strip()):
             raise ConfigError(
-                f"Mod file (SUFFIX) for mod_override='{value}' is not found in NEURON. "
-                "Ensure the corresponding .mod is compiled and loaded."
+                f"mod_override must be a non-empty helper prefix, got {value!r}."
             )
         return value
 
