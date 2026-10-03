@@ -22,7 +22,6 @@ import pandas as pd
 
 from bluecellulab.circuit import SynapseProperty
 from bluecellulab.circuit.node_id import CellId
-from bluecellulab.exceptions import BluecellulabError
 from bluecellulab.rngsettings import RNGSettings
 from bluecellulab.type_aliases import HocObjectType, NeuronSection
 
@@ -103,8 +102,7 @@ class Synapse:
 
     @property
     def is_inhibitory(self) -> bool:
-        """True for inhibitory synapses (``syn_type_id < 100``, as
-        neurodamus).
+        """True for inhibitory synapses (``syn_type_id < 100``, as neurodamus).
 
         Without a synapse type (e.g. Allen edges), falls back to the
         mechanism: only ``GluSynapse`` and ``ProbAMPANMDA_EMS`` are

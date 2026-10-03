@@ -140,9 +140,9 @@ def load_synapse_helper(
     The matching compiled MOD mechanism is still required separately.
     """
     helper_name = f"{suffix}Helper"
-    extra_dirs = tuple(os.fspath(d) for d in extra_dirs)
+    dirs = tuple(os.fspath(d) for d in extra_dirs)
     if suffix in _loaded_helpers:
-        _warn_if_other_path(suffix, extra_dirs)
+        _warn_if_other_path(suffix, dirs)
         return helper_name
 
     if hasattr(neuron.h, helper_name):
@@ -150,13 +150,13 @@ def load_synapse_helper(
         return helper_name
 
     helper_file = f"{helper_name}.hoc"
-    helper_path = _resolve_helper_path(suffix, extra_dirs)
+    helper_path = _resolve_helper_path(suffix, dirs)
     if helper_path is None:
         raise FileNotFoundError(
             f"Could not find HOC helper '{helper_file}' for modoverride '{suffix}'. "
             f"modoverride is a helper prefix resolved to '<modoverride>Helper.hoc' "
             f"(bundled: AMPANMDA, GABAAB, GluSynapse, Exp2Syn). "
-            f"Searched: {_helper_search_dirs(extra_dirs)}"
+            f"Searched: {_helper_search_dirs(dirs)}"
         )
     with _bundled_dir_on_hoc_library_path():
         loaded = neuron.h.load_file(helper_path)
@@ -169,7 +169,7 @@ def load_synapse_helper(
             f"HOC helper '{helper_path}' did not define template '{helper_name}'."
         )
     _loaded_helpers[suffix] = helper_path
-    _checked_requests.add((suffix, extra_dirs))
+    _checked_requests.add((suffix, dirs))
     logger.debug("Loaded synapse helper %s", helper_path)
     return helper_name
 
@@ -208,8 +208,8 @@ def helper_available(suffix: str) -> bool:
 
 
 def _is_missing(value: Any) -> bool:
-    """Return True for None or a scalar NaN (column absent after the outer
-    join of edge populations)."""
+    """Return True for None or a scalar NaN (column absent after the outer join
+    of edge populations)."""
     if value is None:
         return True
     try:

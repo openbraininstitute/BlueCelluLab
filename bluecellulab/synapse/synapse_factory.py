@@ -120,6 +120,7 @@ class SynapseFactory:
         Raises:
             BluecellulabError: if the edges lack the fields the class needs.
         """
+        needed: tuple[str, ...]
         if mod_override == "GluSynapse":
             syn_type, needed = SynapseType.GLUSYNAPSE, SynapseProperties.plasticity
         else:  # "Exp2Syn"

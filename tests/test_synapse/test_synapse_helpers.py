@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
 
 import importlib_resources as resources
 import pandas as pd
@@ -19,7 +20,7 @@ from bluecellulab.synapse.synapse_types import (
 )
 from bluecellulab.synapse.synapse_helpers import build_helper_params
 
-_PLASTICITY = {
+_PLASTICITY: dict[Any, float] = {
     "volume_CR": 0.1, "rho0_GB": 0.0, "Use_d_TM": 0.3, "Use_p_TM": 0.6,
     "gmax_d_AMPA": 1.0, "gmax_p_AMPA": 2.0, "theta_d": 0.006, "theta_p": 0.001,
 }
