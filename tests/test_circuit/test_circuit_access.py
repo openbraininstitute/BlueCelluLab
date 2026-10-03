@@ -115,6 +115,23 @@ class TestSonataCircuitAccess:
         assert params["ModOverride"] == "AMPANMDA"
         assert params["HelperDirs"] == self.circuit_access.helper_dirs
 
+    @pytest.mark.parametrize("delay, delayed", [(0.0, False), (5.0, True)])
+    def test_delay_zero_block_applies_immediately(self, delay, delayed):
+        """Only delay > 0 makes a delayed block, as neurodamus; delay 0
+        applies modoverride and weight (delay-zero, F10)."""
+        entry = SimpleNamespace(
+            source="Mosaic", target="Mosaic", delay=delay, weight=2.0,
+            spont_minis=None, synapse_configure=None, mod_override="AMPANMDA")
+        with patch.object(
+            self.circuit_access.config, "connection_entries", return_value=[entry],
+        ), patch.object(self.circuit_access, "target_contains_cell", return_value=True):
+            params = get_synapse_connection_parameters(
+                self.circuit_access, CellId("a", 0), CellId("a", 1))
+
+        assert ("ModOverride" in params) is not delayed
+        assert ("Weight" in params) is not delayed
+        assert (params["DelayWeights"] == [(delay, 2.0)]) is delayed
+
     def test_helper_fields_extracted_only_if_present(self, caplog):
         """Declared helper fields the population has are extracted; absent
         ones are skipped without warning (checked per synapse at build)."""

@@ -49,7 +49,9 @@ def get_synapse_connection_parameters(
             # whatever specified in this block, is applied to gid
             apply_parameters = True
 
-            if entry.delay is not None:
+            # Only delay > 0 makes a delayed block (neurodamus
+            # connection_manager); delay 0 applies the block immediately.
+            if entry.delay is not None and entry.delay > 0:
                 parameters['DelayWeights'].append((entry.delay, entry.weight))
                 apply_parameters = False
 
