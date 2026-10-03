@@ -230,6 +230,52 @@ def test_bundled_helpers_build_real_neuron(suffix, mechanism, clean_helper_searc
     assert synapse.hsynapse.conductance == pytest.approx(0.7)  # = weight
 
 
+def _write_recording_helper(directory, suffix, needed="", uhill=""):
+    """Helper that records ``synParams`` fields into public variables."""
+    (directory / f"{suffix}Helper.hoc").write_text(
+        f"strdef {suffix}Helper_NeededAttributes\n"
+        f"{suffix}Helper_NeededAttributes = \"{needed}\"\n"
+        f"strdef {suffix}Helper_UHillScaleVariables\n"
+        f"{suffix}Helper_UHillScaleVariables = \"{uhill}\"\n"
+        f"begintemplate {suffix}Helper\n"
+        "public synapse, U, use_d, mask\n"
+        "objref synapse\n"
+        "proc init() {\n"
+        "    synapse = new ExpSyn($3)\n"
+        "    U = $o2.U\n"
+        "    use_d = $o2.Use_d_TM\n"
+        "    mask = $o2.maskValue\n"
+        "}\n"
+        f"endtemplate {suffix}Helper\n"
+    )
+
+
+def test_uhill_scale_variables_scaled_real_neuron(helper_env):
+    """``_UHillScaleVariables`` fields get the same constrained Hill factor
+    as ``U`` at non-default calcium (neurodamus _patch_scale_U_param)."""
+    suffix = "UHillRealNrn"
+    _write_recording_helper(helper_env.cwd, suffix, "Use_d_TM", "Use_d_TM")
+    description = {
+        **_TM_DESCRIPTION,
+        SynapseProperty.U_HILL_COEFFICIENT: 2.79,
+        "Use_d_TM": 0.4,
+        "maskValue": 5.0,
+    }
+    try:
+        synapse = GenericSpikeSynapse(
+            SimpleNamespace(id=3), SynapseHocArgs(0.5, _real_section()), ("", 4),
+            pd.Series(description), (0, 0), 3, 1.2, suffix,
+        )
+    finally:
+        synapse_helpers._loaded_helpers.pop(suffix, None)
+
+    factor = GenericSpikeSynapse.calc_u_scale_factor(2.79, 1.2)
+    assert factor != pytest.approx(1.0)
+    assert synapse._helper.U == pytest.approx(0.5 * factor)
+    assert synapse._helper.use_d == pytest.approx(0.4 * factor)
+    assert synapse._helper.mask == -1.0  # reserved, edge value ignored
+
+
 def test_mechanism_name_override_has_no_alias(helper_env):
     """``ProbAMPANMDA_EMS`` is a mechanism, not a helper prefix: no alias to
     ``AMPANMDAHelper``, so a clear missing-helper error is raised."""

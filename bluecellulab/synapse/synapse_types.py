@@ -120,7 +120,7 @@ class Synapse:
         if SynapseProperty.NRRP in syn_description:
             try:
                 int(syn_description[SynapseProperty.NRRP])
-            except ValueError:
+            except (TypeError, ValueError):
                 # delete SynapseProperty.NRRP from syn_description
                 syn_description.pop(SynapseProperty.NRRP)
 
@@ -505,31 +505,6 @@ class GenericSpikeSynapse(Synapse):
                          post_gid, extracellular_calcium)
         self._build_via_helper(mod_suffix)
 
-    def update_syn_description(self, syn_description: pd.Series) -> pd.Series:
-        """Lightweight update: tolerate missing AMPANMDA-specific properties.
-
-        Only applies the U_SYN scaling if both U_SYN and U_HILL_COEFFICIENT
-        are present; otherwise leaves the description as-is.
-        """
-        for prop in [SynapseProperty.U_HILL_COEFFICIENT, SynapseProperty.NRRP]:
-            if prop in syn_description and pd.isna(syn_description[prop]):
-                syn_description.pop(prop)
-        if SynapseProperty.NRRP in syn_description:
-            try:
-                int(syn_description[SynapseProperty.NRRP])
-            except (TypeError, ValueError):
-                syn_description.pop(SynapseProperty.NRRP)
-
-        if (SynapseProperty.U_HILL_COEFFICIENT in syn_description
-                and SynapseProperty.U_SYN in syn_description):
-            syn_description["u_scale_factor"] = self.calc_u_scale_factor(
-                syn_description[SynapseProperty.U_HILL_COEFFICIENT],
-                self.extracellular_calcium)
-            syn_description[SynapseProperty.U_SYN] *= syn_description["u_scale_factor"]
-        else:
-            syn_description["u_scale_factor"] = 1.0
-        return syn_description
-
     def _build_via_helper(self, mod_suffix: str) -> None:
         """Load helper HOC and invoke it to construct ``self.hsynapse``.
 
@@ -542,6 +517,7 @@ class GenericSpikeSynapse(Synapse):
         from bluecellulab.synapse.synapse_helpers import (
             build_helper_params,
             get_helper_needed_attributes,
+            get_helper_uhill_scale_vars,
             load_synapse_helper,
         )
 
@@ -553,6 +529,7 @@ class GenericSpikeSynapse(Synapse):
             get_helper_needed_attributes(mod_suffix),
             helper_name=helper_name,
             synapse_label=str(tuple(self.syn_id)),
+            scale_vars=get_helper_uhill_scale_vars(mod_suffix),
         )
 
         rng_settings = RNGSettings.get_instance()

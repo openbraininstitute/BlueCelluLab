@@ -175,6 +175,7 @@ def build_helper_params(
     needed: Iterable[str],
     helper_name: str = "helper",
     synapse_label: str = "",
+    scale_vars: Iterable[str] = (),
 ) -> SimpleNamespace:
     """Build the parameter object passed to a ``<prefix>Helper`` template.
 
@@ -183,6 +184,10 @@ def build_helper_params(
     reserved fields (``maskValue = -1``, ``location = 0.5``) are never read
     from the edges, optional fields get neurodamus defaults, and extra
     fields declared in ``needed`` are passed under their raw SONATA name.
+    Fields in ``scale_vars`` (the helper's ``_UHillScaleVariables``) are
+    multiplied by ``syn_description["u_scale_factor"]``, the constrained
+    Hill factor already applied to ``U`` (neurodamus
+    ``_patch_scale_U_param``).
 
     Raises:
         BluecellulabError: if a field listed in ``needed`` is missing.
@@ -222,6 +227,11 @@ def build_helper_params(
             f"synapse {synapse_label}. The edge population must provide every "
             f"attribute in {helper_name}_NeededAttributes."
         )
+
+    u_scale_factor = syn_description.get("u_scale_factor", 1.0)
+    for name in scale_vars:
+        if hasattr(params, name):
+            setattr(params, name, getattr(params, name) * u_scale_factor)
     return params
 
 
@@ -240,8 +250,25 @@ def get_helper_needed_attributes(suffix: str) -> list[str]:
         List of attribute names, or an empty list if the helper does not
         declare ``_NeededAttributes``.
     """
+    return _helper_metadata_list(suffix, "NeededAttributes")
+
+
+def get_helper_uhill_scale_vars(suffix: str) -> list[str]:
+    """Read the ``_UHillScaleVariables`` metadata from a loaded helper HOC.
+
+    As in neurodamus ``SynapseReader.configure_override``, these fields
+    are scaled by the same constrained Hill factor as ``U``.
+
+    Returns:
+        List of field names, or an empty list if not declared.
+    """
+    return _helper_metadata_list(suffix, "UHillScaleVariables")
+
+
+def _helper_metadata_list(suffix: str, key: str) -> list[str]:
+    """Return the ``<suffix>Helper_<key>`` semicolon-separated list."""
     helper_name = load_synapse_helper(suffix)
-    attr_str = getattr(neuron.h, f"{helper_name}_NeededAttributes", None)
+    attr_str = getattr(neuron.h, f"{helper_name}_{key}", None)
     if attr_str:
         return [a.strip() for a in attr_str.split(";") if a.strip()]
     return []
