@@ -330,6 +330,24 @@ def test_is_inhibitory_by_syn_type_with_mechanism_fallback(mech_name, syn_type, 
     assert synapse.is_inhibitory is inhibitory
 
 
+def test_synapse_seed_change_after_set_seeds_reaches_helpers_real_neuron():
+    """Helpers read ``RNGSettings.getSynapseSeed()``; a later Python change
+    of ``synapse_seed`` must reach HOC (seed-sync)."""
+    import neuron
+
+    from bluecellulab.rngsettings import RNGSettings
+
+    rng = RNGSettings.get_instance()
+    old_seed = rng.synapse_seed
+    try:
+        rng.set_seeds(mode="Random123", base_seed=0)
+        rng.synapse_seed = 1234
+        assert neuron.h.synapseSeed == 1234
+        assert neuron.h.RNGSettings().getSynapseSeed() == 1234
+    finally:
+        rng.synapse_seed = old_seed
+
+
 def test_mechanism_name_override_has_no_alias(helper_env):
     """``ProbAMPANMDA_EMS`` is a mechanism, not a helper prefix: no alias to
     ``AMPANMDAHelper``, so a clear missing-helper error is raised."""
