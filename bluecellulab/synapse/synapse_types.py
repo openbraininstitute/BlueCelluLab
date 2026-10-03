@@ -251,6 +251,17 @@ class Synapse:
 
         return synapse_dict
 
+    def _set_conductance_from_weight(self) -> None:
+        """Set ``hsynapse.conductance`` to the edge weight if the mechanism has
+        it.
+
+        As neurodamus ``Connection._create_synapse``. The mod uses it only
+        for its own delayed-connection weight updates.
+        """
+        weight = self.syn_description.get(SynapseProperty.G_SYNX)
+        if weight is not None and hasattr(self.hsynapse, "conductance"):
+            self.hsynapse.conductance = weight  # type: ignore[union-attr]
+
     def __del__(self) -> None:
         self.delete()
 
@@ -311,6 +322,7 @@ class GluSynapse(Synapse):
         self.randseed3 = rng_settings.synapse_seed + 200
         self.hsynapse.setRNG(self.randseed1, self.randseed2, self.randseed3)
         self.hsynapse.synapseID = self.syn_id.sid
+        self._set_conductance_from_weight()
 
     @property
     def info_dict(self):
@@ -394,6 +406,7 @@ class GabaabSynapse(Synapse):
         self._set_gabaab_ampanmda_rng()
 
         self.hsynapse.synapseID = self.syn_id.sid
+        self._set_conductance_from_weight()
 
     @property
     def info_dict(self):
@@ -434,6 +447,7 @@ class AmpanmdaSynapse(Synapse):
 
         self._set_gabaab_ampanmda_rng()
         self.hsynapse.synapseID = self.syn_id.sid
+        self._set_conductance_from_weight()
 
     @property
     def info_dict(self):

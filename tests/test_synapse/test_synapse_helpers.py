@@ -904,3 +904,25 @@ def test_get_helper_needed_attributes_empty_when_no_metadata(monkeypatch):
 
     assert synapse_helpers.get_helper_needed_attributes(suffix) == []
     synapse_helpers._loaded_helpers.pop(suffix, None)
+
+
+@pytest.mark.parametrize(
+    "cls_name, extra",
+    [
+        ("AmpanmdaSynapse", {SynapseProperty.TYPE: 113}),
+        ("GabaabSynapse", {SynapseProperty.TYPE: 13}),
+        ("GluSynapse", {**_PLASTICITY, SynapseProperty.TYPE: 113,
+                        SynapseProperty.CONDUCTANCE_RATIO: 0.5}),
+    ],
+)
+def test_native_synapse_conductance_is_weight_real_neuron(cls_name, extra):
+    """Native synapses set conductance = weight like neurodamus
+    Connection._create_synapse."""
+    description = pd.Series({**_TM_DESCRIPTION, **extra})
+    synapse = getattr(synapse_types, cls_name)(
+        SimpleNamespace(id=3), SynapseHocArgs(0.5, _real_section()), ("", 4),
+        description, (0, 0), 3, None,
+    )
+
+    assert synapse.hsynapse.conductance == pytest.approx(
+        description[SynapseProperty.G_SYNX])

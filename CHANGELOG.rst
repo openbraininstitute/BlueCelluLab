@@ -22,6 +22,9 @@ Unreleased
     read from edges). ``<Helper>_UHillScaleVariables`` is supported.
   * Overridden synapses set ``conductance = weight`` when the mechanism
     exposes ``conductance``; ``conductance_scale_factor`` is not applied.
+  * Native ``ProbAMPANMDA_EMS``, ``ProbGABAAB_EMS`` and ``GluSynapse``
+    synapses also set ``conductance = weight``, as neurodamus does for every
+    synapse. The mod uses it only for its own delayed-connection weights.
   * ``GluSynapse`` and ``Exp2Syn`` overrides force the native
     ``GluSynapse``/``Exp2Syn`` classes whatever the ``syn_type_id`` and raise
     if the needed edge fields are missing. Without an override, selection
