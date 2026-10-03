@@ -926,3 +926,41 @@ def test_native_synapse_conductance_is_weight_real_neuron(cls_name, extra):
 
     assert synapse.hsynapse.conductance == pytest.approx(
         description[SynapseProperty.G_SYNX])
+
+
+def test_is_missing_non_scalar_is_not_missing():
+    """Array-like values (pd.isna is ambiguous) count as present."""
+    assert synapse_helpers._is_missing([1.0, 2.0]) is False
+    assert synapse_helpers._is_missing(None) is True
+    assert synapse_helpers._is_missing(float("nan")) is True
+
+
+def test_build_helper_params_segment_position_without_section_pos():
+    """Without afferent_section_pos, ipt/offset come from the segment fields
+    (neurodamus SonataReader._load_params_custom)."""
+    description = pd.Series({
+        **_TM_DESCRIPTION,
+        SynapseProperty.POST_SEGMENT_ID: 2,
+        SynapseProperty.POST_SEGMENT_OFFSET: 0.25,
+    })
+    description = description.drop(
+        SynapseProperty.AFFERENT_SECTION_POS, errors="ignore")
+
+    params = build_helper_params(description, needed=())
+
+    assert params.ipt == 2
+    assert params.offset == pytest.approx(0.25)
+
+
+def test_warn_if_other_path_skips_preloaded(monkeypatch, caplog):
+    """A template defined outside BlueCelluLab is never re-resolved."""
+    monkeypatch.setitem(synapse_helpers._loaded_helpers, "Preloaded", "<preloaded>")
+    monkeypatch.setattr(synapse_helpers, "_checked_requests", set())
+
+    def fail(*args, **kwargs):
+        raise AssertionError("must not resolve a preloaded helper")
+
+    monkeypatch.setattr(synapse_helpers, "_resolve_helper_path", fail)
+    synapse_helpers._warn_if_other_path("Preloaded", ("/some/dir",))
+    assert ("Preloaded", ("/some/dir",)) in synapse_helpers._checked_requests
+    assert "Preloaded" not in caplog.text

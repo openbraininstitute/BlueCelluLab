@@ -79,10 +79,29 @@ def test_modoverride_connection_blocks_build_helper_classes(tmp_path):
 # at a directory with ProbFiltAMPANMDA_EMS.mod and its helper HOC (e.g. a
 # sonata_simplify output ``mod`` directory) to run the test below.
 PROBFILT_DIR_ENV = "BLUECELLULAB_PROBFILT_DIR"
+_BUNDLED_HELPER = (
+    Path(__file__).parents[2] / "bluecellulab" / "hoc" / "AMPANMDAHelper.hoc"
+)
 
 
 @pytest.fixture
-def probfilt_helper_dir(tmp_path):
+def stub_helper_dir(tmp_path):
+    """Circuit helper dir with ``StubFiltHelper``: the bundled AMPANMDA
+    helper renamed, declaring two extra mandatory fields.
+
+    Runs everywhere (uses the test ``ProbAMPANMDA_EMS`` mechanism) and
+    exercises the same path as a ProbFilt override.
+    """
+    text = _BUNDLED_HELPER.read_text().replace("AMPANMDAHelper", "StubFiltHelper")
+    header = 'strdef StubFiltHelper_NeededAttributes\nStubFiltHelper_NeededAttributes = "w_corr;tau_corr"\n'
+    helper_dir = tmp_path / "helpers"
+    helper_dir.mkdir()
+    (helper_dir / "StubFiltHelper.hoc").write_text(header + text)
+    return helper_dir
+
+
+@pytest.fixture
+def probfilt_helper_dir(tmp_path):  # pragma: no cover - needs non-distributable ProbFilt sources
     """Compile ProbFiltAMPANMDA_EMS in a tmp dir, load it, return the helper
     dir; skip when the sources or the compiler are unavailable."""
     import neuron
@@ -112,9 +131,11 @@ def probfilt_helper_dir(tmp_path):
     return helper_dir
 
 
-def test_probfilt_helper_end_to_end_real_neuron(probfilt_helper_dir):
-    """A ProbFilt override synapse built from a circuit helper dir fires and
-    draws the same Random123 stream as the neurodamus seed formula."""
+def _run_helper_end_to_end(helper_dir: Path, prefix: str, mechanism: str,
+                           rng_object: bool, extra: dict,
+                           set_extra_on_mechanism: bool = True) -> None:
+    """Build an override synapse from ``helper_dir``, run it next to two
+    hand-built references (same / different neurodamus seed) and compare."""
     import neuron
 
     from bluecellulab.rngsettings import RNGSettings
@@ -128,8 +149,7 @@ def test_probfilt_helper_end_to_end_real_neuron(probfilt_helper_dir):
         SynapseProperty.PRE_GID: 1, SynapseProperty.G_SYNX: 0.7,
         SynapseProperty.U_SYN: 0.5, SynapseProperty.D_SYN: 1.0,
         SynapseProperty.F_SYN: 10.0, SynapseProperty.DTC: 1.7,
-        SynapseProperty.TYPE: 113, SynapseProperty.NRRP: 1,
-        "w_corr": 0.5, "tau_corr": 5.0,
+        SynapseProperty.TYPE: 113, SynapseProperty.NRRP: 1, **extra,
     })
 
     sections = []  # keep the sections alive for the whole run
@@ -142,35 +162,37 @@ def test_probfilt_helper_end_to_end_real_neuron(probfilt_helper_dir):
 
     synapse = GenericSpikeSynapse(
         SimpleNamespace(id=post_gid), SynapseHocArgs(0.5, section()), ("", sid),
-        description, popids, post_gid, None, "ProbFiltAMPANMDA_EMS",
-        helper_dirs=(str(probfilt_helper_dir),),
+        description, popids, post_gid, None, prefix, helper_dirs=(str(helper_dir),),
     )
-    assert synapse.helper_path == str(probfilt_helper_dir / "ProbFiltAMPANMDA_EMSHelper.hoc")
+    assert synapse.helper_path == str(helper_dir / f"{prefix}Helper.hoc")
     assert synapse.is_inhibitory is False
 
-    # Reference built by hand with the neurodamus seeds: tgid = post_gid + 1.
-    reference = neuron.h.ProbFiltAMPANMDA_EMS(0.5, sec=section())
-    reference.synapseID = sid
-    # Control: same synapse with another seed must give a different trace.
-    control = neuron.h.ProbFiltAMPANMDA_EMS(0.5, sec=section())
-    for point_process in (reference, control):
+    # References built by hand with the neurodamus seeds (tgid = post_gid + 1);
+    # the control uses another synapse seed and must differ.
+    references, rngs = [], []
+    for synapse_seed in (7, 8):
+        point_process = getattr(neuron.h, mechanism)(0.5, sec=section())
+        point_process.synapseID = sid
         for name, value in (("tau_d_AMPA", 1.7), ("Use", 0.5), ("Dep", 1.0),
-                            ("Fac", 10.0), ("Nrrp", 1), ("w_corr", 0.5),
-                            ("tau_corr", 5.0)):
+                            ("Fac", 10.0), ("Nrrp", 1),
+                            *(extra.items() if set_extra_on_mechanism else ())):
             setattr(point_process, name, value)
-    rngs = []
-    for point_process, synapse_seed in ((reference, 7), (control, 8)):
-        rng = neuron.h.Random()
-        rng.Random123(post_gid + 1 + 250, sid + 100,
-                      popids[0] * 65536 + popids[1] + synapse_seed + 300)
-        rng.uniform(0, 1)
-        point_process.setRNG(rng)
-        rngs.append(rng)
+        seeds = (post_gid + 1 + 250, sid + 100,
+                 popids[0] * 65536 + popids[1] + synapse_seed + 300)
+        if rng_object:  # pragma: no cover - object-only setRNG (ProbFilt)
+            rng = neuron.h.Random()
+            rng.Random123(*seeds)
+            rng.uniform(0, 1)
+            point_process.setRNG(rng)
+            rngs.append(rng)
+        else:
+            point_process.setRNG(*seeds)
+        references.append(point_process)
 
     stim = neuron.h.NetStim()
     stim.number, stim.interval, stim.start, stim.noise = 20, 2.0, 1.0, 0
     netcons, traces = [], []
-    for point_process in (synapse.hsynapse, reference, control):
+    for point_process in (synapse.hsynapse, *references):
         netcon = neuron.h.NetCon(stim, point_process)
         netcon.weight[0] = 0.7
         netcons.append(netcon)
@@ -182,3 +204,29 @@ def test_probfilt_helper_end_to_end_real_neuron(probfilt_helper_dir):
     assert max(helper_trace) > 0  # it fires
     assert helper_trace == reference_trace  # same stream as neurodamus
     assert max(abs(a - b) for a, b in zip(helper_trace, control_trace)) > 0.01 * max(helper_trace)
+
+
+def test_circuit_helper_end_to_end_real_neuron(stub_helper_dir):
+    """A circuit-dir helper with extra mandatory fields fires and draws the
+    neurodamus Random123 stream (runs in CI, unlike the ProbFilt test)."""
+    _run_helper_end_to_end(stub_helper_dir, "StubFilt", "ProbAMPANMDA_EMS",
+                           rng_object=False, extra={"w_corr": 0.5, "tau_corr": 5.0},
+                           set_extra_on_mechanism=False)
+
+
+def test_circuit_helper_missing_extra_field_raises(stub_helper_dir):
+    """The stub helper's declared fields are mandatory at build time."""
+    from bluecellulab.exceptions import BluecellulabError
+
+    with pytest.raises(BluecellulabError, match="w_corr"):
+        _run_helper_end_to_end(stub_helper_dir, "StubFilt", "ProbAMPANMDA_EMS",
+                               rng_object=False, extra={"tau_corr": 5.0},
+                               set_extra_on_mechanism=False)
+
+
+def test_probfilt_helper_end_to_end_real_neuron(probfilt_helper_dir):  # pragma: no cover
+    """A ProbFilt override synapse built from a circuit helper dir fires and
+    draws the same Random123 stream as the neurodamus seed formula."""
+    _run_helper_end_to_end(probfilt_helper_dir, "ProbFiltAMPANMDA_EMS",
+                           "ProbFiltAMPANMDA_EMS", rng_object=True,
+                           extra={"w_corr": 0.5, "tau_corr": 5.0})

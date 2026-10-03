@@ -78,6 +78,30 @@ def test_helper_fields_survive_allen_fallback():
     assert res["erev"].notna().any()
 
 
+def test_mod_override_suffixes_without_connection_entries():
+    """A config that cannot list connection entries has no overrides."""
+    allen_config = parent_dir / "examples" / "ringtest_allen_v1" / "simulation_config.json"
+    circuit_access = SonataCircuitAccess(allen_config)
+    with patch.object(
+        circuit_access.config, "connection_entries", side_effect=NotImplementedError,
+    ):
+        assert circuit_access._mod_override_suffixes() == ()
+
+
+def test_collect_helper_needed_attributes_first_declarer_wins():
+    """Fields declared by several helpers map to the first prefix."""
+    allen_config = parent_dir / "examples" / "ringtest_allen_v1" / "simulation_config.json"
+    circuit_access = SonataCircuitAccess(allen_config)
+    declared = {"A": ["w_corr", "tau_corr"], "B": ["tau_corr", "erev"]}
+    with patch(
+        "bluecellulab.synapse.synapse_helpers.get_helper_needed_attributes",
+        side_effect=lambda suffix, dirs=(): declared[suffix],
+    ):
+        fields = circuit_access._collect_helper_needed_attributes(["A", "B"])
+
+    assert fields == {"w_corr": "A", "tau_corr": "A", "erev": "B"}
+
+
 def test_sonata_circuit_access_file_not_found():
     with pytest.raises(FileNotFoundError):
         SonataCircuitAccess("non_existing_file")
