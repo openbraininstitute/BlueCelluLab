@@ -306,7 +306,8 @@ class GluSynapse(Synapse):
         if self.syn_description[SynapseProperty.NRRP] >= 0:
             self.hsynapse.Nrrp = self.syn_description[SynapseProperty.NRRP]
 
-        self.randseed1 = self.post_gid
+        # 1-based gid, as neurodamus passes tgid+1 to GluSynapseHelper.
+        self.randseed1 = self.post_gid + 1
         self.randseed2 = 100000 + self.syn_id.sid
         rng_settings = RNGSettings.get_instance()
         self.randseed3 = rng_settings.synapse_seed + 200

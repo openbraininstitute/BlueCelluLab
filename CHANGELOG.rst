@@ -21,6 +21,9 @@ Unreleased
   * Exception kept on purpose: ``GluSynapse`` and ``Exp2Syn`` overrides keep
     the native ``GluSynapse``/``Exp2Syn`` classes (not their helpers), so
     existing plasticity and Allen simulations are unchanged.
+* Results change: native ``GluSynapse`` now seeds its RNG with ``post_gid + 1``
+  (was ``post_gid``), matching neurodamus ``GluSynapseHelper``. Stochastic
+  release of plastic synapses differs from previous BlueCelluLab versions.
 
 2.5.0
 -----

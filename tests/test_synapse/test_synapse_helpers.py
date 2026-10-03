@@ -348,6 +348,27 @@ def test_synapse_seed_change_after_set_seeds_reaches_helpers_real_neuron():
         rng.synapse_seed = old_seed
 
 
+_PLASTICITY = {
+    "volume_CR": 0.1, "rho0_GB": 0.0, "Use_d_TM": 0.3, "Use_p_TM": 0.6,
+    "gmax_d_AMPA": 1.0, "gmax_p_AMPA": 2.0, "theta_d": 0.006, "theta_p": 0.001,
+}
+
+
+def test_native_glusynapse_seed_is_one_based_real_neuron():
+    """Native GluSynapse seeds with post_gid + 1 like neurodamus
+    GluSynapseHelper (glusynapse-seed)."""
+    description = pd.Series({
+        **_TM_DESCRIPTION, **_PLASTICITY,
+        SynapseProperty.TYPE: 113, SynapseProperty.CONDUCTANCE_RATIO: 0.5,
+    })
+    synapse = synapse_types.GluSynapse(
+        SimpleNamespace(id=3), SynapseHocArgs(0.5, _real_section()), ("", 4),
+        description, (0, 0), 3, None,
+    )
+
+    assert synapse.randseed1 == 4
+
+
 def test_mechanism_name_override_has_no_alias(helper_env):
     """``ProbAMPANMDA_EMS`` is a mechanism, not a helper prefix: no alias to
     ``AMPANMDAHelper``, so a clear missing-helper error is raised."""
