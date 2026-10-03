@@ -71,6 +71,7 @@ class SynapseFactory:
                 cell.cell_id, syn_hoc_args, syn_id, syn_description,
                 popids, cell.post_gid, extracellular_calcium,
                 mod_suffix=mod_override,
+                helper_dirs=connection_modifiers.get("HelperDirs", ()),
             )
             synapse = cls.apply_connection_modifiers(connection_modifiers, synapse)
             return synapse

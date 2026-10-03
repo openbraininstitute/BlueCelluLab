@@ -64,6 +64,9 @@ def get_synapse_connection_parameters(
                     parameters['SynapseConfigure'].append(entry.synapse_configure)
                 if entry.mod_override is not None:
                     parameters['ModOverride'] = entry.mod_override
+    if 'ModOverride' in parameters:
+        # Circuit directories searched for the "<prefix>Helper.hoc" file.
+        parameters['HelperDirs'] = tuple(getattr(circuit_access, 'helper_dirs', ()))
     return parameters
 
 

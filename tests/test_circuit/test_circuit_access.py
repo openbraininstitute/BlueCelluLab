@@ -85,21 +85,11 @@ def test_sonata_circuit_access_file_not_found():
 
 class TestSonataCircuitAccess:
     def setup_method(self):
-        from bluecellulab.synapse import synapse_helpers
-
-        synapse_helpers.clear_helper_search_dirs()
         self.circuit_access = SonataCircuitAccess(hipp_circuit_with_projections)
 
-    def teardown_method(self):
-        from bluecellulab.synapse import synapse_helpers
-
-        synapse_helpers.clear_helper_search_dirs()
-
-    def test_circuit_helper_dirs_registered(self):
-        """The circuit's biophysical_neuron_models_dir is registered for
-        helper HOC lookup (components-level config key)."""
-        from bluecellulab.synapse import synapse_helpers
-
+    def test_circuit_helper_dirs_per_circuit(self):
+        """The circuit's biophysical_neuron_models_dir is searched for
+        helper HOCs by this circuit only (no global registry)."""
         expected = (
             parent_dir
             / "examples"
@@ -107,7 +97,23 @@ class TestSonataCircuitAccess:
             / "components"
             / "hoc"
         )
-        assert str(expected) in synapse_helpers._extra_search_dirs
+        assert str(expected) in self.circuit_access.helper_dirs
+        other = SonataCircuitAccess(
+            parent_dir / "examples" / "ringtest_allen_v1" / "simulation_config.json")
+        assert str(expected) not in other.helper_dirs
+
+    def test_connection_parameters_carry_helper_dirs(self):
+        entry = SimpleNamespace(
+            source="Mosaic", target="Mosaic", delay=None, weight=None,
+            spont_minis=None, synapse_configure=None, mod_override="AMPANMDA")
+        with patch.object(
+            self.circuit_access.config, "connection_entries", return_value=[entry],
+        ), patch.object(self.circuit_access, "target_contains_cell", return_value=True):
+            params = get_synapse_connection_parameters(
+                self.circuit_access, CellId("a", 0), CellId("a", 1))
+
+        assert params["ModOverride"] == "AMPANMDA"
+        assert params["HelperDirs"] == self.circuit_access.helper_dirs
 
     def test_helper_fields_extracted_only_if_present(self, caplog):
         """Declared helper fields the population has are extracted; absent

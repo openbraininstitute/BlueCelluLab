@@ -47,27 +47,9 @@ def test_bundled_helper_files_are_package_resources():
         assert helper.is_file()
 
 
-def test_bundled_hoc_directory_is_appended_to_search_path(monkeypatch):
-    monkeypatch.delenv("HOC_LIBRARY_PATH", raising=False)
-
-    bundled_dir = synapse_helpers._ensure_bundled_hoc_directory_on_search_path()
-
-    assert bundled_dir in synapse_helpers.os.environ["HOC_LIBRARY_PATH"].split(
-        synapse_helpers.os.pathsep
-    )
-
-
 @pytest.fixture
-def clean_helper_search_dirs():
-    """Isolate the registered helper search dirs around a test."""
-    synapse_helpers.clear_helper_search_dirs()
-    yield
-    synapse_helpers.clear_helper_search_dirs()
-
-
-@pytest.fixture
-def helper_env(tmp_path, monkeypatch, clean_helper_search_dirs):
-    """Isolated cwd / HOC_LIBRARY_PATH / registered dirs / fake bundled dir."""
+def helper_env(tmp_path, monkeypatch):
+    """Isolated cwd / HOC_LIBRARY_PATH / circuit dir / fake bundled dir."""
     dirs = SimpleNamespace(
         cwd=tmp_path / "cwd",
         user=tmp_path / "user",
@@ -107,15 +89,14 @@ def _loaded_marker(suffix):
 
 
 def test_helper_search_dirs_precedence(helper_env, monkeypatch):
-    """Cwd -> user HOC_LIBRARY_PATH (bundled excluded) -> registered ->
+    """Cwd -> user HOC_LIBRARY_PATH (bundled excluded) -> circuit dirs ->
     bundled."""
     monkeypatch.setenv(
         "HOC_LIBRARY_PATH",
         synapse_helpers.os.pathsep.join([str(helper_env.user), str(helper_env.bundled)]),
     )
-    synapse_helpers.register_helper_search_dirs([helper_env.registered])
 
-    assert synapse_helpers._helper_search_dirs() == [
+    assert synapse_helpers._helper_search_dirs([helper_env.registered]) == [
         str(helper_env.cwd),
         str(helper_env.user),
         str(helper_env.registered),
@@ -128,9 +109,8 @@ def test_cwd_helper_beats_user_hoc_library_path_real_neuron(helper_env, monkeypa
     for marker in ("cwd", "user", "registered", "bundled"):
         _write_helper(getattr(helper_env, marker), suffix, marker)
     monkeypatch.setenv("HOC_LIBRARY_PATH", str(helper_env.user))
-    synapse_helpers.register_helper_search_dirs([helper_env.registered])
     try:
-        synapse_helpers.load_synapse_helper(suffix)
+        synapse_helpers.load_synapse_helper(suffix, [helper_env.registered])
         assert _loaded_marker(suffix) == "cwd"
         assert synapse_helpers._loaded_helpers[suffix] == str(
             helper_env.cwd / f"{suffix}Helper.hoc")
@@ -143,25 +123,21 @@ def test_user_hoc_library_path_beats_registered_dir_real_neuron(helper_env, monk
     for marker in ("user", "registered", "bundled"):
         _write_helper(getattr(helper_env, marker), suffix, marker)
     monkeypatch.setenv("HOC_LIBRARY_PATH", str(helper_env.user))
-    synapse_helpers.register_helper_search_dirs([helper_env.registered])
     try:
-        synapse_helpers.load_synapse_helper(suffix)
+        synapse_helpers.load_synapse_helper(suffix, [helper_env.registered])
         assert _loaded_marker(suffix) == "user"
     finally:
         synapse_helpers._loaded_helpers.pop(suffix, None)
 
 
 def test_registered_dir_beats_bundled_real_neuron(helper_env):
-    """No user HOC_LIBRARY_PATH: the bundled dir is appended to the path for
-    dependencies, but a registered circuit dir still wins."""
+    """A circuit dir wins over the bundled helpers."""
     suffix = "RegisteredWinsRealNrn"
     for marker in ("registered", "bundled"):
         _write_helper(getattr(helper_env, marker), suffix, marker)
-    synapse_helpers.register_helper_search_dirs([helper_env.registered])
     try:
-        synapse_helpers.load_synapse_helper(suffix)
+        synapse_helpers.load_synapse_helper(suffix, [helper_env.registered])
         assert _loaded_marker(suffix) == "registered"
-        assert str(helper_env.bundled) in synapse_helpers.os.environ["HOC_LIBRARY_PATH"]
     finally:
         synapse_helpers._loaded_helpers.pop(suffix, None)
 
@@ -220,7 +196,7 @@ _TM_DESCRIPTION = {
 @pytest.mark.parametrize(
     "suffix, mechanism", [("AMPANMDA", "ProbAMPANMDA_EMS"), ("GABAAB", "ProbGABAAB_EMS")]
 )
-def test_bundled_helpers_build_real_neuron(suffix, mechanism, clean_helper_search_dirs):
+def test_bundled_helpers_build_real_neuron(suffix, mechanism):
     """``AMPANMDA``/``GABAAB`` overrides build from the bundled helpers."""
     section = _real_section()
     synapse = GenericSpikeSynapse(
@@ -286,7 +262,7 @@ def test_uhill_scale_variables_scaled_real_neuron(helper_env):
     [("AMPANMDA", 113, 3.0), ("GABAAB", 10, 7.0)],
 )
 def test_override_minis_rate_by_syn_type_real_neuron(
-        suffix, syn_type, expected_rate, monkeypatch, clean_helper_search_dirs):
+        suffix, syn_type, expected_rate, monkeypatch):
     """Spont minis pick the exc/inh node rate by synType (neurodamus), not
     by mechanism name, so override synapses get the right rate."""
     from bluecellulab.cell.core import Cell
@@ -357,7 +333,7 @@ def test_synapse_seed_change_after_set_seeds_reaches_helpers_real_neuron():
     "suffix, present, absent",
     [("AMPANMDA", "tau_d_AMPA", "tau_d_GABAA"), ("GABAAB", "tau_d_GABAA", "tau_d_AMPA")],
 )
-def test_override_info_dict_real_neuron(suffix, present, absent, clean_helper_search_dirs):
+def test_override_info_dict_real_neuron(suffix, present, absent):
     """info_dict works on override synapses and reports only parameters the
     mechanism has (info-dict, F2)."""
     synapse = GenericSpikeSynapse(
@@ -398,25 +374,83 @@ def test_mechanism_name_override_has_no_alias(helper_env):
         synapse_helpers.load_synapse_helper("ProbAMPANMDA_EMS")
 
 
-def test_register_helper_search_dirs_dedupes_and_ignores_missing(
-    tmp_path, clean_helper_search_dirs
-):
-    existing = tmp_path / "exists"
-    existing.mkdir()
+def test_helper_search_dirs_ignore_missing_extra_dirs(helper_env, tmp_path):
     missing = tmp_path / "does_not_exist"
 
-    synapse_helpers.register_helper_search_dirs(
-        [existing, existing, missing, str(existing)]
-    )
+    dirs = synapse_helpers._helper_search_dirs([helper_env.registered, missing])
 
-    assert synapse_helpers._extra_search_dirs == [str(existing)]
+    assert str(helper_env.registered) in dirs
+    assert str(missing) not in dirs
 
 
-def test_missing_helper_error_lists_registered_dirs(helper_env):
-    synapse_helpers.register_helper_search_dirs([helper_env.registered])
-
+def test_missing_helper_error_lists_circuit_dirs(helper_env):
     with pytest.raises(FileNotFoundError, match=str(helper_env.registered)):
-        synapse_helpers.load_synapse_helper("MissingRegisteredDirCoverage")
+        synapse_helpers.load_synapse_helper(
+            "MissingRegisteredDirCoverage", [helper_env.registered])
+
+
+def test_helper_dirs_are_per_circuit_real_neuron(helper_env, tmp_path, caplog):
+    """Each circuit resolves helpers from its own dirs; no global state is
+    left behind. A prefix already defined from another path warns
+    (per-circuit-helper-dirs, F9)."""
+    import logging
+
+    circuit_a, circuit_b = tmp_path / "circuit_a", tmp_path / "circuit_b"
+    circuit_a.mkdir()
+    circuit_b.mkdir()
+    _write_helper(circuit_a, "PerCircuitA", "registered")
+    _write_helper(circuit_a, "PerCircuitB", "registered")
+    _write_helper(circuit_b, "PerCircuitShared", "registered")
+    _write_helper(circuit_a, "PerCircuitShared", "bundled")
+    try:
+        synapse_helpers.load_synapse_helper("PerCircuitA", [circuit_a])
+        # circuit_b does not see circuit_a's dirs
+        with pytest.raises(FileNotFoundError):
+            synapse_helpers.load_synapse_helper("PerCircuitB", [circuit_b])
+        synapse_helpers.load_synapse_helper("PerCircuitShared", [circuit_b])
+        assert synapse_helpers.helper_loaded_from("PerCircuitShared") == str(
+            circuit_b / "PerCircuitSharedHelper.hoc")
+        with caplog.at_level(logging.WARNING):
+            synapse_helpers.load_synapse_helper("PerCircuitShared", [circuit_a])
+        assert "already defined" in caplog.text
+    finally:
+        for suffix in ("PerCircuitA", "PerCircuitShared"):
+            synapse_helpers._loaded_helpers.pop(suffix, None)
+
+
+def test_hoc_library_path_unchanged_after_loading_real_neuron(helper_env, monkeypatch):
+    """The bundled dir is on HOC_LIBRARY_PATH only while a helper loads, so
+    its RNGSettings.hoc dependency resolves without leaking the change."""
+    import neuron
+
+    suffix = "EnvScopedRealNrn"
+    (helper_env.registered / f"{suffix}Helper.hoc").write_text(
+        '{load_file("RNGSettings.hoc")}\n'
+        f"begintemplate {suffix}Helper\n"
+        "public synapse\nobjref synapse\nproc init() {}\n"
+        f"endtemplate {suffix}Helper\n"
+    )
+    monkeypatch.setattr(
+        synapse_helpers, "_bundled_hoc_directory",
+        lambda: str(resources.files("bluecellulab").joinpath("hoc")),
+    )
+    monkeypatch.setenv("HOC_LIBRARY_PATH", str(helper_env.user))
+    try:
+        synapse_helpers.load_synapse_helper(suffix, [helper_env.registered])
+        assert hasattr(neuron.h, f"{suffix}Helper")
+        assert synapse_helpers.os.environ["HOC_LIBRARY_PATH"] == str(helper_env.user)
+    finally:
+        synapse_helpers._loaded_helpers.pop(suffix, None)
+
+
+def test_hoc_library_path_removed_when_unset_before(monkeypatch):
+    monkeypatch.delenv("HOC_LIBRARY_PATH", raising=False)
+
+    with synapse_helpers._bundled_dir_on_hoc_library_path():
+        assert synapse_helpers._bundled_hoc_directory() in synapse_helpers.os.environ[
+            "HOC_LIBRARY_PATH"]
+
+    assert "HOC_LIBRARY_PATH" not in synapse_helpers.os.environ
 
 
 def test_load_synapse_helper_missing_raises():
@@ -619,7 +653,7 @@ def test_generic_spike_synapse_builds_from_helper(monkeypatch):
             self.created_in_section = active_section.get("section")
             self.synapse = "point-process"
 
-    monkeypatch.setattr(synapse_helpers, "load_synapse_helper", lambda _: "TestHelper")
+    monkeypatch.setattr(synapse_helpers, "load_synapse_helper", lambda *_: "TestHelper")
     monkeypatch.setattr(
         synapse_types.neuron,
         "h",
@@ -731,7 +765,7 @@ def test_generic_spike_synapse_rejects_helper_without_synapse(monkeypatch):
         def __init__(self, *args):
             pass
 
-    monkeypatch.setattr(synapse_helpers, "load_synapse_helper", lambda _: "TestHelper")
+    monkeypatch.setattr(synapse_helpers, "load_synapse_helper", lambda *_: "TestHelper")
     monkeypatch.setattr(
         synapse_types.neuron,
         "h",
@@ -763,7 +797,7 @@ def _helper_synapse(monkeypatch, description, needed):
             calls.append(args)
             self.synapse = SimpleNamespace()
 
-    monkeypatch.setattr(synapse_helpers, "load_synapse_helper", lambda _: "TestHelper")
+    monkeypatch.setattr(synapse_helpers, "load_synapse_helper", lambda *_: "TestHelper")
     monkeypatch.setattr(
         synapse_types.neuron,
         "h",

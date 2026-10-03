@@ -515,9 +515,12 @@ class GenericSpikeSynapse(Synapse):
     """
 
     def __init__(self, gid, hoc_args, syn_id, syn_description, popids,
-                 post_gid, extracellular_calcium, mod_suffix: str):
+                 post_gid, extracellular_calcium, mod_suffix: str,
+                 helper_dirs: tuple[str, ...] = ()):
         super().__init__(gid, hoc_args, syn_id, syn_description, popids,
                          post_gid, extracellular_calcium)
+        # Circuit directories searched for the helper HOC.
+        self.helper_dirs = tuple(helper_dirs)
         self._build_via_helper(mod_suffix)
 
     def _build_via_helper(self, mod_suffix: str) -> None:
@@ -537,15 +540,16 @@ class GenericSpikeSynapse(Synapse):
             load_synapse_helper,
         )
 
-        helper_name = load_synapse_helper(mod_suffix)
+        helper_dirs = getattr(self, "helper_dirs", ())
+        helper_name = load_synapse_helper(mod_suffix, helper_dirs)
         helper_cls = getattr(neuron.h, helper_name)
 
         params = build_helper_params(
             self.syn_description,
-            get_helper_needed_attributes(mod_suffix),
+            get_helper_needed_attributes(mod_suffix, helper_dirs),
             helper_name=helper_name,
             synapse_label=str(tuple(self.syn_id)),
-            scale_vars=get_helper_uhill_scale_vars(mod_suffix),
+            scale_vars=get_helper_uhill_scale_vars(mod_suffix, helper_dirs),
         )
 
         rng_settings = RNGSettings.get_instance()

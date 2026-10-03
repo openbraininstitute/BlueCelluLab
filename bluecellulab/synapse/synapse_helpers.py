@@ -11,15 +11,16 @@ Implements the same convention as ``neurodamus``: a ``modoverride`` value is
 a helper prefix and always resolves to the HOC template ``"{prefix}Helper"``
 defined in ``"{prefix}Helper.hoc"`` (no aliases). The helper file is resolved
 explicitly (see :func:`_resolve_helper_path`) and loaded by absolute path,
-once per prefix. Circuits that ship their own helper HOCs can register extra
-search directories via :func:`register_helper_search_dirs`.
+once per prefix. Circuits that ship their own helper HOCs pass their
+directories as ``extra_dirs`` (no process-global search state).
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from types import SimpleNamespace
 from typing import Any
 
@@ -40,108 +41,126 @@ logger = logging.getLogger(__name__)
 
 # Helper prefix -> resolved helper file path (or "<preloaded>" when the
 # template was already defined in NEURON before BlueCelluLab loaded it).
+# Process-global because HOC templates are: a template cannot be redefined.
 _loaded_helpers: dict[str, str] = {}
 
-# Circuit-provided directories searched for ``<SUFFIX>Helper.hoc`` after
-# ``HOC_LIBRARY_PATH`` and before the bundled fallback (e.g. a circuit's
-# ``mechanisms_dir`` or ``biophysical_neuron_models_dir``).
-_extra_search_dirs: list[str] = []
-
-
-def register_helper_search_dirs(dirs: Iterable[str | os.PathLike]) -> None:
-    """Register circuit dirs searched for ``<SUFFIX>Helper.hoc``.
-
-    Registered directories are searched after ``HOC_LIBRARY_PATH`` and before
-    the bundled fallback. De-duplicates; ignores non-existent directories.
-    The list is process-global; one circuit should be loaded per process.
-    """
-    for d in dirs:
-        path = os.fspath(d)
-        if os.path.isdir(path) and path not in _extra_search_dirs:
-            _extra_search_dirs.append(path)
-
-
-def clear_helper_search_dirs() -> None:
-    """Clear all registered helper search directories (for tests)."""
-    _extra_search_dirs.clear()
+# (prefix, extra_dirs) pairs already checked against _loaded_helpers.
+_checked_requests: set[tuple[str, tuple[str, ...]]] = set()
 
 
 def _bundled_hoc_directory() -> str:
     return str(resources.files("bluecellulab").joinpath("hoc"))
 
 
-def _ensure_bundled_hoc_directory_on_search_path() -> str:
-    """Make bundled helper dependencies available to relative HOC loads."""
-    bundled_dir = _bundled_hoc_directory()
-    current_paths = os.environ.get("HOC_LIBRARY_PATH", "").split(os.pathsep)
-    current_paths = [path for path in current_paths if path]
-    if bundled_dir not in current_paths:
-        current_paths.append(bundled_dir)
-        os.environ["HOC_LIBRARY_PATH"] = os.pathsep.join(current_paths)
-    return bundled_dir
+@contextlib.contextmanager
+def _bundled_dir_on_hoc_library_path() -> Iterator[None]:
+    """Append the bundled dir to ``HOC_LIBRARY_PATH`` while loading a helper.
+
+    Helpers load dependencies by name (``load_file("RNGSettings.hoc")``),
+    which NEURON resolves via ``HOC_LIBRARY_PATH`` at call time. The
+    variable is restored afterwards so the change does not leak to the
+    process or its children.
+    """
+    previous = os.environ.get("HOC_LIBRARY_PATH")
+    paths = [path for path in (previous or "").split(os.pathsep) if path]
+    os.environ["HOC_LIBRARY_PATH"] = os.pathsep.join([*paths, _bundled_hoc_directory()])
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("HOC_LIBRARY_PATH", None)
+        else:
+            os.environ["HOC_LIBRARY_PATH"] = previous
 
 
-def _helper_search_dirs() -> list[str]:
+def _helper_search_dirs(extra_dirs: Iterable[str | os.PathLike] = ()) -> list[str]:
     """Return the helper search directories in precedence order.
 
-    Order: cwd, user ``HOC_LIBRARY_PATH`` entries (the bundled dir excluded,
-    since BlueCelluLab appends it for dependencies), registered circuit dirs,
-    then the bundled dir.
+    Order: cwd, user ``HOC_LIBRARY_PATH`` entries (the bundled dir
+    excluded), ``extra_dirs`` (circuit-provided, existing ones only), then
+    the bundled dir.
     """
     bundled_dir = os.path.normpath(_bundled_hoc_directory())
     user_dirs = [
         path for path in os.environ.get("HOC_LIBRARY_PATH", "").split(os.pathsep)
         if path and os.path.normpath(path) != bundled_dir
     ]
-    return [os.getcwd(), *user_dirs, *_extra_search_dirs, bundled_dir]
+    circuit_dirs = [os.fspath(d) for d in extra_dirs if os.path.isdir(d)]
+    return [os.getcwd(), *user_dirs, *circuit_dirs, bundled_dir]
 
 
-def _resolve_helper_path(suffix: str) -> str | None:
+def _resolve_helper_path(
+    suffix: str, extra_dirs: Iterable[str | os.PathLike] = ()
+) -> str | None:
     """Return the absolute path of the first ``<suffix>Helper.hoc`` found.
 
     See :func:`_helper_search_dirs` for the precedence. Returns None if no
     directory contains the helper file.
     """
     helper_file = f"{suffix}Helper.hoc"
-    for directory in _helper_search_dirs():
+    for directory in _helper_search_dirs(extra_dirs):
         candidate = os.path.join(directory, helper_file)
         if os.path.isfile(candidate):
             return os.path.abspath(candidate)
     return None
 
 
-def load_synapse_helper(suffix: str) -> str:
+def _warn_if_other_path(suffix: str, extra_dirs: tuple[str, ...]) -> None:
+    """Warn once per request if ``suffix`` would now resolve to a different
+    file than the one already loaded (HOC cannot reload a template)."""
+    request = (suffix, extra_dirs)
+    if request in _checked_requests:
+        return
+    _checked_requests.add(request)
+    loaded = _loaded_helpers[suffix]
+    if loaded == "<preloaded>":
+        return
+    resolved = _resolve_helper_path(suffix, extra_dirs)
+    if resolved is not None and resolved != loaded:
+        logger.warning(
+            "modoverride '%s' resolves to '%s', but '%sHelper' is already "
+            "defined from '%s'; HOC templates cannot be reloaded, keeping it.",
+            suffix, resolved, suffix, loaded,
+        )
+
+
+def load_synapse_helper(
+    suffix: str, extra_dirs: Iterable[str | os.PathLike] = ()
+) -> str:
     """Load the ``<suffix>Helper`` HOC template and return its name.
 
     ``suffix`` is the ``modoverride`` helper prefix. The helper file is
     resolved by :func:`_resolve_helper_path` (cwd, user ``HOC_LIBRARY_PATH``,
-    registered circuit dirs, bundled helpers) and loaded by absolute path.
-    Each prefix is loaded at most once; if the template already exists in
-    NEURON it is not loaded again (HOC cannot redefine a template). The
-    bundled dir stays on ``HOC_LIBRARY_PATH`` so helpers can load
-    dependencies such as ``RNGSettings.hoc``. The matching compiled MOD
-    mechanism is still required separately.
+    ``extra_dirs`` of the circuit, bundled helpers) and loaded by absolute
+    path. Each prefix is loaded at most once; if the template already
+    exists in NEURON it is not loaded again (HOC cannot redefine a
+    template), and a warning is logged if ``extra_dirs`` would select a
+    different file. The bundled dir is on ``HOC_LIBRARY_PATH`` only while
+    loading, so helpers can load dependencies such as ``RNGSettings.hoc``.
+    The matching compiled MOD mechanism is still required separately.
     """
     helper_name = f"{suffix}Helper"
+    extra_dirs = tuple(os.fspath(d) for d in extra_dirs)
     if suffix in _loaded_helpers:
+        _warn_if_other_path(suffix, extra_dirs)
         return helper_name
-
-    _ensure_bundled_hoc_directory_on_search_path()
 
     if hasattr(neuron.h, helper_name):
         _loaded_helpers[suffix] = "<preloaded>"
         return helper_name
 
     helper_file = f"{helper_name}.hoc"
-    helper_path = _resolve_helper_path(suffix)
+    helper_path = _resolve_helper_path(suffix, extra_dirs)
     if helper_path is None:
         raise FileNotFoundError(
             f"Could not find HOC helper '{helper_file}' for modoverride '{suffix}'. "
             f"modoverride is a helper prefix resolved to '<modoverride>Helper.hoc' "
             f"(bundled: AMPANMDA, GABAAB, GluSynapse, Exp2Syn). "
-            f"Searched: {_helper_search_dirs()}"
+            f"Searched: {_helper_search_dirs(extra_dirs)}"
         )
-    if not neuron.h.load_file(helper_path):
+    with _bundled_dir_on_hoc_library_path():
+        loaded = neuron.h.load_file(helper_path)
+    if not loaded:
         raise FileNotFoundError(
             f"NEURON failed to load HOC helper '{helper_path}' for modoverride '{suffix}'."
         )
@@ -150,6 +169,7 @@ def load_synapse_helper(suffix: str) -> str:
             f"HOC helper '{helper_path}' did not define template '{helper_name}'."
         )
     _loaded_helpers[suffix] = helper_path
+    _checked_requests.add((suffix, extra_dirs))
     logger.debug("Loaded synapse helper %s", helper_path)
     return helper_name
 
@@ -244,7 +264,9 @@ def build_helper_params(
     return params
 
 
-def get_helper_needed_attributes(suffix: str) -> list[str]:
+def get_helper_needed_attributes(
+    suffix: str, extra_dirs: Iterable[str | os.PathLike] = ()
+) -> list[str]:
     """Read the ``_NeededAttributes`` metadata from a loaded helper HOC.
 
     Neurodamus helper HOCs declare a semicolon-separated global string
@@ -253,16 +275,19 @@ def get_helper_needed_attributes(suffix: str) -> list[str]:
     loaded) and returns those field names.
 
     Args:
-        suffix: NMODL SUFFIX of the mechanism (e.g. ``"GluSynapse"``).
+        suffix: ``modoverride`` helper prefix (e.g. ``"AMPANMDA"``).
+        extra_dirs: circuit directories searched for the helper.
 
     Returns:
         List of attribute names, or an empty list if the helper does not
         declare ``_NeededAttributes``.
     """
-    return _helper_metadata_list(suffix, "NeededAttributes")
+    return _helper_metadata_list(suffix, "NeededAttributes", extra_dirs)
 
 
-def get_helper_uhill_scale_vars(suffix: str) -> list[str]:
+def get_helper_uhill_scale_vars(
+    suffix: str, extra_dirs: Iterable[str | os.PathLike] = ()
+) -> list[str]:
     """Read the ``_UHillScaleVariables`` metadata from a loaded helper HOC.
 
     As in neurodamus ``SynapseReader.configure_override``, these fields
@@ -271,12 +296,14 @@ def get_helper_uhill_scale_vars(suffix: str) -> list[str]:
     Returns:
         List of field names, or an empty list if not declared.
     """
-    return _helper_metadata_list(suffix, "UHillScaleVariables")
+    return _helper_metadata_list(suffix, "UHillScaleVariables", extra_dirs)
 
 
-def _helper_metadata_list(suffix: str, key: str) -> list[str]:
+def _helper_metadata_list(
+    suffix: str, key: str, extra_dirs: Iterable[str | os.PathLike] = ()
+) -> list[str]:
     """Return the ``<suffix>Helper_<key>`` semicolon-separated list."""
-    helper_name = load_synapse_helper(suffix)
+    helper_name = load_synapse_helper(suffix, extra_dirs)
     attr_str = getattr(neuron.h, f"{helper_name}_{key}", None)
     if attr_str:
         return [a.strip() for a in attr_str.split(";") if a.strip()]

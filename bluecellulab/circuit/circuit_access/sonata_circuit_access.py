@@ -57,39 +57,38 @@ class SonataCircuitAccess(CircuitAccess):
             self.config = SonataSimulationConfig(simulation_config)
         circuit_config = self.config.impl.config["network"]
         self._circuit = SnapCircuit(circuit_config)
-        self._register_circuit_helper_dirs()
+        self.helper_dirs: tuple[str, ...] = self._circuit_helper_dirs()
         self._helper_fields_cache: dict[tuple[str, tuple[str, ...]], list[str]] = {}
         self._inner_edge_pop_names = {
             name for name, epop in self._circuit.edges.items()
             if getattr(epop.source, "type", None) != "virtual"
         }
 
-    def _register_circuit_helper_dirs(self) -> None:
-        """Register circuit-provided dirs for synapse helper HOC lookup.
+    def _circuit_helper_dirs(self) -> tuple[str, ...]:
+        """Circuit-provided dirs searched for synapse helper HOCs.
 
         Circuits that ship their own ``<SUFFIX>Helper.hoc`` files (e.g.
         sonata_simplify filter helpers) place them under ``mechanisms_dir``
-        and/or ``biophysical_neuron_models_dir``; register those directories
-        so :func:`load_synapse_helper` can find them without the user having
-        to set ``HOC_LIBRARY_PATH``. Never raises: helper lookup must not
+        and/or ``biophysical_neuron_models_dir``. These existing directories
+        are searched for this circuit only (after ``HOC_LIBRARY_PATH``,
+        before the bundled helpers). Never raises: helper lookup must not
         break circuit loading.
         """
+        dirs: list[str] = []
         try:
-            from bluecellulab.synapse.synapse_helpers import register_helper_search_dirs
-
-            dirs: list[str] = []
             components = self._circuit.config.get("components", {}) or {}
-            for key in ("mechanisms_dir", "biophysical_neuron_models_dir"):
-                if components.get(key):
-                    dirs.append(components[key])
-            for pop_name in self._circuit.nodes:
-                pop_cfg = self._circuit.nodes[pop_name].config or {}
+            configs = [components] + [
+                self._circuit.nodes[pop_name].config or {}
+                for pop_name in self._circuit.nodes
+            ]
+            for cfg in configs:
                 for key in ("mechanisms_dir", "biophysical_neuron_models_dir"):
-                    if pop_cfg.get(key):
-                        dirs.append(pop_cfg[key])
-            register_helper_search_dirs(dirs)
+                    path = cfg.get(key)
+                    if path and Path(path).is_dir() and str(path) not in dirs:
+                        dirs.append(str(path))
         except Exception as exc:  # noqa: BLE001 - must never break loading
-            logger.debug("Could not register circuit helper search dirs: %s", exc)
+            logger.debug("Could not read circuit helper search dirs: %s", exc)
+        return tuple(dirs)
 
     @property
     def available_cell_properties(self) -> set:
@@ -423,7 +422,7 @@ class SonataCircuitAccess(CircuitAccess):
         fields: dict[str, str] = {}
         for suffix in suffixes:
             try:
-                for attr in get_helper_needed_attributes(suffix):
+                for attr in get_helper_needed_attributes(suffix, self.helper_dirs):
                     fields.setdefault(attr, suffix)
             except (FileNotFoundError, AttributeError):
                 logger.warning(
