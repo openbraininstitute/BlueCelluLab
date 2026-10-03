@@ -174,6 +174,25 @@ def load_synapse_helper(
     return helper_name
 
 
+_warned_rng_modes: set[str] = set()
+
+
+def warn_if_not_random123(mode: str) -> None:
+    """Warn once per mode: helpers always seed Random123-style.
+
+    Neurodamus supports only Random123. In ``Compatibility`` or
+    ``UpdatedMCell`` mode, native synapses use MCellRan4 while helper
+    synapses still use Random123 streams.
+    """
+    if mode == "Random123" or mode in _warned_rng_modes:
+        return
+    _warned_rng_modes.add(mode)
+    logger.warning(
+        "RNG mode '%s': modoverride helper synapses always use Random123 "
+        "seeding (as neurodamus), unlike native synapses in this mode.", mode,
+    )
+
+
 def helper_loaded_from(suffix: str) -> str | None:
     """Return the file the ``<suffix>Helper`` template was loaded from.
 

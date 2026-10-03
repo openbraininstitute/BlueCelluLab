@@ -538,6 +538,7 @@ class GenericSpikeSynapse(Synapse):
             get_helper_uhill_scale_vars,
             helper_loaded_from,
             load_synapse_helper,
+            warn_if_not_random123,
         )
 
         helper_dirs = getattr(self, "helper_dirs", ())
@@ -554,6 +555,7 @@ class GenericSpikeSynapse(Synapse):
 
         rng_settings = RNGSettings.get_instance()
         base_seed = rng_settings.base_seed
+        warn_if_not_random123(rng_settings.mode)
 
         # Match neurodamus calling convention. tgid+1 mirrors the legacy
         # 1-based GID used by neurodamus seeding. Keep the target section

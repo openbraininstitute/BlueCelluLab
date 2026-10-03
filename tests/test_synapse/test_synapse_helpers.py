@@ -311,6 +311,18 @@ def test_is_inhibitory_by_syn_type_with_mechanism_fallback(mech_name, syn_type, 
     assert synapse.is_inhibitory is inhibitory
 
 
+def test_non_random123_mode_warns_once(caplog, monkeypatch):
+    import logging
+
+    monkeypatch.setattr(synapse_helpers, "_warned_rng_modes", set())
+    with caplog.at_level(logging.WARNING):
+        synapse_helpers.warn_if_not_random123("Random123")
+        synapse_helpers.warn_if_not_random123("Compatibility")
+        synapse_helpers.warn_if_not_random123("Compatibility")
+
+    assert caplog.text.count("always use Random123") == 1
+
+
 def test_synapse_seed_change_after_set_seeds_reaches_helpers_real_neuron():
     """Helpers read ``RNGSettings.getSynapseSeed()``; a later Python change
     of ``synapse_seed`` must reach HOC (seed-sync)."""

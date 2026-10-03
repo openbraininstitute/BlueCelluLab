@@ -16,11 +16,28 @@ Unreleased
   * ``<Helper>_NeededAttributes`` are mandatory: building an overridden synapse
     with missing attributes raises ``BluecellulabError``. Helper fields survive
     the Allen edge-property fallback.
+  * Helper parameters follow Neurodamus: standard fields under Neurodamus
+    names (``weight``, ``U``, ``nrrp``, ...), extra fields under their raw
+    SONATA name, ``maskValue = -1`` and ``location = 0.5`` reserved (never
+    read from edges). ``<Helper>_UHillScaleVariables`` is supported.
   * Overridden synapses set ``conductance = weight`` when the mechanism
-    exposes ``conductance``.
-  * Exception kept on purpose: ``GluSynapse`` and ``Exp2Syn`` overrides keep
-    the native ``GluSynapse``/``Exp2Syn`` classes (not their helpers), so
-    existing plasticity and Allen simulations are unchanged.
+    exposes ``conductance``; ``conductance_scale_factor`` is not applied.
+  * ``GluSynapse`` and ``Exp2Syn`` overrides force the native
+    ``GluSynapse``/``Exp2Syn`` classes whatever the ``syn_type_id`` and raise
+    if the needed edge fields are missing. Without an override, selection
+    stays data-driven (backward compatible).
+  * Helper search directories are per circuit (``SonataCircuitAccess.helper_dirs``);
+    ``HOC_LIBRARY_PATH`` is no longer modified permanently.
+  * Helpers always use Random123 seeding; a warning is logged once in other
+    RNG modes.
+* Fix: spontaneous minis pick the excitatory/inhibitory node rate by
+  ``syn_type_id`` (``< 100`` inhibitory), so override synapses get the right
+  rate. Native synapses are unchanged.
+* Fix: ``Cell.info_dict`` works with override synapses.
+* Fix: changing ``RNGSettings.synapse_seed`` after ``set_seeds`` now reaches
+  helper synapses (HOC ``synapseSeed`` kept in sync).
+* Fix: a ``connection_overrides`` block with ``delay: 0`` is applied
+  immediately (only ``delay > 0`` is delayed), as in Neurodamus.
 * Results change: native ``GluSynapse`` now seeds its RNG with ``post_gid + 1``
   (was ``post_gid``), matching neurodamus ``GluSynapseHelper``. Stochastic
   release of plastic synapses differs from previous BlueCelluLab versions.
