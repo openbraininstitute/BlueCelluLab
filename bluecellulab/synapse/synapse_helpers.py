@@ -154,6 +154,15 @@ def load_synapse_helper(suffix: str) -> str:
     return helper_name
 
 
+def helper_loaded_from(suffix: str) -> str | None:
+    """Return the file the ``<suffix>Helper`` template was loaded from.
+
+    ``"<preloaded>"`` if it was already defined in NEURON, None if not
+    loaded by BlueCelluLab.
+    """
+    return _loaded_helpers.get(suffix)
+
+
 def helper_available(suffix: str) -> bool:
     """Return True if a helper template is already loaded for the SUFFIX."""
     return hasattr(neuron.h, f"{suffix}Helper")

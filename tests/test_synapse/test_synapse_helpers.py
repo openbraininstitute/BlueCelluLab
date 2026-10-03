@@ -354,6 +354,29 @@ _PLASTICITY = {
 }
 
 
+@pytest.mark.parametrize(
+    "suffix, present, absent",
+    [("AMPANMDA", "tau_d_AMPA", "tau_d_GABAA"), ("GABAAB", "tau_d_GABAA", "tau_d_AMPA")],
+)
+def test_override_info_dict_real_neuron(suffix, present, absent, clean_helper_search_dirs):
+    """info_dict works on override synapses and reports only parameters the
+    mechanism has (info-dict, F2)."""
+    synapse = GenericSpikeSynapse(
+        SimpleNamespace(id=3), SynapseHocArgs(0.5, _real_section()), ("", 4),
+        pd.Series(dict(_TM_DESCRIPTION)), (0, 0), 3, None, suffix,
+    )
+
+    info = synapse.info_dict
+
+    assert info["mech_name"] == suffix
+    assert info["helper_path"].endswith(f"{suffix}Helper.hoc")
+    assert info["randseed1"] is None and info["randseed3"] is None
+    params = info["synapse_parameters"]
+    assert params["Dep"] == pytest.approx(600.0)
+    assert params["conductance"] == pytest.approx(0.7)
+    assert present in params and absent not in params
+
+
 def test_native_glusynapse_seed_is_one_based_real_neuron():
     """Native GluSynapse seeds with post_gid + 1 like neurodamus
     GluSynapseHelper (glusynapse-seed)."""

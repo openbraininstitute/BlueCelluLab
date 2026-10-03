@@ -533,6 +533,7 @@ class GenericSpikeSynapse(Synapse):
             build_helper_params,
             get_helper_needed_attributes,
             get_helper_uhill_scale_vars,
+            helper_loaded_from,
             load_synapse_helper,
         )
 
@@ -581,4 +582,36 @@ class GenericSpikeSynapse(Synapse):
         if weight is not None and hasattr(self.hsynapse, "conductance"):
             self.hsynapse.conductance = weight
         self.mech_name = mod_suffix
+        self.helper_path = helper_loaded_from(mod_suffix)
         self.persistent.append(helper)
+
+    # Mechanism parameters reported by info_dict when the mechanism has them.
+    _INFO_PARAMETERS = (
+        "Use", "Dep", "Fac", "Nrrp", "conductance",
+        "tau_d_AMPA", "NMDA_ratio", "tau_d_GABAA", "tau_r_GABAA", "GABAB_ratio",
+    )
+
+    @property
+    def info_dict(self) -> dict[str, Any]:
+        """Synapse info; seeds are chosen inside the helper (None here)."""
+        synapse_dict: dict[str, Any] = {
+            'synapse_id': self.syn_id,
+            'pre_cell_id': self.pre_gid,
+            'post_cell_id': self.post_cell_id.id,
+            'syn_description': {
+                str(k): v for k, v in self.syn_description.to_dict().items()},
+            'post_segx': self.hoc_args.location,
+            'mech_name': self.mech_name,
+            'helper_path': self.helper_path,
+            'randseed1': None,
+            'randseed2': None,
+            'randseed3': None,
+            'synapseconfigure_cmds': self.synapseconfigure_cmds,
+        }
+        synapse_dict['synapse_parameters'] = {
+            name: getattr(self.hsynapse, name)
+            for name in self._INFO_PARAMETERS if hasattr(self.hsynapse, name)
+        }
+        synapse_dict['synapse_parameters']['extracellular_calcium'] = \
+            self.extracellular_calcium
+        return synapse_dict
