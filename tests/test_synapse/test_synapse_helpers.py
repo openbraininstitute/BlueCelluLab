@@ -1,0 +1,966 @@
+"""Tests for the neurodamus-style mod_override / helper-HOC machinery."""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+from typing import Any
+
+import importlib_resources as resources
+import pandas as pd
+import pytest
+
+from bluecellulab.circuit.config.sections import ConnectionOverrides
+from bluecellulab.exceptions import BluecellulabError, ConfigError
+from bluecellulab.circuit.synapse_properties import SynapseProperty
+from bluecellulab.synapse import synapse_factory, synapse_helpers, synapse_types
+from bluecellulab.synapse.synapse_types import (
+    GenericSpikeSynapse,
+    SynapseHocArgs,
+    SynapseID,
+)
+from bluecellulab.synapse.synapse_helpers import build_helper_params
+
+_PLASTICITY: dict[Any, float] = {
+    "volume_CR": 0.1, "rho0_GB": 0.0, "Use_d_TM": 0.3, "Use_p_TM": 0.6,
+    "gmax_d_AMPA": 1.0, "gmax_p_AMPA": 2.0, "theta_d": 0.006, "theta_p": 0.001,
+}
+
+
+@pytest.mark.parametrize("prefix", ["AMPANMDA", "GABAAB", "ProbFilt5AMPANMDA_EMS"])
+def test_mod_override_accepts_helper_prefix_before_mechanisms_load(prefix):
+    """Helper prefixes are not NEURON mechanisms and mechanisms may load
+    later: the config must not query NEURON."""
+    co = ConnectionOverrides(source="A", target="B", mod_override=prefix)
+    assert co.mod_override == prefix
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_mod_override_rejects_empty(value):
+    with pytest.raises(ConfigError, match="non-empty helper prefix"):
+        ConnectionOverrides(source="A", target="B", mod_override=value)
+
+
+def test_bundled_helper_files_are_package_resources():
+    for suffix in ("AMPANMDA", "Exp2Syn", "GABAAB", "GluSynapse"):
+        helper = resources.files("bluecellulab").joinpath(
+            "hoc", f"{suffix}Helper.hoc"
+        )
+        assert helper.is_file()
+
+
+@pytest.fixture
+def helper_env(tmp_path, monkeypatch):
+    """Isolated cwd / HOC_LIBRARY_PATH / circuit dir / fake bundled dir."""
+    dirs = SimpleNamespace(
+        cwd=tmp_path / "cwd",
+        user=tmp_path / "user",
+        registered=tmp_path / "registered",
+        bundled=tmp_path / "bundled",
+    )
+    for directory in vars(dirs).values():
+        directory.mkdir()
+    monkeypatch.chdir(dirs.cwd)
+    monkeypatch.delenv("HOC_LIBRARY_PATH", raising=False)
+    monkeypatch.setattr(
+        synapse_helpers, "_bundled_hoc_directory", lambda: str(dirs.bundled)
+    )
+    return dirs
+
+
+def _write_helper(directory, suffix, marker):
+    """Write a minimal helper defining ``<suffix>Helper`` and a marker
+    global."""
+    (directory / f"{suffix}Helper.hoc").write_text(
+        f"{marker}_{suffix} = 1\n"
+        f"begintemplate {suffix}Helper\n"
+        "public synapse\n"
+        "objref synapse\n"
+        "proc init() {}\n"
+        f"endtemplate {suffix}Helper\n"
+    )
+
+
+def _loaded_marker(suffix):
+    import neuron
+
+    markers = [m for m in ("cwd", "user", "registered", "bundled")
+               if hasattr(neuron.h, f"{m}_{suffix}")]
+    assert len(markers) == 1, markers
+    return markers[0]
+
+
+def test_helper_search_dirs_precedence(helper_env, monkeypatch):
+    """Cwd -> user HOC_LIBRARY_PATH (bundled excluded) -> circuit dirs ->
+    bundled."""
+    monkeypatch.setenv(
+        "HOC_LIBRARY_PATH",
+        synapse_helpers.os.pathsep.join([str(helper_env.user), str(helper_env.bundled)]),
+    )
+
+    assert synapse_helpers._helper_search_dirs([helper_env.registered]) == [
+        str(helper_env.cwd),
+        str(helper_env.user),
+        str(helper_env.registered),
+        str(helper_env.bundled),
+    ]
+
+
+def test_cwd_helper_beats_user_hoc_library_path_real_neuron(helper_env, monkeypatch):
+    suffix = "CwdWinsRealNrn"
+    for marker in ("cwd", "user", "registered", "bundled"):
+        _write_helper(getattr(helper_env, marker), suffix, marker)
+    monkeypatch.setenv("HOC_LIBRARY_PATH", str(helper_env.user))
+    try:
+        synapse_helpers.load_synapse_helper(suffix, [helper_env.registered])
+        assert _loaded_marker(suffix) == "cwd"
+        assert synapse_helpers._loaded_helpers[suffix] == str(
+            helper_env.cwd / f"{suffix}Helper.hoc")
+    finally:
+        synapse_helpers._loaded_helpers.pop(suffix, None)
+
+
+def test_user_hoc_library_path_beats_registered_dir_real_neuron(helper_env, monkeypatch):
+    suffix = "UserWinsRealNrn"
+    for marker in ("user", "registered", "bundled"):
+        _write_helper(getattr(helper_env, marker), suffix, marker)
+    monkeypatch.setenv("HOC_LIBRARY_PATH", str(helper_env.user))
+    try:
+        synapse_helpers.load_synapse_helper(suffix, [helper_env.registered])
+        assert _loaded_marker(suffix) == "user"
+    finally:
+        synapse_helpers._loaded_helpers.pop(suffix, None)
+
+
+def test_registered_dir_beats_bundled_real_neuron(helper_env):
+    """A circuit dir wins over the bundled helpers."""
+    suffix = "RegisteredWinsRealNrn"
+    for marker in ("registered", "bundled"):
+        _write_helper(getattr(helper_env, marker), suffix, marker)
+    try:
+        synapse_helpers.load_synapse_helper(suffix, [helper_env.registered])
+        assert _loaded_marker(suffix) == "registered"
+    finally:
+        synapse_helpers._loaded_helpers.pop(suffix, None)
+
+
+def test_bundled_helper_used_as_fallback_real_neuron(helper_env):
+    suffix = "BundledFallbackRealNrn"
+    _write_helper(helper_env.bundled, suffix, "bundled")
+    try:
+        synapse_helpers.load_synapse_helper(suffix)
+        assert _loaded_marker(suffix) == "bundled"
+    finally:
+        synapse_helpers._loaded_helpers.pop(suffix, None)
+
+
+def test_helper_loaded_once_without_redefinition(helper_env):
+    """A second load (another population / cell, or after the cache is
+    cleared) must not re-execute the HOC file: redefining a template is a HOC
+    error."""
+    import neuron
+
+    suffix = "LoadOnceRealNrn"
+    _write_helper(helper_env.bundled, suffix, "bundled")
+    try:
+        assert synapse_helpers.load_synapse_helper(suffix) == f"{suffix}Helper"
+        assert synapse_helpers.load_synapse_helper(suffix) == f"{suffix}Helper"
+        # Template already defined in NEURON: skipped even with a cold cache
+        # and a different file of the same name earlier on the search path.
+        synapse_helpers._loaded_helpers.pop(suffix)
+        _write_helper(helper_env.cwd, suffix, "cwd")
+        assert synapse_helpers.load_synapse_helper(suffix) == f"{suffix}Helper"
+        assert synapse_helpers._loaded_helpers[suffix] == "<preloaded>"
+        assert not hasattr(neuron.h, f"cwd_{suffix}")
+    finally:
+        synapse_helpers._loaded_helpers.pop(suffix, None)
+
+
+def _real_section():
+    import neuron
+
+    section = neuron.h.Section(name="helper_test_section")
+    section.insert("pas")
+    return section
+
+
+_TM_DESCRIPTION = {
+    SynapseProperty.PRE_GID: 1,
+    SynapseProperty.G_SYNX: 0.7,
+    SynapseProperty.U_SYN: 0.5,
+    SynapseProperty.D_SYN: 600.0,
+    SynapseProperty.F_SYN: 20.0,
+    SynapseProperty.DTC: 1.7,
+    SynapseProperty.NRRP: 2,
+}
+
+
+@pytest.mark.parametrize(
+    "suffix, mechanism", [("AMPANMDA", "ProbAMPANMDA_EMS"), ("GABAAB", "ProbGABAAB_EMS")]
+)
+def test_bundled_helpers_build_real_neuron(suffix, mechanism):
+    """``AMPANMDA``/``GABAAB`` overrides build from the bundled helpers."""
+    section = _real_section()
+    synapse = GenericSpikeSynapse(
+        SimpleNamespace(id=3), SynapseHocArgs(0.5, section), ("", 4),
+        pd.Series(dict(_TM_DESCRIPTION)), (0, 0), 3, None, suffix,
+    )
+
+    assert synapse.hsynapse.hname().startswith(mechanism)
+    assert synapse.hsynapse.Dep == pytest.approx(600.0)
+    assert synapse.hsynapse.Nrrp == pytest.approx(2)
+    assert synapse.hsynapse.synapseID == 4
+    assert synapse.hsynapse.conductance == pytest.approx(0.7)  # = weight
+
+
+def _write_recording_helper(directory, suffix, needed="", uhill=""):
+    """Helper that records ``synParams`` fields into public variables."""
+    (directory / f"{suffix}Helper.hoc").write_text(
+        f"strdef {suffix}Helper_NeededAttributes\n"
+        f"{suffix}Helper_NeededAttributes = \"{needed}\"\n"
+        f"strdef {suffix}Helper_UHillScaleVariables\n"
+        f"{suffix}Helper_UHillScaleVariables = \"{uhill}\"\n"
+        f"begintemplate {suffix}Helper\n"
+        "public synapse, U, use_d, mask\n"
+        "objref synapse\n"
+        "proc init() {\n"
+        "    synapse = new ExpSyn($3)\n"
+        "    U = $o2.U\n"
+        "    use_d = $o2.Use_d_TM\n"
+        "    mask = $o2.maskValue\n"
+        "}\n"
+        f"endtemplate {suffix}Helper\n"
+    )
+
+
+def test_uhill_scale_variables_scaled_real_neuron(helper_env):
+    """``_UHillScaleVariables`` fields get the same constrained Hill factor
+    as ``U`` at non-default calcium (neurodamus _patch_scale_U_param)."""
+    suffix = "UHillRealNrn"
+    _write_recording_helper(helper_env.cwd, suffix, "Use_d_TM", "Use_d_TM")
+    description = {
+        **_TM_DESCRIPTION,
+        SynapseProperty.U_HILL_COEFFICIENT: 2.79,
+        "Use_d_TM": 0.4,
+        "maskValue": 5.0,
+    }
+    try:
+        synapse = GenericSpikeSynapse(
+            SimpleNamespace(id=3), SynapseHocArgs(0.5, _real_section()), ("", 4),
+            pd.Series(description), (0, 0), 3, 1.2, suffix,
+        )
+    finally:
+        synapse_helpers._loaded_helpers.pop(suffix, None)
+
+    factor = GenericSpikeSynapse.calc_u_scale_factor(2.79, 1.2)
+    assert factor != pytest.approx(1.0)
+    assert synapse._helper.U == pytest.approx(0.5 * factor)
+    assert synapse._helper.use_d == pytest.approx(0.4 * factor)
+    assert synapse._helper.mask == -1.0  # reserved, edge value ignored
+
+
+@pytest.mark.parametrize(
+    "suffix, syn_type, expected_rate",
+    [("AMPANMDA", 113, 3.0), ("GABAAB", 10, 7.0)],
+)
+def test_override_minis_rate_by_syn_type_real_neuron(
+        suffix, syn_type, expected_rate, monkeypatch):
+    """Spont minis pick the exc/inh node rate by synType (neurodamus), not
+    by mechanism name, so override synapses get the right rate."""
+    from bluecellulab.cell.core import Cell
+
+    section = _real_section()
+    description = pd.Series({
+        **_TM_DESCRIPTION,
+        SynapseProperty.TYPE: syn_type,
+        SynapseProperty.POST_SECTION_ID: 0,
+    })
+    synapse = GenericSpikeSynapse(
+        SimpleNamespace(id=3), SynapseHocArgs(0.5, section), ("", 4),
+        description, (0, 0), 3, None, suffix,
+    )
+    monkeypatch.setattr(
+        synapse_factory.SynapseFactory, "determine_synapse_location",
+        lambda *_: SynapseHocArgs(0.5, section),
+    )
+    cell = SimpleNamespace(
+        synapses={("", 4): synapse}, ips={}, syn_mini_netcons={},
+        persistent=[], cell_id=SimpleNamespace(id=3),
+    )
+
+    Cell.add_replay_minis(cell, ("", 4), description, {}, (0, 0), (3.0, 7.0))
+
+    assert ("", 4) in cell.ips
+    rate_vec = cell.persistent[-1]
+    assert rate_vec.x[0] == expected_rate
+
+
+@pytest.mark.parametrize(
+    "mech_name, syn_type, inhibitory",
+    [
+        ("ProbFiltAMPANMDA_EMS", 113, False),
+        ("ProbFiltGABAAB_EMS", 5, True),
+        ("GluSynapse", None, False),
+        ("Exp2Syn", None, True),
+    ],
+)
+def test_is_inhibitory_by_syn_type_with_mechanism_fallback(mech_name, syn_type, inhibitory):
+    synapse = GenericSpikeSynapse.__new__(GenericSpikeSynapse)
+    synapse.mech_name = mech_name
+    synapse.syn_description = pd.Series(
+        {} if syn_type is None else {SynapseProperty.TYPE: syn_type}, dtype=object)
+
+    assert synapse.is_inhibitory is inhibitory
+
+
+def test_non_random123_mode_warns_once(caplog, monkeypatch):
+    import logging
+
+    monkeypatch.setattr(synapse_helpers, "_warned_rng_modes", set())
+    with caplog.at_level(logging.WARNING):
+        synapse_helpers.warn_if_not_random123("Random123")
+        synapse_helpers.warn_if_not_random123("Compatibility")
+        synapse_helpers.warn_if_not_random123("Compatibility")
+
+    assert caplog.text.count("always use Random123") == 1
+
+
+def test_synapse_seed_change_after_set_seeds_reaches_helpers_real_neuron():
+    """Helpers read ``RNGSettings.getSynapseSeed()``; a later Python change
+    of ``synapse_seed`` must reach HOC (seed-sync)."""
+    import neuron
+
+    from bluecellulab.rngsettings import RNGSettings
+
+    rng = RNGSettings.get_instance()
+    old_seed = rng.synapse_seed
+    try:
+        rng.set_seeds(mode="Random123", base_seed=0)
+        rng.synapse_seed = 1234
+        assert neuron.h.synapseSeed == 1234
+        assert neuron.h.RNGSettings().getSynapseSeed() == 1234
+    finally:
+        rng.synapse_seed = old_seed
+
+
+@pytest.mark.parametrize(
+    "suffix, present, absent",
+    [("AMPANMDA", "tau_d_AMPA", "tau_d_GABAA"), ("GABAAB", "tau_d_GABAA", "tau_d_AMPA")],
+)
+def test_override_info_dict_real_neuron(suffix, present, absent):
+    """info_dict works on override synapses and reports only parameters the
+    mechanism has (info-dict, F2)."""
+    synapse = GenericSpikeSynapse(
+        SimpleNamespace(id=3), SynapseHocArgs(0.5, _real_section()), ("", 4),
+        pd.Series(dict(_TM_DESCRIPTION)), (0, 0), 3, None, suffix,
+    )
+
+    info = synapse.info_dict
+
+    assert info["mech_name"] == suffix
+    assert info["helper_path"].endswith(f"{suffix}Helper.hoc")
+    assert info["randseed1"] is None and info["randseed3"] is None
+    params = info["synapse_parameters"]
+    assert params["Dep"] == pytest.approx(600.0)
+    assert params["conductance"] == pytest.approx(0.7)
+    assert present in params and absent not in params
+
+
+def test_native_glusynapse_seed_is_one_based_real_neuron():
+    """Native GluSynapse seeds with post_gid + 1 like neurodamus
+    GluSynapseHelper (glusynapse-seed)."""
+    description = pd.Series({
+        **_TM_DESCRIPTION, **_PLASTICITY,
+        SynapseProperty.TYPE: 113, SynapseProperty.CONDUCTANCE_RATIO: 0.5,
+    })
+    synapse = synapse_types.GluSynapse(
+        SimpleNamespace(id=3), SynapseHocArgs(0.5, _real_section()), ("", 4),
+        description, (0, 0), 3, None,
+    )
+
+    assert synapse.randseed1 == 4
+
+
+def test_mechanism_name_override_has_no_alias(helper_env):
+    """``ProbAMPANMDA_EMS`` is a mechanism, not a helper prefix: no alias to
+    ``AMPANMDAHelper``, so a clear missing-helper error is raised."""
+    with pytest.raises(FileNotFoundError, match="ProbAMPANMDA_EMSHelper.hoc.*helper prefix"):
+        synapse_helpers.load_synapse_helper("ProbAMPANMDA_EMS")
+
+
+def test_helper_search_dirs_ignore_missing_extra_dirs(helper_env, tmp_path):
+    missing = tmp_path / "does_not_exist"
+
+    dirs = synapse_helpers._helper_search_dirs([helper_env.registered, missing])
+
+    assert str(helper_env.registered) in dirs
+    assert str(missing) not in dirs
+
+
+def test_missing_helper_error_lists_circuit_dirs(helper_env):
+    with pytest.raises(FileNotFoundError, match=str(helper_env.registered)):
+        synapse_helpers.load_synapse_helper(
+            "MissingRegisteredDirCoverage", [helper_env.registered])
+
+
+def test_helper_dirs_are_per_circuit_real_neuron(helper_env, tmp_path, caplog):
+    """Each circuit resolves helpers from its own dirs; no global state is
+    left behind. A prefix already defined from another path warns
+    (per-circuit-helper-dirs, F9)."""
+    import logging
+
+    circuit_a, circuit_b = tmp_path / "circuit_a", tmp_path / "circuit_b"
+    circuit_a.mkdir()
+    circuit_b.mkdir()
+    _write_helper(circuit_a, "PerCircuitA", "registered")
+    _write_helper(circuit_a, "PerCircuitB", "registered")
+    _write_helper(circuit_b, "PerCircuitShared", "registered")
+    _write_helper(circuit_a, "PerCircuitShared", "bundled")
+    try:
+        synapse_helpers.load_synapse_helper("PerCircuitA", [circuit_a])
+        # circuit_b does not see circuit_a's dirs
+        with pytest.raises(FileNotFoundError):
+            synapse_helpers.load_synapse_helper("PerCircuitB", [circuit_b])
+        synapse_helpers.load_synapse_helper("PerCircuitShared", [circuit_b])
+        assert synapse_helpers.helper_loaded_from("PerCircuitShared") == str(
+            circuit_b / "PerCircuitSharedHelper.hoc")
+        with caplog.at_level(logging.WARNING):
+            synapse_helpers.load_synapse_helper("PerCircuitShared", [circuit_a])
+        assert "already defined" in caplog.text
+    finally:
+        for suffix in ("PerCircuitA", "PerCircuitShared"):
+            synapse_helpers._loaded_helpers.pop(suffix, None)
+
+
+def test_hoc_library_path_unchanged_after_loading_real_neuron(helper_env, monkeypatch):
+    """The bundled dir is on HOC_LIBRARY_PATH only while a helper loads, so
+    its RNGSettings.hoc dependency resolves without leaking the change."""
+    import neuron
+
+    suffix = "EnvScopedRealNrn"
+    (helper_env.registered / f"{suffix}Helper.hoc").write_text(
+        '{load_file("RNGSettings.hoc")}\n'
+        f"begintemplate {suffix}Helper\n"
+        "public synapse\nobjref synapse\nproc init() {}\n"
+        f"endtemplate {suffix}Helper\n"
+    )
+    monkeypatch.setattr(
+        synapse_helpers, "_bundled_hoc_directory",
+        lambda: str(resources.files("bluecellulab").joinpath("hoc")),
+    )
+    monkeypatch.setenv("HOC_LIBRARY_PATH", str(helper_env.user))
+    try:
+        synapse_helpers.load_synapse_helper(suffix, [helper_env.registered])
+        assert hasattr(neuron.h, f"{suffix}Helper")
+        assert synapse_helpers.os.environ["HOC_LIBRARY_PATH"] == str(helper_env.user)
+    finally:
+        synapse_helpers._loaded_helpers.pop(suffix, None)
+
+
+def test_hoc_library_path_removed_when_unset_before(monkeypatch):
+    monkeypatch.delenv("HOC_LIBRARY_PATH", raising=False)
+
+    with synapse_helpers._bundled_dir_on_hoc_library_path():
+        assert synapse_helpers._bundled_hoc_directory() in synapse_helpers.os.environ[
+            "HOC_LIBRARY_PATH"]
+
+    assert "HOC_LIBRARY_PATH" not in synapse_helpers.os.environ
+
+
+def test_load_synapse_helper_missing_raises():
+    """load_synapse_helper raises FileNotFoundError when the helper HOC cannot
+    be located."""
+    from bluecellulab.synapse.synapse_helpers import load_synapse_helper
+
+    with pytest.raises(FileNotFoundError):
+        load_synapse_helper("ThisSuffixDoesNotExistAnywhere_XYZ")
+
+
+def test_load_synapse_helper_reports_neuron_load_failure(helper_env, monkeypatch):
+    suffix = "LoadFailureCoverage"
+    _write_helper(helper_env.bundled, suffix, "bundled")
+    fake_h = SimpleNamespace(load_file=lambda _: 0)
+    monkeypatch.setattr(synapse_helpers, "neuron", SimpleNamespace(h=fake_h))
+
+    with pytest.raises(FileNotFoundError, match="NEURON failed to load"):
+        synapse_helpers.load_synapse_helper(suffix)
+
+
+def test_from_sonata_reads_modoverride_one_word():
+    """from_sonata must read the SONATA key 'modoverride' (one word, no
+    underscore), matching the SONATA spec and libsonata.
+
+    Previously this used 'mod_override' (underscore) which never matched
+    the actual JSON key, so modoverride was silently ignored.
+    """
+    conn_entry = {
+        "source": "Excitatory",
+        "target": "Mosaic",
+        "modoverride": "IClamp",
+    }
+    co = ConnectionOverrides.from_sonata(conn_entry)
+    assert co.mod_override == "IClamp"
+
+
+def test_from_sonata_modoverride_none_when_absent():
+    """from_sonata should return None for mod_override when the key is not
+    present in the SONATA connection override entry."""
+    conn_entry = {
+        "source": "Excitatory",
+        "target": "Mosaic",
+    }
+    co = ConnectionOverrides.from_sonata(conn_entry)
+    assert co.mod_override is None
+
+
+def test_load_synapse_helper_uses_cache(monkeypatch):
+    suffix = "CachedHelperCoverage"
+    synapse_helpers._loaded_helpers[suffix] = "/some/path"
+    fake_h = SimpleNamespace(load_file=pytest.fail)
+    monkeypatch.setattr(synapse_helpers, "neuron", SimpleNamespace(h=fake_h))
+
+    assert synapse_helpers.load_synapse_helper(suffix) == f"{suffix}Helper"
+    synapse_helpers._loaded_helpers.pop(suffix, None)
+
+
+def test_load_synapse_helper_rejects_helper_without_template(helper_env, monkeypatch):
+    suffix = "MissingTemplateCoverage"
+    (helper_env.bundled / f"{suffix}Helper.hoc").write_text("// no template\n")
+    fake_h = SimpleNamespace(load_file=lambda _: 1)
+    monkeypatch.setattr(synapse_helpers, "neuron", SimpleNamespace(h=fake_h))
+
+    with pytest.raises(AttributeError, match="did not define template"):
+        synapse_helpers.load_synapse_helper(suffix)
+
+
+def test_load_synapse_helper_skips_preloaded_template(monkeypatch):
+    suffix = "LoadedTemplateCoverage"
+    fake_h = SimpleNamespace(load_file=pytest.fail, LoadedTemplateCoverageHelper=object())
+    monkeypatch.setattr(synapse_helpers, "neuron", SimpleNamespace(h=fake_h))
+
+    assert synapse_helpers.load_synapse_helper(suffix) == f"{suffix}Helper"
+    assert synapse_helpers.helper_available(suffix)
+    synapse_helpers._loaded_helpers.pop(suffix, None)
+
+
+def test_helper_params_use_neurodamus_names():
+    params = build_helper_params(
+        pd.Series({
+            SynapseProperty.PRE_GID: 12,
+            SynapseProperty.AXONAL_DELAY: 1.5,
+            SynapseProperty.POST_SECTION_ID: 3,
+            SynapseProperty.AFFERENT_SECTION_POS: 0.4,
+            SynapseProperty.G_SYNX: 0.5,
+            SynapseProperty.U_SYN: 0.3,
+            SynapseProperty.D_SYN: 600.0,
+            SynapseProperty.F_SYN: 20.0,
+            SynapseProperty.DTC: 1.7,
+            SynapseProperty.TYPE: 113,
+            SynapseProperty.NRRP: 2,
+            "custom_parameter": 3,
+        }),
+        ["custom_parameter"],
+    )
+
+    assert (params.sgid, params.delay, params.weight) == (12, 1.5, 0.5)
+    assert (params.U, params.D, params.F, params.DTC) == (0.3, 600.0, 20.0, 1.7)
+    assert (params.synType, params.nrrp) == (113, 2)
+    assert (params.isec, params.ipt, params.offset) == (3, -1, 0.4)
+    assert params.custom_parameter == 3
+    assert not hasattr(params, "Nrrp")
+
+
+def test_helper_params_defaults_optional_and_reserved_fields():
+    """Optional fields get neurodamus defaults; NaN (outer join) counts as
+    absent."""
+    params = build_helper_params(
+        pd.Series({SynapseProperty.CONDUCTANCE_RATIO: float("nan")}), [])
+
+    assert params.maskValue == -1.0
+    assert params.location == 0.5
+    assert params.u_hill_coefficient == 0.0
+    assert params.conductance_ratio == -1.0
+    assert params.nrrp == -1.0
+
+
+def test_helper_params_ignore_mask_value_from_edges():
+    """maskValue is reserved: an edge value is never passed to the helper."""
+    params = build_helper_params(pd.Series({"maskValue": 5.0}), ["maskValue"])
+
+    assert params.maskValue == -1.0
+
+
+def test_helper_params_pass_extra_fields_under_raw_name():
+    """A helper declaring a standard SONATA name gets it unmapped and
+    unscaled, while the neurodamus name keeps the mapped value."""
+    params = build_helper_params(
+        pd.Series({
+            SynapseProperty.G_SYNX: 0.5,
+            SynapseProperty.U_SYN: 0.3,
+            "conductance": 0.5,
+            "u_syn": 0.6,
+        }),
+        ["conductance", "u_syn"],
+    )
+
+    assert params.conductance == 0.5
+    assert params.u_syn == 0.6
+    assert params.U == 0.3
+
+
+def test_generic_spike_synapse_scales_u_syn():
+    synapse = GenericSpikeSynapse.__new__(GenericSpikeSynapse)
+    synapse.extracellular_calcium = 2.0
+    description = pd.Series({
+        SynapseProperty.U_HILL_COEFFICIENT: 1.0,
+        SynapseProperty.U_SYN: 2.0,
+    })
+
+    result = synapse.update_syn_description(description)
+
+    assert result[SynapseProperty.U_SYN] == 2.0 * result["u_scale_factor"]
+    assert result["u_scale_factor"] == synapse.calc_u_scale_factor(1.0, 2.0)
+
+
+def test_generic_spike_synapse_initializes_and_builds(monkeypatch):
+    monkeypatch.setattr(GenericSpikeSynapse, "_build_via_helper", lambda self, _: None)
+    cell_id = SimpleNamespace(id=21)
+    description = pd.Series({SynapseProperty.PRE_GID: 4})
+
+    synapse = GenericSpikeSynapse(
+        cell_id,
+        SynapseHocArgs(0.5, None),
+        ("projection", 7),
+        description,
+        (2, 3),
+        21,
+        None,
+        "Custom",
+    )
+
+    assert synapse.post_gid == 21
+    assert synapse.mech_name == "not-yet-defined"
+
+
+def test_generic_spike_synapse_update_removes_invalid_optional_values():
+    synapse = GenericSpikeSynapse.__new__(GenericSpikeSynapse)
+    synapse.extracellular_calcium = None
+    description = pd.Series({SynapseProperty.NRRP: "invalid", SynapseProperty.U_SYN: 2.0})
+
+    result = synapse.update_syn_description(description)
+
+    assert SynapseProperty.NRRP not in result
+    assert result["u_scale_factor"] == 1.0
+    assert result[SynapseProperty.U_SYN] == 2.0
+
+
+def test_generic_spike_synapse_builds_from_helper(monkeypatch):
+    active_section = {}
+
+    class Section:
+        def push(self):
+            active_section["section"] = self
+
+    class Helper:
+        def __init__(self, *args):
+            self.args = args
+            self.created_in_section = active_section.get("section")
+            self.synapse = "point-process"
+
+    monkeypatch.setattr(synapse_helpers, "load_synapse_helper", lambda *_: "TestHelper")
+    monkeypatch.setattr(
+        synapse_types.neuron,
+        "h",
+        SimpleNamespace(
+            TestHelper=Helper,
+            pop_section=lambda: active_section.pop("section", None),
+        ),
+    )
+    section = Section()
+    synapse = GenericSpikeSynapse.__new__(GenericSpikeSynapse)
+    synapse.post_gid = 41
+    synapse.hoc_args = SimpleNamespace(location=0.25, section=section)
+    synapse.syn_id = SynapseID("projection", 7)
+    synapse.source_popid = 2
+    synapse.target_popid = 3
+    synapse.syn_description = pd.Series({SynapseProperty.G_SYNX: 0.9})
+    synapse.persistent = []
+
+    synapse._build_via_helper("Test")
+
+    assert synapse.hsynapse == "point-process"
+    assert synapse.mech_name == "Test"
+    assert synapse.persistent[0].args[0] == 42
+    assert synapse.persistent[0].created_in_section is section
+    assert active_section == {}
+
+
+def test_factory_uses_generic_synapse_for_mod_override(monkeypatch):
+    created = SimpleNamespace()
+    monkeypatch.setattr(synapse_factory.SynapseFactory, "determine_synapse_location", lambda *_: "location")
+    monkeypatch.setattr(synapse_factory, "GenericSpikeSynapse", lambda *args, **kwargs: created)
+    monkeypatch.setattr(
+        synapse_factory.SynapseFactory,
+        "apply_connection_modifiers",
+        lambda modifiers, synapse: synapse,
+    )
+    cell = SimpleNamespace(cell_id="cell", post_gid=12)
+
+    result = synapse_factory.SynapseFactory.create_synapse(
+        cell,
+        ("projection", 1),
+        pd.Series(),
+        SimpleNamespace(),
+        (2, 3),
+        None,
+        {"ModOverride": "CustomMechanism"},
+    )
+
+    assert result is created
+
+
+def _create_with_override(monkeypatch, description, mod_override):
+    """Run the factory with every synapse class replaced by a tagger."""
+    monkeypatch.setattr(synapse_factory.SynapseFactory, "determine_synapse_location", lambda *_: "location")
+    monkeypatch.setattr(synapse_factory, "GenericSpikeSynapse", pytest.fail)
+    for name in ("GluSynapse", "Exp2Syn", "GabaabSynapse", "AmpanmdaSynapse"):
+        monkeypatch.setattr(
+            synapse_factory, name, lambda *args, _name=name, **kwargs: _name)
+    monkeypatch.setattr(
+        synapse_factory.SynapseFactory, "apply_connection_modifiers",
+        lambda modifiers, synapse: synapse,
+    )
+    return synapse_factory.SynapseFactory.create_synapse(
+        SimpleNamespace(cell_id="cell", post_gid=12), ("projection", 1),
+        pd.Series(description), SimpleNamespace(randomize_gaba_rise_time=None),
+        (2, 3), None, {"ModOverride": mod_override},
+    )
+
+
+@pytest.mark.parametrize(
+    "mod_override, description, expected",
+    [
+        ("GluSynapse", {SynapseProperty.TYPE: 10, **_PLASTICITY}, "GluSynapse"),
+        ("Exp2Syn", {SynapseProperty.TYPE: 10, "tau1": 0.1, "tau2": 3.0, "erev": 0.0}, "Exp2Syn"),
+    ],
+)
+def test_native_override_forces_class_regardless_of_syn_type(
+        monkeypatch, mod_override, description, expected):
+    """B': ``GluSynapse``/``Exp2Syn`` overrides force those native classes,
+    even on inhibitory edges (neurodamus gives the override mechanism)."""
+    assert _create_with_override(monkeypatch, description, mod_override) == expected
+
+
+@pytest.mark.parametrize(
+    "mod_override, description, missing",
+    [
+        ("GluSynapse", {SynapseProperty.TYPE: 113, **_PLASTICITY, "theta_p": float("nan")}, "theta_p"),
+        ("Exp2Syn", {SynapseProperty.TYPE: 113, "tau1": 0.1, "erev": 0.0}, "tau2"),
+    ],
+)
+def test_native_override_missing_fields_raise(monkeypatch, mod_override, description, missing):
+    with pytest.raises(BluecellulabError, match=f"'{mod_override}'.*{missing}"):
+        _create_with_override(monkeypatch, description, mod_override)
+
+
+def test_no_override_keeps_data_driven_selection(monkeypatch):
+    """Without modoverride, plasticity columns still select GluSynapse
+    (backward compatible; neurodamus would use AMPANMDA)."""
+    description = {SynapseProperty.TYPE: 113, **_PLASTICITY}
+    assert _create_with_override(monkeypatch, description, None) == "GluSynapse"
+
+
+def test_generic_spike_synapse_rejects_helper_without_synapse(monkeypatch):
+    class Section:
+        def push(self):
+            pass
+
+    class Helper:
+        def __init__(self, *args):
+            pass
+
+    monkeypatch.setattr(synapse_helpers, "load_synapse_helper", lambda *_: "TestHelper")
+    monkeypatch.setattr(
+        synapse_types.neuron,
+        "h",
+        SimpleNamespace(TestHelper=Helper, pop_section=lambda: None),
+    )
+    synapse = GenericSpikeSynapse.__new__(GenericSpikeSynapse)
+    synapse.post_gid = 41
+    synapse.hoc_args = SimpleNamespace(location=0.25, section=Section())
+    synapse.syn_id = SynapseID("projection", 7)
+    synapse.source_popid = 2
+    synapse.target_popid = 3
+    synapse.syn_description = pd.Series()
+    synapse.persistent = []
+
+    with pytest.raises(AttributeError, match="does not expose"):
+        synapse._build_via_helper("Test")
+
+
+def _helper_synapse(monkeypatch, description, needed):
+    """GenericSpikeSynapse wired to a fake helper declaring ``needed``."""
+    calls = []
+
+    class Section:
+        def push(self):
+            pass
+
+    class Helper:
+        def __init__(self, *args):
+            calls.append(args)
+            self.synapse = SimpleNamespace()
+
+    monkeypatch.setattr(synapse_helpers, "load_synapse_helper", lambda *_: "TestHelper")
+    monkeypatch.setattr(
+        synapse_types.neuron,
+        "h",
+        SimpleNamespace(
+            TestHelper=Helper,
+            TestHelper_NeededAttributes=needed,
+            pop_section=lambda: None,
+        ),
+    )
+    synapse = GenericSpikeSynapse.__new__(GenericSpikeSynapse)
+    synapse.post_gid = 41
+    synapse.hoc_args = SimpleNamespace(location=0.25, section=Section())
+    synapse.syn_id = SynapseID("projection", 7)
+    synapse.source_popid = 2
+    synapse.target_popid = 3
+    synapse.syn_description = pd.Series(description)
+    synapse.persistent = []
+    return synapse, calls
+
+
+@pytest.mark.parametrize(
+    "description",
+    [{"w_corr": 0.1}, {"w_corr": 0.1, "tau_corr": float("nan")}],
+    ids=["absent", "nan"],
+)
+def test_missing_needed_attribute_raises_before_helper(monkeypatch, description):
+    """``_NeededAttributes`` are mandatory: absent (or NaN from the outer
+    join of populations) raises, naming helper, synapse and fields."""
+    synapse, calls = _helper_synapse(monkeypatch, description, "w_corr;tau_corr")
+
+    with pytest.raises(BluecellulabError) as excinfo:
+        synapse._build_via_helper("Test")
+
+    message = str(excinfo.value)
+    assert "TestHelper" in message
+    assert "('projection', 7)" in message
+    assert "['tau_corr']" in message
+    assert calls == []
+
+
+def test_needed_attributes_present_builds(monkeypatch):
+    synapse, calls = _helper_synapse(
+        monkeypatch, {"w_corr": 0.1, "tau_corr": 2.0}, "w_corr;tau_corr;maskValue"
+    )
+
+    synapse._build_via_helper("Test")
+
+    assert len(calls) == 1
+    assert not hasattr(synapse.hsynapse, "conductance")  # not exposed: untouched
+
+
+def test_conductance_set_to_weight_when_exposed(monkeypatch):
+    synapse, _ = _helper_synapse(monkeypatch, {SynapseProperty.G_SYNX: 0.9}, "")
+    helper_cls = synapse_types.neuron.h.TestHelper
+
+    class Mechanism:
+        conductance = 0.0
+
+    class HelperWithConductance(helper_cls):
+        def __init__(self, *args):
+            super().__init__(*args)
+            self.synapse = Mechanism()
+
+    synapse_types.neuron.h.TestHelper = HelperWithConductance
+    synapse._build_via_helper("Test")
+
+    assert synapse.hsynapse.conductance == 0.9
+
+
+def test_get_helper_needed_attributes_returns_declared_fields(monkeypatch):
+    suffix = "NeededAttrsCoverage"
+    fake_h = SimpleNamespace(
+        load_file=lambda _: 1,
+        NeededAttrsCoverageHelper=object(),
+        NeededAttrsCoverageHelper_NeededAttributes="w_corr;tau_corr;w1_corr",
+    )
+    monkeypatch.setattr(synapse_helpers, "neuron", SimpleNamespace(h=fake_h))
+
+    attrs = synapse_helpers.get_helper_needed_attributes(suffix)
+    assert attrs == ["w_corr", "tau_corr", "w1_corr"]
+    synapse_helpers._loaded_helpers.pop(suffix, None)
+
+
+def test_get_helper_needed_attributes_empty_when_no_metadata(monkeypatch):
+    suffix = "NoAttrsCoverage"
+    fake_h = SimpleNamespace(
+        load_file=lambda _: 1,
+        NoAttrsCoverageHelper=object(),
+    )
+    monkeypatch.setattr(synapse_helpers, "neuron", SimpleNamespace(h=fake_h))
+
+    assert synapse_helpers.get_helper_needed_attributes(suffix) == []
+    synapse_helpers._loaded_helpers.pop(suffix, None)
+
+
+@pytest.mark.parametrize(
+    "cls_name, extra",
+    [
+        ("AmpanmdaSynapse", {SynapseProperty.TYPE: 113}),
+        ("GabaabSynapse", {SynapseProperty.TYPE: 13}),
+        ("GluSynapse", {**_PLASTICITY, SynapseProperty.TYPE: 113,
+                        SynapseProperty.CONDUCTANCE_RATIO: 0.5}),
+    ],
+)
+def test_native_synapse_conductance_is_weight_real_neuron(cls_name, extra):
+    """Native synapses set conductance = weight like neurodamus
+    Connection._create_synapse."""
+    description = pd.Series({**_TM_DESCRIPTION, **extra})
+    synapse = getattr(synapse_types, cls_name)(
+        SimpleNamespace(id=3), SynapseHocArgs(0.5, _real_section()), ("", 4),
+        description, (0, 0), 3, None,
+    )
+
+    assert synapse.hsynapse.conductance == pytest.approx(
+        description[SynapseProperty.G_SYNX])
+
+
+def test_is_missing_non_scalar_is_not_missing():
+    """Array-like values (pd.isna is ambiguous) count as present."""
+    assert synapse_helpers._is_missing([1.0, 2.0]) is False
+    assert synapse_helpers._is_missing(None) is True
+    assert synapse_helpers._is_missing(float("nan")) is True
+
+
+def test_build_helper_params_segment_position_without_section_pos():
+    """Without afferent_section_pos, ipt/offset come from the segment fields
+    (neurodamus SonataReader._load_params_custom)."""
+    description = pd.Series({
+        **_TM_DESCRIPTION,
+        SynapseProperty.POST_SEGMENT_ID: 2,
+        SynapseProperty.POST_SEGMENT_OFFSET: 0.25,
+    })
+    description = description.drop(
+        SynapseProperty.AFFERENT_SECTION_POS, errors="ignore")
+
+    params = build_helper_params(description, needed=())
+
+    assert params.ipt == 2
+    assert params.offset == pytest.approx(0.25)
+
+
+def test_warn_if_other_path_skips_preloaded(monkeypatch, caplog):
+    """A template defined outside BlueCelluLab is never re-resolved."""
+    monkeypatch.setitem(synapse_helpers._loaded_helpers, "Preloaded", "<preloaded>")
+    monkeypatch.setattr(synapse_helpers, "_checked_requests", set())
+
+    def fail(*args, **kwargs):
+        raise AssertionError("must not resolve a preloaded helper")
+
+    monkeypatch.setattr(synapse_helpers, "_resolve_helper_path", fail)
+    synapse_helpers._warn_if_other_path("Preloaded", ("/some/dir",))
+    assert ("Preloaded", ("/some/dir",)) in synapse_helpers._checked_requests
+    assert "Preloaded" not in caplog.text

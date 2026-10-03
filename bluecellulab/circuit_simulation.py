@@ -135,7 +135,10 @@ class CircuitSimulation:
             if parallel_context is not None
             else neuron.h.ParallelContext()
         )
+        self._owns_pc = parallel_context is None
         self.pc = pc if int(pc.nhost()) > 1 or print_cellstate else None
+        self._gids_registered_mpi = False
+        self._deleted = False
         self.print_cellstate = print_cellstate
         self.save_time = save_time
 
@@ -347,6 +350,7 @@ class CircuitSimulation:
                 )
             if self.pc is not None:
                 self._init_instantiated_cells_mpi()
+                self._gids_registered_mpi = True
                 self._register_gids_for_mpi()
                 self.pc.barrier()
                 self.pc.setup_transfer()
@@ -1214,12 +1218,31 @@ class CircuitSimulation:
 
         NEURON objects are explicitly needed to be deleted.
         """
+        if getattr(self, "_deleted", False):
+            return
+        self._deleted = True
+
+        pc = getattr(self, "pc", None)
+        if (
+            pc is not None
+            and getattr(self, "_owns_pc", False)
+            and getattr(self, "_gids_registered_mpi", False)
+        ):
+            # ParallelContext keeps gid/output-port registrations outside the
+            # Python wrapper. Clear them before dropping the cells so another
+            # simulation in this process can reuse the gid namespace.
+            pc.gid_clear()
+            self._gids_registered_mpi = False
+
         if hasattr(self, "cells"):
             for _, cell in self.cells.items():
                 cell.delete()
             cell_ids = list(self.cells.keys())
             for cell_id in cell_ids:
                 del self.cells[cell_id]
+
+        if getattr(self, "_owns_pc", False):
+            self.pc = None
 
     def __del__(self):
         """Destructor.

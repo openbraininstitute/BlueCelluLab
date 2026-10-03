@@ -581,10 +581,10 @@ class Cell(InjectableMixin, PlottableMixin):
         # SpontMinis in sim config takes precedence of values in nodes file
         if 'SpontMinis' in connection_modifiers:
             spont_minis_rate = connection_modifiers['SpontMinis']
-        elif synapse.mech_name in ["GluSynapse", "ProbAMPANMDA_EMS"]:
-            spont_minis_rate = exc_mini_frequency
-        else:
+        elif synapse.is_inhibitory:
             spont_minis_rate = inh_mini_frequency
+        else:
+            spont_minis_rate = exc_mini_frequency
 
         if spont_minis_rate is not None and spont_minis_rate > 0:
             synapse_hoc_args = SynapseFactory.determine_synapse_location(
