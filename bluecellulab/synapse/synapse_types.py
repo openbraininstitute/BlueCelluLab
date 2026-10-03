@@ -540,6 +540,7 @@ class GenericSpikeSynapse(Synapse):
                 reserved with defaults).
         """
         from bluecellulab.synapse.synapse_helpers import (
+            build_helper_params,
             get_helper_needed_attributes,
             load_synapse_helper,
         )
@@ -547,20 +548,12 @@ class GenericSpikeSynapse(Synapse):
         helper_name = load_synapse_helper(mod_suffix)
         helper_cls = getattr(neuron.h, helper_name)
 
-        params = _SynParamsAdapter(self.syn_description)
-        # A NaN value means the field's column is absent from this synapse's
-        # edge population (outer join of populations), i.e. not provided.
-        missing = [
-            attr for attr in get_helper_needed_attributes(mod_suffix)
-            if not hasattr(params, attr) or _is_nan(getattr(params, attr))
-        ]
-        if missing:
-            raise BluecellulabError(
-                f"Helper '{helper_name}' (modoverride '{mod_suffix}') needs "
-                f"attribute(s) {missing} missing for synapse {tuple(self.syn_id)}. "
-                "The edge population must provide every attribute in "
-                f"{helper_name}_NeededAttributes."
-            )
+        params = build_helper_params(
+            self.syn_description,
+            get_helper_needed_attributes(mod_suffix),
+            helper_name=helper_name,
+            synapse_label=str(tuple(self.syn_id)),
+        )
 
         rng_settings = RNGSettings.get_instance()
         base_seed = rng_settings.base_seed
@@ -597,54 +590,3 @@ class GenericSpikeSynapse(Synapse):
             self.hsynapse.conductance = weight
         self.mech_name = mod_suffix
         self.persistent.append(helper)
-
-
-def _is_nan(value: Any) -> bool:
-    """Return True for a scalar NaN value."""
-    return isinstance(value, float) and value != value
-
-
-class _SynParamsAdapter:
-    """Adapter that exposes a pandas Series as attributes for HOC consumption.
-
-    HOC templates access parameters via ``$o2.attr`` syntax. pandas Series
-    already supports attribute access for string column names but not for
-    SynapseProperty enum keys, so we build a flat namespace.
-    """
-
-    _ENUM_TO_ATTR = {
-        SynapseProperty.PRE_GID: "sgid",
-        SynapseProperty.AXONAL_DELAY: "delay",
-        SynapseProperty.POST_SECTION_ID: "isec",
-        SynapseProperty.POST_SEGMENT_ID: "ipt",
-        SynapseProperty.POST_SEGMENT_OFFSET: "offset",
-        SynapseProperty.G_SYNX: "weight",
-        SynapseProperty.U_SYN: "U",
-        SynapseProperty.D_SYN: "D",
-        SynapseProperty.F_SYN: "F",
-        SynapseProperty.DTC: "DTC",
-        SynapseProperty.NRRP: "Nrrp",
-        SynapseProperty.TYPE: "synType",
-        SynapseProperty.CONDUCTANCE_RATIO: "conductance_ratio",
-        SynapseProperty.U_HILL_COEFFICIENT: "u_hill_coefficient",
-        SynapseProperty.AFFERENT_SECTION_POS: "afferent_section_pos",
-    }
-
-    def __init__(self, syn_description: pd.Series):
-        # Neurodamus reserves these helper parameters and defaults them
-        # when the corresponding fields are absent from the SONATA edge
-        # population. See neurodamus SynapseReader._reserved.
-        setattr(self, "maskValue", -1.0)
-        setattr(self, "location", 0.5)
-
-        for key, value in syn_description.items():
-            attr = self._ENUM_TO_ATTR.get(key, str(key) if not isinstance(key, str) else key)
-            try:
-                setattr(self, attr, value)
-                # Existing BlueCelluLab code exposes the SONATA NRRP field as
-                # ``Nrrp``, while the shipped Neurodamus-style helpers use
-                # the lowercase ``nrrp`` spelling. Keep both aliases.
-                if key == SynapseProperty.NRRP:
-                    setattr(self, "nrrp", value)
-            except (TypeError, AttributeError):
-                pass

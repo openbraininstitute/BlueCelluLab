@@ -16,8 +16,8 @@ from bluecellulab.synapse.synapse_types import (
     GenericSpikeSynapse,
     SynapseHocArgs,
     SynapseID,
-    _SynParamsAdapter,
 )
+from bluecellulab.synapse.synapse_helpers import build_helper_params
 
 
 @pytest.mark.parametrize("prefix", ["AMPANMDA", "GABAAB", "ProbFilt5AMPANMDA_EMS"])
@@ -334,31 +334,69 @@ def test_load_synapse_helper_skips_preloaded_template(monkeypatch):
     synapse_helpers._loaded_helpers.pop(suffix, None)
 
 
-def test_syn_params_adapter_maps_enum_and_string_keys():
-    adapter = _SynParamsAdapter(
+def test_helper_params_use_neurodamus_names():
+    params = build_helper_params(
         pd.Series({
             SynapseProperty.PRE_GID: 12,
+            SynapseProperty.AXONAL_DELAY: 1.5,
+            SynapseProperty.POST_SECTION_ID: 3,
+            SynapseProperty.AFFERENT_SECTION_POS: 0.4,
             SynapseProperty.G_SYNX: 0.5,
+            SynapseProperty.U_SYN: 0.3,
+            SynapseProperty.D_SYN: 600.0,
+            SynapseProperty.F_SYN: 20.0,
+            SynapseProperty.DTC: 1.7,
+            SynapseProperty.TYPE: 113,
+            SynapseProperty.NRRP: 2,
             "custom_parameter": 3,
-        })
+        }),
+        ["custom_parameter"],
     )
 
-    assert adapter.sgid == 12
-    assert adapter.weight == 0.5
-    assert adapter.custom_parameter == 3
+    assert (params.sgid, params.delay, params.weight) == (12, 1.5, 0.5)
+    assert (params.U, params.D, params.F, params.DTC) == (0.3, 600.0, 20.0, 1.7)
+    assert (params.synType, params.nrrp) == (113, 2)
+    assert (params.isec, params.ipt, params.offset) == (3, -1, 0.4)
+    assert params.custom_parameter == 3
+    assert not hasattr(params, "Nrrp")
 
 
-def test_syn_params_adapter_defaults_reserved_fields():
-    """_SynParamsAdapter must default maskValue and location like neurodamus
-    ``SynapseReader._reserved``."""
-    adapter = _SynParamsAdapter(pd.Series())
+def test_helper_params_defaults_optional_and_reserved_fields():
+    """Optional fields get neurodamus defaults; NaN (outer join) counts as
+    absent."""
+    params = build_helper_params(
+        pd.Series({SynapseProperty.CONDUCTANCE_RATIO: float("nan")}), [])
 
-    assert adapter.maskValue == -1.0
-    assert adapter.location == 0.5
+    assert params.maskValue == -1.0
+    assert params.location == 0.5
+    assert params.u_hill_coefficient == 0.0
+    assert params.conductance_ratio == -1.0
+    assert params.nrrp == -1.0
 
 
-def test_syn_params_adapter_ignores_unassignable_attribute():
-    _SynParamsAdapter(pd.Series({"__dict__": 3}))
+def test_helper_params_ignore_mask_value_from_edges():
+    """maskValue is reserved: an edge value is never passed to the helper."""
+    params = build_helper_params(pd.Series({"maskValue": 5.0}), ["maskValue"])
+
+    assert params.maskValue == -1.0
+
+
+def test_helper_params_pass_extra_fields_under_raw_name():
+    """A helper declaring a standard SONATA name gets it unmapped and
+    unscaled, while the neurodamus name keeps the mapped value."""
+    params = build_helper_params(
+        pd.Series({
+            SynapseProperty.G_SYNX: 0.5,
+            SynapseProperty.U_SYN: 0.3,
+            "conductance": 0.5,
+            "u_syn": 0.6,
+        }),
+        ["conductance", "u_syn"],
+    )
+
+    assert params.conductance == 0.5
+    assert params.u_syn == 0.6
+    assert params.U == 0.3
 
 
 def test_generic_spike_synapse_scales_u_syn():

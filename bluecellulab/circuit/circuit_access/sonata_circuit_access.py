@@ -35,6 +35,9 @@ from bluecellulab.circuit.config import SonataSimulationConfig
 from bluecellulab.circuit.synapse_properties import (
     properties_from_snap,
     properties_to_snap,
+    snap_to_synproperty,
+    ND_NAMES,
+    ND_RESERVED_FIELDS,
 )
 
 logger = logging.getLogger(__name__)
@@ -311,22 +314,28 @@ class SonataCircuitAccess(CircuitAccess):
                         edge_properties = list(SynapseProperties.allen_point)
 
                 # Fields declared by modoverride helpers
-                # (``<prefix>Helper_NeededAttributes``) plus the reserved
-                # ``maskValue``, only those this population provides. Added
-                # after the Allen replacement above so they survive it.
-                # Missing needed attributes are reported per overridden
-                # synapse when it is built (GenericSpikeSynapse), not here.
+                # (``<prefix>Helper_NeededAttributes``), only those this
+                # population provides, by raw SONATA name. Added after the
+                # Allen replacement above so they survive it. Missing needed
+                # attributes are reported per overridden synapse when it is
+                # built (GenericSpikeSynapse), not here.
+                helper_fields = self._helper_fields_for_population(
+                    edge_population_name, edge_population.property_names)
                 requested = set(properties_to_snap(edge_properties))
                 edge_properties += [
-                    field for field in self._helper_fields_for_population(
-                        edge_population_name, edge_population.property_names)
-                    if field not in requested
+                    field for field in helper_fields if field not in requested
                 ]
 
                 snap_properties = properties_to_snap(edge_properties)
                 synapses: pd.DataFrame = edge_population.get(afferent_edges, snap_properties)
                 column_names = list(synapses.columns)
                 synapses.columns = pd.Index(properties_from_snap(column_names))
+                # A helper field that is also a standard column (e.g.
+                # ``conductance``) is exposed again under its raw name:
+                # neurodamus passes extra fields unmapped and unscaled.
+                for field in helper_fields:
+                    if field in snap_to_synproperty and field not in ND_NAMES:
+                        synapses[field] = synapses[snap_to_synproperty[field]]
 
                 # make multiindex
                 synapses = synapses.reset_index(drop=True)
@@ -374,17 +383,18 @@ class SonataCircuitAccess(CircuitAccess):
     def _helper_fields_for_population(
         self, edge_population_name: str, property_names: Iterable[str]
     ) -> list[str]:
-        """Helper fields (plus ``maskValue``) that the population provides.
+        """Helper-declared fields that the population provides.
 
-        Cached per (edge population, modoverride set) so helpers are not
-        reloaded for every cell.
+        Reserved fields (``maskValue``, ``location``) are never read from
+        the edges, as in neurodamus. Cached per (edge population,
+        modoverride set) so helpers are not reloaded for every cell.
         """
         key = (edge_population_name, self._mod_override_suffixes())
         if key not in self._helper_fields_cache:
             declared = self._collect_helper_needed_attributes(key[1])
             self._helper_fields_cache[key] = [
-                field for field in [*declared, "maskValue"]
-                if field in property_names
+                field for field in declared
+                if field in property_names and field not in ND_RESERVED_FIELDS
             ]
         return list(self._helper_fields_cache[key])
 

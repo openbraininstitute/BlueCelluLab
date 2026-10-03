@@ -20,9 +20,21 @@ import logging
 import os
 
 from collections.abc import Iterable
+from types import SimpleNamespace
+from typing import Any
 
 import importlib_resources as resources
 import neuron
+import pandas as pd
+
+from bluecellulab.circuit.synapse_properties import (
+    ND_BASE_FIELDS,
+    ND_NAMES,
+    ND_OPTIONAL_FIELDS,
+    ND_RESERVED_FIELDS,
+    SynapseProperty,
+)
+from bluecellulab.exceptions import BluecellulabError
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +157,72 @@ def load_synapse_helper(suffix: str) -> str:
 def helper_available(suffix: str) -> bool:
     """Return True if a helper template is already loaded for the SUFFIX."""
     return hasattr(neuron.h, f"{suffix}Helper")
+
+
+def _is_missing(value: Any) -> bool:
+    """Return True for None or a scalar NaN (column absent after the outer
+    join of edge populations)."""
+    if value is None:
+        return True
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def build_helper_params(
+    syn_description: pd.Series,
+    needed: Iterable[str],
+    helper_name: str = "helper",
+    synapse_label: str = "",
+) -> SimpleNamespace:
+    """Build the parameter object passed to a ``<prefix>Helper`` template.
+
+    Mirrors neurodamus ``SynapseParameters.make_synapse_parameters_array``:
+    standard fields use neurodamus names (``weight``, ``U``, ``nrrp``, ...),
+    reserved fields (``maskValue = -1``, ``location = 0.5``) are never read
+    from the edges, optional fields get neurodamus defaults, and extra
+    fields declared in ``needed`` are passed under their raw SONATA name.
+
+    Raises:
+        BluecellulabError: if a field listed in ``needed`` is missing.
+    """
+    params = SimpleNamespace(**ND_RESERVED_FIELDS)
+    for name, prop in ND_BASE_FIELDS.items():
+        value = syn_description.get(prop)
+        if _is_missing(value):
+            if name in ND_OPTIONAL_FIELDS:
+                setattr(params, name, ND_OPTIONAL_FIELDS[name])
+            continue
+        setattr(params, name, value)
+
+    # Synapse position, as neurodamus SonataReader._load_params_custom:
+    # afferent_section_pos takes precedence (ipt = -1, offset = pos).
+    if not _is_missing(syn_description.get(SynapseProperty.POST_SECTION_ID)):
+        params.isec = syn_description[SynapseProperty.POST_SECTION_ID]
+    section_pos = syn_description.get(SynapseProperty.AFFERENT_SECTION_POS)
+    if not _is_missing(section_pos):
+        params.ipt, params.offset = -1, section_pos
+    else:
+        for name, prop in (("ipt", SynapseProperty.POST_SEGMENT_ID),
+                           ("offset", SynapseProperty.POST_SEGMENT_OFFSET)):
+            value = syn_description.get(prop)
+            if not _is_missing(value):
+                setattr(params, name, value)
+
+    needed = list(needed)
+    for name in needed:
+        if name not in ND_NAMES and not _is_missing(syn_description.get(name)):
+            setattr(params, name, syn_description[name])
+
+    missing = [name for name in needed if _is_missing(getattr(params, name, None))]
+    if missing:
+        raise BluecellulabError(
+            f"Helper '{helper_name}' needs attribute(s) {missing} missing for "
+            f"synapse {synapse_label}. The edge population must provide every "
+            f"attribute in {helper_name}_NeededAttributes."
+        )
+    return params
 
 
 def get_helper_needed_attributes(suffix: str) -> list[str]:

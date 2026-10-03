@@ -128,6 +128,27 @@ class TestSonataCircuitAccess:
         assert "spine_length" not in res.columns
         assert caplog.text == ""
 
+    def test_helper_standard_name_field_kept_raw_and_mask_value_skipped(self):
+        """A helper field equal to a standard column (``conductance``) is
+        also exposed under its raw name; reserved ``maskValue`` is never
+        extracted, as in neurodamus."""
+        cell_id = CellId("hippocampus_neurons", 1)
+        with patch.object(
+            self.circuit_access, "_mod_override_suffixes", return_value=("Fake",),
+        ), patch.object(
+            self.circuit_access,
+            "_collect_helper_needed_attributes",
+            return_value={"conductance": "Fake", "maskValue": "Fake"},
+        ):
+            fields = self.circuit_access._helper_fields_for_population(
+                "any_population", {"conductance", "maskValue"})
+            res = self.circuit_access.extract_synapses(cell_id, True)
+
+        assert fields == ["conductance"]
+        assert "maskValue" not in res.columns
+        assert "conductance" in res.columns
+        assert (res["conductance"] == res[SynapseProperty.G_SYNX]).all()
+
     def test_helper_fields_cached_per_population_and_override_set(self):
         with patch.object(
             self.circuit_access, "_mod_override_suffixes", return_value=("Fake",),
