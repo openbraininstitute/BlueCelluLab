@@ -276,6 +276,60 @@ def test_uhill_scale_variables_scaled_real_neuron(helper_env):
     assert synapse._helper.mask == -1.0  # reserved, edge value ignored
 
 
+@pytest.mark.parametrize(
+    "suffix, syn_type, expected_rate",
+    [("AMPANMDA", 113, 3.0), ("GABAAB", 10, 7.0)],
+)
+def test_override_minis_rate_by_syn_type_real_neuron(
+        suffix, syn_type, expected_rate, monkeypatch, clean_helper_search_dirs):
+    """Spont minis pick the exc/inh node rate by synType (neurodamus), not
+    by mechanism name, so override synapses get the right rate."""
+    from bluecellulab.cell.core import Cell
+
+    section = _real_section()
+    description = pd.Series({
+        **_TM_DESCRIPTION,
+        SynapseProperty.TYPE: syn_type,
+        SynapseProperty.POST_SECTION_ID: 0,
+    })
+    synapse = GenericSpikeSynapse(
+        SimpleNamespace(id=3), SynapseHocArgs(0.5, section), ("", 4),
+        description, (0, 0), 3, None, suffix,
+    )
+    monkeypatch.setattr(
+        synapse_factory.SynapseFactory, "determine_synapse_location",
+        lambda *_: SynapseHocArgs(0.5, section),
+    )
+    cell = SimpleNamespace(
+        synapses={("", 4): synapse}, ips={}, syn_mini_netcons={},
+        persistent=[], cell_id=SimpleNamespace(id=3),
+    )
+
+    Cell.add_replay_minis(cell, ("", 4), description, {}, (0, 0), (3.0, 7.0))
+
+    assert ("", 4) in cell.ips
+    rate_vec = cell.persistent[-1]
+    assert rate_vec.x[0] == expected_rate
+
+
+@pytest.mark.parametrize(
+    "mech_name, syn_type, inhibitory",
+    [
+        ("ProbFiltAMPANMDA_EMS", 113, False),
+        ("ProbFiltGABAAB_EMS", 5, True),
+        ("GluSynapse", None, False),
+        ("Exp2Syn", None, True),
+    ],
+)
+def test_is_inhibitory_by_syn_type_with_mechanism_fallback(mech_name, syn_type, inhibitory):
+    synapse = GenericSpikeSynapse.__new__(GenericSpikeSynapse)
+    synapse.mech_name = mech_name
+    synapse.syn_description = pd.Series(
+        {} if syn_type is None else {SynapseProperty.TYPE: syn_type}, dtype=object)
+
+    assert synapse.is_inhibitory is inhibitory
+
+
 def test_mechanism_name_override_has_no_alias(helper_env):
     """``ProbAMPANMDA_EMS`` is a mechanism, not a helper prefix: no alias to
     ``AMPANMDAHelper``, so a clear missing-helper error is raised."""

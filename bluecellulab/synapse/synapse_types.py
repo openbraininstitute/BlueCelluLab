@@ -102,6 +102,20 @@ class Synapse:
         self._delay_weights = value
 
     @property
+    def is_inhibitory(self) -> bool:
+        """True for inhibitory synapses (``syn_type_id < 100``, as
+        neurodamus).
+
+        Without a synapse type (e.g. Allen edges), falls back to the
+        mechanism: only ``GluSynapse`` and ``ProbAMPANMDA_EMS`` are
+        excitatory.
+        """
+        syn_type = self.syn_description.get(SynapseProperty.TYPE)
+        if syn_type is None or pd.isna(syn_type):
+            return self.mech_name not in ("GluSynapse", "ProbAMPANMDA_EMS")
+        return int(syn_type) < 100
+
+    @property
     def weight(self) -> float | None:
         """The last overridden synapse weight."""
         return self._weight
