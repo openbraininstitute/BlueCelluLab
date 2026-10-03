@@ -34,7 +34,7 @@ from bluecellulab.type_aliases import NeuronSection
 
 SynapseType = Enum("SynapseType", "GABAAB AMPANMDA GLUSYNAPSE ALLEN_CHEMICAL")
 
-# modoverride values that keep BlueCelluLab's native synapse classes instead
+# modoverride values that force BlueCelluLab's native synapse classes instead
 # of going through "<prefix>Helper" (see docs/source/synapse-helpers.rst).
 NATIVE_MOD_OVERRIDES = ("GluSynapse", "Exp2Syn")
 
@@ -60,9 +60,10 @@ class SynapseFactory:
 
         # Neurodamus-style mod_override: if set, construct the synapse with
         # the "<prefix>Helper" HOC template, bypassing the built-in classes.
-        # Exception (unlike neurodamus): "GluSynapse" and "Exp2Syn" keep the
-        # native, data-driven GluSynapse/Exp2Syn classes so existing
-        # plasticity and Allen users are not rerouted through helpers.
+        # "GluSynapse" and "Exp2Syn" force the native GluSynapse/Exp2Syn
+        # classes instead of their helpers (same mechanism, whatever the
+        # syn_type, as neurodamus). Without an override the class stays
+        # data-driven (determine_synapse_type).
         synapse: Synapse
         mod_override = connection_modifiers.get("ModOverride")
         if mod_override and mod_override not in NATIVE_MOD_OVERRIDES:
@@ -74,7 +75,10 @@ class SynapseFactory:
             synapse = cls.apply_connection_modifiers(connection_modifiers, synapse)
             return synapse
 
-        syn_type = cls.determine_synapse_type(syn_description)
+        if mod_override:
+            syn_type = cls._native_override_type(mod_override, syn_description, syn_id)
+        else:
+            syn_type = cls.determine_synapse_type(syn_description)
         if syn_type == SynapseType.GABAAB:
             if condition_parameters.randomize_gaba_rise_time is not None:
                 randomize_gaba_risetime = condition_parameters.randomize_gaba_rise_time
@@ -105,6 +109,30 @@ class SynapseFactory:
         if "SynapseConfigure" in connection_modifiers:
             synapse.apply_hoc_configuration(connection_modifiers["SynapseConfigure"])
         return synapse
+
+    @staticmethod
+    def _native_override_type(
+        mod_override: str, syn_description: pd.Series, syn_id: tuple[str, int]
+    ) -> SynapseType:
+        """Synapse type forced by a native ``modoverride`` value.
+
+        Raises:
+            BluecellulabError: if the edges lack the fields the class needs.
+        """
+        if mod_override == "GluSynapse":
+            syn_type, needed = SynapseType.GLUSYNAPSE, SynapseProperties.plasticity
+        else:  # "Exp2Syn"
+            syn_type, needed = SynapseType.ALLEN_CHEMICAL, ("tau1", "tau2", "erev")
+        missing = [
+            field for field in needed
+            if field not in syn_description or pd.isna(syn_description[field])
+        ]
+        if missing:
+            raise BluecellulabError(
+                f"modoverride '{mod_override}' needs edge attribute(s) {missing}, "
+                f"missing for synapse {tuple(syn_id)}."
+            )
+        return syn_type
 
     @staticmethod
     def determine_synapse_type(

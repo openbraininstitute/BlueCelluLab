@@ -373,12 +373,16 @@ class SonataCircuitAccess(CircuitAccess):
     def _mod_override_suffixes(self) -> tuple[str, ...]:
         """Sorted, de-duplicated modoverride prefixes of the connection
         overrides."""
+        from bluecellulab.synapse.synapse_factory import NATIVE_MOD_OVERRIDES
+
         try:
             entries = self.config.connection_entries()
         except (AttributeError, NotImplementedError):
             return ()
         suffixes = {getattr(entry, "mod_override", None) for entry in entries}
-        return tuple(sorted(s for s in suffixes if s))
+        # Native values use BlueCelluLab classes, not helpers (no discovery).
+        return tuple(sorted(
+            s for s in suffixes if s and s not in NATIVE_MOD_OVERRIDES))
 
     def _helper_fields_for_population(
         self, edge_population_name: str, property_names: Iterable[str]

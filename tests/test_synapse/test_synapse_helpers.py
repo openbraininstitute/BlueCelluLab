@@ -19,6 +19,11 @@ from bluecellulab.synapse.synapse_types import (
 )
 from bluecellulab.synapse.synapse_helpers import build_helper_params
 
+_PLASTICITY = {
+    "volume_CR": 0.1, "rho0_GB": 0.0, "Use_d_TM": 0.3, "Use_p_TM": 0.6,
+    "gmax_d_AMPA": 1.0, "gmax_p_AMPA": 2.0, "theta_d": 0.006, "theta_p": 0.001,
+}
+
 
 @pytest.mark.parametrize("prefix", ["AMPANMDA", "GABAAB", "ProbFilt5AMPANMDA_EMS"])
 def test_mod_override_accepts_helper_prefix_before_mechanisms_load(prefix):
@@ -348,12 +353,6 @@ def test_synapse_seed_change_after_set_seeds_reaches_helpers_real_neuron():
         rng.synapse_seed = old_seed
 
 
-_PLASTICITY = {
-    "volume_CR": 0.1, "rho0_GB": 0.0, "Use_d_TM": 0.3, "Use_p_TM": 0.6,
-    "gmax_d_AMPA": 1.0, "gmax_p_AMPA": 2.0, "theta_d": 0.006, "theta_p": 0.001,
-}
-
-
 @pytest.mark.parametrize(
     "suffix, present, absent",
     [("AMPANMDA", "tau_d_AMPA", "tau_d_GABAA"), ("GABAAB", "tau_d_GABAA", "tau_d_AMPA")],
@@ -672,29 +671,55 @@ def test_factory_uses_generic_synapse_for_mod_override(monkeypatch):
     assert result is created
 
 
-@pytest.mark.parametrize("mod_override", ["GluSynapse", "Exp2Syn"])
-def test_factory_keeps_native_classes_for_glusynapse_and_exp2syn(monkeypatch, mod_override):
-    """R6 option B: these values keep the native data-driven classes."""
-    native = SimpleNamespace()
+def _create_with_override(monkeypatch, description, mod_override):
+    """Run the factory with every synapse class replaced by a tagger."""
     monkeypatch.setattr(synapse_factory.SynapseFactory, "determine_synapse_location", lambda *_: "location")
     monkeypatch.setattr(synapse_factory, "GenericSpikeSynapse", pytest.fail)
-    monkeypatch.setattr(
-        synapse_factory.SynapseFactory, "determine_synapse_type",
-        lambda _: synapse_factory.SynapseType.ALLEN_CHEMICAL,
-    )
-    monkeypatch.setattr(synapse_factory, "Exp2Syn", lambda *args, **kwargs: native)
+    for name in ("GluSynapse", "Exp2Syn", "GabaabSynapse", "AmpanmdaSynapse"):
+        monkeypatch.setattr(
+            synapse_factory, name, lambda *args, _name=name, **kwargs: _name)
     monkeypatch.setattr(
         synapse_factory.SynapseFactory, "apply_connection_modifiers",
         lambda modifiers, synapse: synapse,
     )
-    cell = SimpleNamespace(cell_id="cell", post_gid=12)
-
-    result = synapse_factory.SynapseFactory.create_synapse(
-        cell, ("projection", 1), pd.Series(), SimpleNamespace(), (2, 3), None,
-        {"ModOverride": mod_override},
+    return synapse_factory.SynapseFactory.create_synapse(
+        SimpleNamespace(cell_id="cell", post_gid=12), ("projection", 1),
+        pd.Series(description), SimpleNamespace(randomize_gaba_rise_time=None),
+        (2, 3), None, {"ModOverride": mod_override},
     )
 
-    assert result is native
+
+@pytest.mark.parametrize(
+    "mod_override, description, expected",
+    [
+        ("GluSynapse", {SynapseProperty.TYPE: 10, **_PLASTICITY}, "GluSynapse"),
+        ("Exp2Syn", {SynapseProperty.TYPE: 10, "tau1": 0.1, "tau2": 3.0, "erev": 0.0}, "Exp2Syn"),
+    ],
+)
+def test_native_override_forces_class_regardless_of_syn_type(
+        monkeypatch, mod_override, description, expected):
+    """B': ``GluSynapse``/``Exp2Syn`` overrides force those native classes,
+    even on inhibitory edges (neurodamus gives the override mechanism)."""
+    assert _create_with_override(monkeypatch, description, mod_override) == expected
+
+
+@pytest.mark.parametrize(
+    "mod_override, description, missing",
+    [
+        ("GluSynapse", {SynapseProperty.TYPE: 113, **_PLASTICITY, "theta_p": float("nan")}, "theta_p"),
+        ("Exp2Syn", {SynapseProperty.TYPE: 113, "tau1": 0.1, "erev": 0.0}, "tau2"),
+    ],
+)
+def test_native_override_missing_fields_raise(monkeypatch, mod_override, description, missing):
+    with pytest.raises(BluecellulabError, match=f"'{mod_override}'.*{missing}"):
+        _create_with_override(monkeypatch, description, mod_override)
+
+
+def test_no_override_keeps_data_driven_selection(monkeypatch):
+    """Without modoverride, plasticity columns still select GluSynapse
+    (backward compatible; neurodamus would use AMPANMDA)."""
+    description = {SynapseProperty.TYPE: 113, **_PLASTICITY}
+    assert _create_with_override(monkeypatch, description, None) == "GluSynapse"
 
 
 def test_generic_spike_synapse_rejects_helper_without_synapse(monkeypatch):

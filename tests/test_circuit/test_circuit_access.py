@@ -149,6 +149,16 @@ class TestSonataCircuitAccess:
         assert "conductance" in res.columns
         assert (res["conductance"] == res[SynapseProperty.G_SYNX]).all()
 
+    def test_native_mod_overrides_skip_helper_discovery(self):
+        """``GluSynapse``/``Exp2Syn`` use native classes: no helper is
+        loaded for field discovery."""
+        entries = [SimpleNamespace(mod_override=v)
+                   for v in ("GluSynapse", "Exp2Syn", "AMPANMDA", None)]
+        with patch.object(
+            self.circuit_access.config, "connection_entries", return_value=entries,
+        ):
+            assert self.circuit_access._mod_override_suffixes() == ("AMPANMDA",)
+
     def test_helper_fields_cached_per_population_and_override_set(self):
         with patch.object(
             self.circuit_access, "_mod_override_suffixes", return_value=("Fake",),
