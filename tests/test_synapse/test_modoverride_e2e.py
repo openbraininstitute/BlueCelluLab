@@ -113,7 +113,10 @@ def probfilt_helper_dir(tmp_path):  # pragma: no cover - needs non-distributable
     helper = Path(source) / "ProbFiltAMPANMDA_EMSHelper.hoc"
     if not (mod.is_file() and helper.is_file()):
         pytest.skip(f"ProbFilt mod or helper missing in {source}")
-    nrnivmodl = shutil.which("nrnivmodl") or str(Path(sys.executable).with_name("nrnivmodl"))
+    # Prefer the nrnivmodl of the running NEURON (a PATH one may be another version).
+    nrnivmodl = str(Path(sys.executable).with_name("nrnivmodl"))
+    if not Path(nrnivmodl).exists():
+        nrnivmodl = shutil.which("nrnivmodl") or nrnivmodl
     (tmp_path / "mods").mkdir()
     shutil.copy(mod, tmp_path / "mods")
     try:
@@ -132,7 +135,7 @@ def probfilt_helper_dir(tmp_path):  # pragma: no cover - needs non-distributable
 
 
 def _run_helper_end_to_end(helper_dir: Path, prefix: str, mechanism: str,
-                           rng_object: bool, extra: dict,
+                           extra: dict,
                            set_extra_on_mechanism: bool = True) -> None:
     """Build an override synapse from ``helper_dir``, run it next to two
     hand-built references (same / different neurodamus seed) and compare."""
@@ -169,7 +172,7 @@ def _run_helper_end_to_end(helper_dir: Path, prefix: str, mechanism: str,
 
     # References built by hand with the neurodamus seeds (tgid = post_gid + 1);
     # the control uses another synapse seed and must differ.
-    references, rngs = [], []
+    references = []
     for synapse_seed in (7, 8):
         point_process = getattr(neuron.h, mechanism)(0.5, sec=section())
         point_process.synapseID = sid
@@ -179,14 +182,7 @@ def _run_helper_end_to_end(helper_dir: Path, prefix: str, mechanism: str,
             setattr(point_process, name, value)
         seeds = (post_gid + 1 + 250, sid + 100,
                  popids[0] * 65536 + popids[1] + synapse_seed + 300)
-        if rng_object:  # pragma: no cover - object-only setRNG (ProbFilt)
-            rng = neuron.h.Random()
-            rng.Random123(*seeds)
-            rng.uniform(0, 1)
-            point_process.setRNG(rng)
-            rngs.append(rng)
-        else:
-            point_process.setRNG(*seeds)
+        point_process.setRNG(*seeds)
         references.append(point_process)
 
     stim = neuron.h.NetStim()
@@ -210,7 +206,7 @@ def test_circuit_helper_end_to_end_real_neuron(stub_helper_dir):
     """A circuit-dir helper with extra mandatory fields fires and draws the
     neurodamus Random123 stream (runs in CI, unlike the ProbFilt test)."""
     _run_helper_end_to_end(stub_helper_dir, "StubFilt", "ProbAMPANMDA_EMS",
-                           rng_object=False, extra={"w_corr": 0.5, "tau_corr": 5.0},
+                           extra={"w_corr": 0.5, "tau_corr": 5.0},
                            set_extra_on_mechanism=False)
 
 
@@ -220,7 +216,7 @@ def test_circuit_helper_missing_extra_field_raises(stub_helper_dir):
 
     with pytest.raises(BluecellulabError, match="w_corr"):
         _run_helper_end_to_end(stub_helper_dir, "StubFilt", "ProbAMPANMDA_EMS",
-                               rng_object=False, extra={"tau_corr": 5.0},
+                               extra={"tau_corr": 5.0},
                                set_extra_on_mechanism=False)
 
 
@@ -228,5 +224,5 @@ def test_probfilt_helper_end_to_end_real_neuron(probfilt_helper_dir):  # pragma:
     """A ProbFilt override synapse built from a circuit helper dir fires and
     draws the same Random123 stream as the neurodamus seed formula."""
     _run_helper_end_to_end(probfilt_helper_dir, "ProbFiltAMPANMDA_EMS",
-                           "ProbFiltAMPANMDA_EMS", rng_object=True,
+                           "ProbFiltAMPANMDA_EMS",
                            extra={"w_corr": 0.5, "tau_corr": 5.0})
