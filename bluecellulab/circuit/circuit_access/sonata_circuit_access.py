@@ -226,6 +226,24 @@ class SonataCircuitAccess(CircuitAccess):
 
             return out
 
+    def excluded_projection_names(
+        self, target_populations: set[str], projections: Optional[list[str] | str | bool]
+    ) -> list[str]:
+        """Return the projection edge populations that are left out.
+
+        These are edge populations whose source is a virtual node population,
+        whose target is one of ``target_populations`` and that are not selected
+        by ``projections`` (see ``_select_edge_pop_names``).
+        """
+        selected = set(self._select_edge_pop_names(projections))
+        return sorted(
+            str(name)
+            for name, epop in self._circuit.edges.items()
+            if name not in self._inner_edge_pop_names
+            and name not in selected
+            and epop.target.name in target_populations
+        )
+
     def extract_synapses(
         self, cell_id: CellId, projections: Optional[list[str] | str]
     ) -> pd.DataFrame:

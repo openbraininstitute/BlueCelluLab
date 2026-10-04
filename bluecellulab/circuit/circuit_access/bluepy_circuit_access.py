@@ -161,6 +161,13 @@ class BluepyCircuitAccess(CircuitAccess):
 
         return connectomes
 
+    def excluded_projection_names(
+        self, target_populations: set[str], projections: Optional[list[str] | str | bool]
+    ) -> list[str]:
+        """Legacy circuits have no virtual node populations, hence no implicit
+        projection exclusion to report."""
+        return []
+
     def extract_synapses(
         self, cell_id: CellId, projections: Optional[list[str] | str]
     ) -> pd.DataFrame:

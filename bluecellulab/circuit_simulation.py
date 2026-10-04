@@ -70,6 +70,10 @@ from bluecellulab.cell.point_process import BasePointProcessCell, HocPointProces
 
 logger = logging.getLogger(__name__)
 
+# duration [ms] of the constant holding current clamp of add_holding_current,
+# long enough to cover any run
+HOLDING_CURRENT_DURATION = 1e9
+
 
 @deprecated("SSim will be removed, use CircuitSimulation instead.")
 class SSim:
@@ -184,6 +188,7 @@ class CircuitSimulation:
         add_linear_stimuli: bool = False,
         add_seclamp_stimuli: bool = False,
         add_subthreshold_stimuli: bool = False,
+        add_holding_current: bool = False,
     ):
         """Instantiate a list of cells.
 
@@ -231,6 +236,9 @@ class CircuitSimulation:
 
                             Note:
                                 Names refer to SONATA edge population names (``SnapCircuit.edges`` keys).
+                                Projection edge populations (whose source is a virtual node population)
+                                targeting the instantiated cells that are left out are reported with a
+                                warning when ``add_synapses=True``.
         intersect_pre_gids : list of gids
                              Only add synapses to the cells if their
                              presynaptic gid is in this list
@@ -277,6 +285,16 @@ class CircuitSimulation:
                                 Setting add_stimuli=True,
                                 will automatically set this option to
                                 True.
+        add_holding_current : Inject each cell's ``holding_current``
+                              (``@dynamics:holding_current`` /
+                              ``Cell.hypamp``) as a constant somatic current
+                              clamp for the whole run, independently of the
+                              simulation config inputs. Default False. Like
+                              neurodamus, BlueCelluLab otherwise only applies
+                              the holding current through a 'hyperpolarizing'
+                              input of the simulation config. Cannot be
+                              combined with a 'hyperpolarizing' input that is
+                              applied to the same cells.
         """
         if not isinstance(cells, list):
             cells = [cells]
@@ -340,6 +358,7 @@ class CircuitSimulation:
                 pre_gids=pre_gids,
                 add_minis=add_minis,
             )
+            self._warn_excluded_projections(cell_ids)
         if add_replay or interconnect_cells or normalized_pre_spike_trains:
             if add_replay and not add_synapses:
                 raise BluecellulabError(
@@ -368,6 +387,7 @@ class CircuitSimulation:
             add_seclamp_stimuli = True
             add_subthreshold_stimuli = True
 
+        hypamp_cells: set[CellId] = set()
         if (
             add_noise_stimuli
             or add_hyperpolarizing_stimuli
@@ -380,7 +400,7 @@ class CircuitSimulation:
             or add_seclamp_stimuli
             or add_subthreshold_stimuli
         ):
-            self._add_stimuli(
+            hypamp_cells = self._add_stimuli(
                 add_noise_stimuli=add_noise_stimuli,
                 add_hyperpolarizing_stimuli=add_hyperpolarizing_stimuli,
                 add_relativelinear_stimuli=add_relativelinear_stimuli,
@@ -392,6 +412,11 @@ class CircuitSimulation:
                 add_seclamp_stimuli=add_seclamp_stimuli,
                 add_subthreshold_stimuli=add_subthreshold_stimuli,
             )
+
+        if add_holding_current:
+            self._add_holding_currents(hypamp_cells)
+        else:
+            self._warn_unapplied_holding_currents(hypamp_cells)
 
         self.recording_index, self.sites_index = prepare_recordings_for_reports(
             cells=self.cells,
@@ -419,8 +444,14 @@ class CircuitSimulation:
         add_linear_stimuli=False,
         add_seclamp_stimuli=False,
         add_subthreshold_stimuli=False,
-    ) -> None:
-        """Instantiate all the stimuli."""
+    ) -> set[CellId]:
+        """Instantiate all the stimuli.
+
+        Returns:
+            The ids of the cells that received a hyperpolarizing (holding
+            current) stimulus.
+        """
+        hypamp_cells: set[CellId] = set()
         stimuli_entries = self.circuit_access.config.get_all_stimuli_entries()
         # Also add the injections / stimulations as in the cortical model
         # check in which StimulusInjects the gid is a target
@@ -497,6 +528,7 @@ class CircuitSimulation:
                         self.cells[cell_id].add_replay_hypamp(
                             stimulus, section=sec, segx=segx
                         )
+                        hypamp_cells.add(cell_id)
                 elif isinstance(stimulus, circuit_stimulus_definitions.Pulse):
                     if add_pulse_stimuli:
                         self.cells[cell_id].add_pulse(stimulus, section=sec, segx=segx)
@@ -582,6 +614,8 @@ class CircuitSimulation:
                 shotnoise_stim_count += 1
             elif isinstance(stimulus, (OrnsteinUhlenbeck, RelativeOrnsteinUhlenbeck)):
                 ornstein_uhlenbeck_stim_count += 1
+
+        return hypamp_cells
 
     def _add_synapses(self, pre_gids=None, add_minis=False):
         """Instantiate all the synapses."""
@@ -894,6 +928,71 @@ class CircuitSimulation:
 
             if len(self.cells[post_gid].connections) > 0:
                 logger.debug(f"Added synaptic connections for target {post_gid}")
+
+    def _warn_excluded_projections(self, cell_ids: list[CellId]) -> None:
+        """Warn about projection edge populations left out by add_projections.
+
+        Edges whose source is a virtual node population are only used when
+        requested through ``add_projections``; otherwise the cells silently
+        lose that afferent input.
+        """
+        target_populations = {cell_id.population_name for cell_id in cell_ids}
+        excluded = self.circuit_access.excluded_projection_names(
+            target_populations, self.projections
+        )
+        if excluded:
+            logger.warning(
+                f"Projection edge population(s) {excluded} target the instantiated cells "
+                "but are excluded because add_projections does not select them, so no "
+                "synapses or connections are created from their (virtual) source nodes. "
+                "Pass add_projections=True to include all projections, or "
+                "add_projections=[...] with the edge population names to include."
+            )
+
+    def _cells_with_holding_current(self) -> dict[CellId, float]:
+        """Instantiated cells with a non-zero holding current."""
+        return {
+            cell_id: cell.hypamp
+            for cell_id, cell in self.cells.items()
+            if getattr(cell, "hypamp", None)
+        }
+
+    def _add_holding_currents(self, hypamp_cells: set[CellId]) -> None:
+        """Inject the holding current of each cell as a constant somatic clamp
+        for the whole run."""
+        if hypamp_cells:
+            raise BluecellulabError(
+                "add_holding_current=True cannot be combined with a 'hyperpolarizing' "
+                "input of the simulation config applied to the same cells: the holding "
+                f"current would be injected twice (cells: {sorted(hypamp_cells)[:5]}). "
+                "Disable one of them (e.g. add_hyperpolarizing_stimuli=False with "
+                "add_stimuli=False)."
+            )
+        holding_stimulus = circuit_stimulus_definitions.Hyperpolarizing(
+            target="", delay=0.0, duration=HOLDING_CURRENT_DURATION
+        )
+        for cell_id, amp in self._cells_with_holding_current().items():
+            self.cells[cell_id].add_replay_hypamp(holding_stimulus)
+            logger.debug(f"Added constant holding current {amp} nA to cell_id {cell_id}")
+
+    def _warn_unapplied_holding_currents(self, hypamp_cells: set[CellId]) -> None:
+        """Warn when cells have a holding current that is not injected."""
+        missing = {
+            cell_id: amp
+            for cell_id, amp in self._cells_with_holding_current().items()
+            if cell_id not in hypamp_cells
+        }
+        if missing:
+            examples = ", ".join(
+                f"{cell_id}: {amp:g} nA" for cell_id, amp in list(missing.items())[:3]
+            )
+            logger.warning(
+                f"{len(missing)} instantiated cell(s) have a non-zero holding_current "
+                f"that will not be injected (e.g. {examples}). As in neurodamus, it is only "
+                "applied through a 'hyperpolarizing' input of the simulation config "
+                "(add_stimuli=True or add_hyperpolarizing_stimuli=True). Pass "
+                "add_holding_current=True to inject it as a constant somatic clamp."
+            )
 
     def _filter_out_virtual_cells(self, cell_ids: list[CellId]) -> list[CellId]:
         """Drop cell ids that belong to virtual node populations.

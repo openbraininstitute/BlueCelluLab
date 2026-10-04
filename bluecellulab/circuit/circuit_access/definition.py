@@ -99,6 +99,16 @@ class CircuitAccess(Protocol):
     ) -> pd.DataFrame:
         raise NotImplementedError
 
+    def excluded_projection_names(
+        self, target_populations: set[str], projections: Optional[list[str] | str | bool]
+    ) -> list[str]:
+        """Return the projection edge populations left out by ``projections``.
+
+        Only edge populations targeting ``target_populations`` are
+        considered.
+        """
+        raise NotImplementedError
+
     def target_contains_cell(self, target: str, cell_id: CellId) -> bool:
         raise NotImplementedError
 
