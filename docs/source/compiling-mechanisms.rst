@@ -64,4 +64,23 @@ In summary:
 - Employ ``nrnivmodl`` for mechanism compilation and verify the resultant architecture-specific folder.
 - Opt between utilizing the working directory or the ``BLUECELLULAB_MOD_LIBRARY_PATH`` for mechanism location, observing the necessity to avoid using both simultaneously.
 
+Known Limitation: One Mechanism Set per Process
+-----------------------------------------------
+
+NEURON cannot unload or replace a compiled mechanism library once it is loaded, and every mechanism name (``SUFFIX`` / ``POINT_PROCESS``) must be unique in a process. Loading a second compiled library that defines a mechanism with the same name as an already loaded one (for example two circuits that each ship their own ``ProbAMPANMDA_EMS``, or calling ``neuron.load_mechanisms`` / ``neuron.h.nrn_load_dll`` on another folder after BlueCelluLab has loaded its mechanisms) makes NEURON abort with an error such as ``hoc_execerror: ProbAMPANMDA_EMS already exists``. This is a NEURON limitation, not something BlueCelluLab can work around inside the same process.
+
+Workaround: use a single circuit / mechanism set per Python process. To simulate circuits that need different mechanisms, run each one in its own fresh interpreter with its own ``BLUECELLULAB_MOD_LIBRARY_PATH``, for example with ``subprocess``:
+
+.. code-block:: python
+
+   import os
+   import subprocess
+   import sys
+
+   for mech_dir, script in [("circuit_a/x86_64", "run_a.py"), ("circuit_b/x86_64", "run_b.py")]:
+       env = {**os.environ, "BLUECELLULAB_MOD_LIBRARY_PATH": mech_dir}
+       subprocess.run([sys.executable, script], env=env, check=True)
+
+Forked worker processes (``multiprocessing`` with the default ``fork`` start method on Linux, or ``bluecellulab.simulation.parallel.IsolatedProcess``) inherit the mechanisms already loaded in the parent, so they only isolate simulations that share the same mechanism set. Use separate interpreters (``subprocess`` as above) when the mechanism sets differ.
+
 May your simulations run smoothly with BlueCelluLab!

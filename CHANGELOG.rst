@@ -1,6 +1,13 @@
 Changelog
 ==========
 
+Unreleased
+----------
+* ``CircuitSimulation.instantiate_gids`` logs a warning naming the projection edge populations (sourced from virtual node populations) that target the instantiated cells but are excluded because ``add_projections`` does not select them. The default (``add_projections=False``) is unchanged.
+* New opt-in ``add_holding_current`` parameter of ``CircuitSimulation.instantiate_gids`` injects each cell's ``holding_current`` as a constant somatic clamp for the whole run, independently of the simulation config inputs (e.g. with ``add_stimuli=False`` and custom current clamps). It raises if a 'hyperpolarizing' input is also applied to the same cells.
+* ``CircuitSimulation.instantiate_gids`` logs a warning when instantiated cells have a non-zero ``holding_current`` that is not injected. As in neurodamus, the holding current is otherwise only applied through a 'hyperpolarizing' input of the simulation config.
+* Docs: document that two compiled mechanism libraries defining the same mechanism names cannot be loaded in one process (NEURON limitation) and how to work around it with one mechanism set per process.
+
 2.5.0
 -----
 
