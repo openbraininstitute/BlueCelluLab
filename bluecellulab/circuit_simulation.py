@@ -933,7 +933,11 @@ class CircuitSimulation:
 
         for cell_id in cell_ids:
             cell = self.create_cell_from_circuit(cell_id)
-            cell.post_gid = self.global_gid(cell_id.population_name, cell_id.id)
+            # The gid namespace is only built when something needs global gids
+            # (synapses, replay, MPI, ...); post_gid is only read when creating
+            # synapses, so leave it as None for plain single-cell instantiation.
+            if self.gids is not None:
+                cell.post_gid = self.global_gid(cell_id.population_name, cell_id.id)
             self.cells[cell_id] = cell
             if self.circuit_access.node_properties_available:
                 cell.connect_to_circuit(SonataProxy(cell_id, self.circuit_access))
