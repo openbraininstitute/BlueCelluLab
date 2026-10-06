@@ -302,6 +302,24 @@ class TestCellSpikes:
         assert np.allclose(spikes, ground_truth)
 
     @pytest.mark.v5
+    @pytest.mark.parametrize("start, read", [(-30.0, -30), (-30, -30.0), (np.float64(-30), -30)])
+    def test_spike_detector_threshold_int_float(self, start, read):
+        """Cell: int and float thresholds refer to the same spike detector."""
+        self.cell.start_recording_spikes(None, "soma", start)
+        assert self.cell.is_recording_spikes("soma", read)
+        self.cell.add_step(start_time=2.0, stop_time=22.0, level=1.0)
+        self.sim.run(24, cvode=False)
+        assert len(self.cell.get_recorded_spikes("soma", read)) == 3
+
+    @pytest.mark.v5
+    def test_get_recorded_spikes_missing_detector(self):
+        """Cell: reading an unstarted spike detector raises a clear KeyError."""
+        self.cell.start_recording_spikes(None, "soma", -30)
+        assert not self.cell.is_recording_spikes("soma", -10)
+        with pytest.raises(KeyError, match="No spike detector.*threshold=-10"):
+            self.cell.get_recorded_spikes("soma", -10)
+
+    @pytest.mark.v5
     def test_create_netcon_spikedetector(self):
         """Test creating a NetCon for spike detection."""
         threshold = -29.0
