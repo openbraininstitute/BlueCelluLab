@@ -532,8 +532,8 @@ class Cell(InjectableMixin, PlottableMixin):
     def _spike_detector_key(location: str, threshold: float) -> str:
         """Recordings key of a spike detector.
 
-        The threshold is normalised to float so that e.g. -30 and -30.0 refer
-        to the same detector.
+        The threshold is normalised to float so that e.g. -30 and -30.0
+        refer to the same detector.
         """
         return f"spike_detector_{location}_{float(threshold)}"
 
