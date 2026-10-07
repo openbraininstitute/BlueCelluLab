@@ -20,9 +20,7 @@ from typing import Any, Literal, Optional
 from pydantic import field_validator, Field
 from pydantic.dataclasses import dataclass
 
-import neuron
-
-import bluecellulab
+from bluecellulab.exceptions import ConfigError
 
 # libsonata reorganized it's module layout; maintain compatibility with both:
 # https://github.com/BlueBrain/libsonata/pull/345
@@ -242,14 +240,22 @@ class ConnectionOverrides:
     synapse_delay_override: Optional[float] = None
     spont_minis: Optional[float] = None
     synapse_configure: Optional[str] = None
-    mod_override: Optional[Literal["GluSynapse"]] = None
+    mod_override: Optional[str] = None
 
     @field_validator("mod_override")
     @classmethod
     def validate_mod_override(cls, value):
-        """Make sure the mod file to override is present."""
-        if isinstance(value, str) and not hasattr(neuron.h, value):
-            raise bluecellulab.ConfigError(f"Mod file for {value} is not found.")
+        """Check that mod_override is a non-empty helper prefix.
+
+        The value is a helper prefix resolved to ``<value>Helper`` (e.g.
+        ``AMPANMDA``), not a NEURON mechanism name, and mechanisms may be
+        loaded later, so NEURON is not queried here. A missing helper
+        raises when the synapse is built.
+        """
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise ConfigError(
+                f"mod_override must be a non-empty helper prefix, got {value!r}."
+            )
         return value
 
     @classmethod
@@ -276,5 +282,7 @@ class ConnectionOverrides:
             synapse_delay_override=conn_entry.get("synapse_delay_override", None),
             spont_minis=conn_entry.get("spont_minis", None),
             synapse_configure=conn_entry.get("synapse_configure", None),
-            mod_override=conn_entry.get("mod_override", None),
+            mod_override=conn_entry.get(
+                "modoverride", conn_entry.get("mod_override", None)
+            ),
         )

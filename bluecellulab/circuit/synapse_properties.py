@@ -118,6 +118,41 @@ synproperty_to_snap = MappingProxyType({
     v: k for k, v in snap_to_synproperty.items()
 })
 
+# Synapse helper (``modoverride``) parameter names -> synapse properties.
+# Same fields and SONATA sources as neurodamus ``SynapseParameters._fields``
+# and ``SonataReader.parameter_mapping`` (neurodamus io/synapse_reader.py,
+# lines 22-43 and 162-171). ``isec``/``ipt``/``offset`` are handled apart.
+ND_BASE_FIELDS = MappingProxyType({
+    "sgid": SynapseProperty.PRE_GID,
+    "delay": SynapseProperty.AXONAL_DELAY,
+    "weight": SynapseProperty.G_SYNX,
+    "U": SynapseProperty.U_SYN,
+    "D": SynapseProperty.D_SYN,
+    "F": SynapseProperty.F_SYN,
+    "DTC": SynapseProperty.DTC,
+    "synType": SynapseProperty.TYPE,
+    "nrrp": SynapseProperty.NRRP,
+    "u_hill_coefficient": SynapseProperty.U_HILL_COEFFICIENT,
+    "conductance_ratio": SynapseProperty.CONDUCTANCE_RATIO,
+})
+
+# Defaults for optional fields, as neurodamus ``SynapseParameters._optional``.
+# ``nrrp`` is mandatory in neurodamus; BlueCelluLab treats ``n_rrp_vesicles``
+# as optional everywhere, so it defaults to -1 (helpers then keep the MOD
+# default).
+ND_OPTIONAL_FIELDS = MappingProxyType({
+    "u_hill_coefficient": 0.0,
+    "conductance_ratio": -1.0,
+    "nrrp": -1.0,
+})
+
+# Reserved fields, never read from the edges (neurodamus
+# ``SynapseParameters._reserved``).
+ND_RESERVED_FIELDS = MappingProxyType({"maskValue": -1.0, "location": 0.5})
+
+# Every name with a fixed meaning in the helper parameter object.
+ND_NAMES = frozenset({*ND_BASE_FIELDS, *ND_RESERVED_FIELDS, "isec", "ipt", "offset"})
+
 
 def properties_from_snap(
     props: list[str],

@@ -18,7 +18,7 @@ import hashlib
 from functools import lru_cache
 import logging
 from pathlib import Path
-from typing import Mapping, Optional
+from typing import Iterable, Mapping, Optional
 
 from bluepysnap.bbp import Cell as SnapCell
 from bluepysnap.circuit_ids import CircuitNodeId, CircuitEdgeIds
@@ -35,6 +35,9 @@ from bluecellulab.circuit.config import SonataSimulationConfig
 from bluecellulab.circuit.synapse_properties import (
     properties_from_snap,
     properties_to_snap,
+    snap_to_synproperty,
+    ND_NAMES,
+    ND_RESERVED_FIELDS,
 )
 
 logger = logging.getLogger(__name__)
@@ -54,10 +57,38 @@ class SonataCircuitAccess(CircuitAccess):
             self.config = SonataSimulationConfig(simulation_config)
         circuit_config = self.config.impl.config["network"]
         self._circuit = SnapCircuit(circuit_config)
+        self.helper_dirs: tuple[str, ...] = self._circuit_helper_dirs()
+        self._helper_fields_cache: dict[tuple[str, tuple[str, ...]], list[str]] = {}
         self._inner_edge_pop_names = {
             name for name, epop in self._circuit.edges.items()
             if getattr(epop.source, "type", None) != "virtual"
         }
+
+    def _circuit_helper_dirs(self) -> tuple[str, ...]:
+        """Circuit-provided dirs searched for synapse helper HOCs.
+
+        Circuits that ship their own ``<SUFFIX>Helper.hoc`` files (e.g.
+        sonata_simplify filter helpers) place them under ``mechanisms_dir``
+        and/or ``biophysical_neuron_models_dir``. These existing directories
+        are searched for this circuit only (after ``HOC_LIBRARY_PATH``,
+        before the bundled helpers). Never raises: helper lookup must not
+        break circuit loading.
+        """
+        dirs: list[str] = []
+        try:
+            components = self._circuit.config.get("components", {}) or {}
+            configs = [components] + [
+                self._circuit.nodes[pop_name].config or {}
+                for pop_name in self._circuit.nodes
+            ]
+            for cfg in configs:
+                for key in ("mechanisms_dir", "biophysical_neuron_models_dir"):
+                    path = cfg.get(key)
+                    if path and Path(path).is_dir() and str(path) not in dirs:
+                        dirs.append(str(path))
+        except Exception as exc:  # noqa: BLE001 - must never break loading
+            logger.debug("Could not read circuit helper search dirs: %s", exc)
+        return tuple(dirs)
 
     @property
     def available_cell_properties(self) -> set:
@@ -281,10 +312,29 @@ class SonataCircuitAccess(CircuitAccess):
                     ):
                         edge_properties = list(SynapseProperties.allen_point)
 
+                # Fields declared by modoverride helpers
+                # (``<prefix>Helper_NeededAttributes``), only those this
+                # population provides, by raw SONATA name. Added after the
+                # Allen replacement above so they survive it. Missing needed
+                # attributes are reported per overridden synapse when it is
+                # built (GenericSpikeSynapse), not here.
+                helper_fields = self._helper_fields_for_population(
+                    edge_population_name, edge_population.property_names)
+                requested = set(properties_to_snap(edge_properties))
+                edge_properties += [
+                    field for field in helper_fields if field not in requested
+                ]
+
                 snap_properties = properties_to_snap(edge_properties)
                 synapses: pd.DataFrame = edge_population.get(afferent_edges, snap_properties)
                 column_names = list(synapses.columns)
                 synapses.columns = pd.Index(properties_from_snap(column_names))
+                # A helper field that is also a standard column (e.g.
+                # ``conductance``) is exposed again under its raw name:
+                # neurodamus passes extra fields unmapped and unscaled.
+                for field in helper_fields:
+                    if field in snap_to_synproperty and field not in ND_NAMES:
+                        synapses[field] = synapses[snap_to_synproperty[field]]
 
                 # make multiindex
                 synapses = synapses.reset_index(drop=True)
@@ -318,6 +368,69 @@ class SonataCircuitAccess(CircuitAccess):
             return pd.DataFrame()
         else:
             return pd.concat(all_synapses_dfs)  # outer join that creates NaNs
+
+    def _mod_override_suffixes(self) -> tuple[str, ...]:
+        """Sorted, de-duplicated modoverride prefixes of the connection
+        overrides."""
+        from bluecellulab.synapse.synapse_factory import NATIVE_MOD_OVERRIDES
+
+        try:
+            entries = self.config.connection_entries()
+        except (AttributeError, NotImplementedError):
+            return ()
+        suffixes = {getattr(entry, "mod_override", None) for entry in entries}
+        # Native values use BlueCelluLab classes, not helpers (no discovery).
+        return tuple(sorted(
+            s for s in suffixes if s and s not in NATIVE_MOD_OVERRIDES))
+
+    def _helper_fields_for_population(
+        self, edge_population_name: str, property_names: Iterable[str]
+    ) -> list[str]:
+        """Helper-declared fields that the population provides.
+
+        Reserved fields (``maskValue``, ``location``) are never read from
+        the edges, as in neurodamus. Cached per (edge population,
+        modoverride set) so helpers are not reloaded for every cell.
+        """
+        key = (edge_population_name, self._mod_override_suffixes())
+        if key not in self._helper_fields_cache:
+            declared = self._collect_helper_needed_attributes(key[1])
+            self._helper_fields_cache[key] = [
+                field for field in declared
+                if field in property_names and field not in ND_RESERVED_FIELDS
+            ]
+        return list(self._helper_fields_cache[key])
+
+    def _collect_helper_needed_attributes(
+        self, suffixes: Iterable[str]
+    ) -> dict[str, str]:
+        """Collect SONATA edge fields declared by the given modoverride
+        helpers.
+
+        Loads each helper HOC and reads its ``_NeededAttributes`` metadata
+        (semicolon-separated field names), as neurodamus
+        ``SynapseReader.configure_override()`` does. A helper that cannot be
+        loaded is skipped here; building an overridden synapse raises the
+        loader error.
+
+        Returns:
+            De-duplicated mapping of field name -> the modoverride prefix
+            whose helper declared it.
+        """
+        from bluecellulab.synapse.synapse_helpers import get_helper_needed_attributes
+
+        fields: dict[str, str] = {}
+        for suffix in suffixes:
+            try:
+                for attr in get_helper_needed_attributes(suffix, self.helper_dirs):
+                    fields.setdefault(attr, suffix)
+            except (FileNotFoundError, AttributeError):
+                logger.warning(
+                    "Could not load helper for mod_override='%s'; "
+                    "skipping _NeededAttributes discovery.",
+                    suffix,
+                )
+        return fields
 
     def target_contains_cell(self, target: str, cell_id: CellId) -> bool:
         return cell_id in self.get_target_cell_ids(target)

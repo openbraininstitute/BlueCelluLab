@@ -101,6 +101,19 @@ class Synapse:
         self._delay_weights = value
 
     @property
+    def is_inhibitory(self) -> bool:
+        """True for inhibitory synapses (``syn_type_id < 100``, as neurodamus).
+
+        Without a synapse type (e.g. Allen edges), falls back to the
+        mechanism: only ``GluSynapse`` and ``ProbAMPANMDA_EMS`` are
+        excitatory.
+        """
+        syn_type = self.syn_description.get(SynapseProperty.TYPE)
+        if syn_type is None or pd.isna(syn_type):
+            return self.mech_name not in ("GluSynapse", "ProbAMPANMDA_EMS")
+        return int(syn_type) < 100
+
+    @property
     def weight(self) -> float | None:
         """The last overridden synapse weight."""
         return self._weight
@@ -119,7 +132,7 @@ class Synapse:
         if SynapseProperty.NRRP in syn_description:
             try:
                 int(syn_description[SynapseProperty.NRRP])
-            except ValueError:
+            except (TypeError, ValueError):
                 # delete SynapseProperty.NRRP from syn_description
                 syn_description.pop(SynapseProperty.NRRP)
 
@@ -128,7 +141,8 @@ class Synapse:
                 syn_description[SynapseProperty.U_HILL_COEFFICIENT], self.extracellular_calcium)
         else:
             syn_description["u_scale_factor"] = 1.0
-        syn_description[SynapseProperty.U_SYN] *= syn_description["u_scale_factor"]
+        if SynapseProperty.U_SYN in syn_description:
+            syn_description[SynapseProperty.U_SYN] *= syn_description["u_scale_factor"]
         return syn_description
 
     def apply_hoc_configuration(self, hoc_configure_params: list[str]) -> None:
@@ -237,6 +251,17 @@ class Synapse:
 
         return synapse_dict
 
+    def _set_conductance_from_weight(self) -> None:
+        """Set ``hsynapse.conductance`` to the edge weight if the mechanism has
+        it.
+
+        As neurodamus ``Connection._create_synapse``. The mod uses it only
+        for its own delayed-connection weight updates.
+        """
+        weight = self.syn_description.get(SynapseProperty.G_SYNX)
+        if weight is not None and hasattr(self.hsynapse, "conductance"):
+            self.hsynapse.conductance = weight  # type: ignore[union-attr]
+
     def __del__(self) -> None:
         self.delete()
 
@@ -290,12 +315,14 @@ class GluSynapse(Synapse):
         if self.syn_description[SynapseProperty.NRRP] >= 0:
             self.hsynapse.Nrrp = self.syn_description[SynapseProperty.NRRP]
 
-        self.randseed1 = self.post_gid
+        # 1-based gid, as neurodamus passes tgid+1 to GluSynapseHelper.
+        self.randseed1 = self.post_gid + 1
         self.randseed2 = 100000 + self.syn_id.sid
         rng_settings = RNGSettings.get_instance()
         self.randseed3 = rng_settings.synapse_seed + 200
         self.hsynapse.setRNG(self.randseed1, self.randseed2, self.randseed3)
         self.hsynapse.synapseID = self.syn_id.sid
+        self._set_conductance_from_weight()
 
     @property
     def info_dict(self):
@@ -379,6 +406,7 @@ class GabaabSynapse(Synapse):
         self._set_gabaab_ampanmda_rng()
 
         self.hsynapse.synapseID = self.syn_id.sid
+        self._set_conductance_from_weight()
 
     @property
     def info_dict(self):
@@ -419,6 +447,7 @@ class AmpanmdaSynapse(Synapse):
 
         self._set_gabaab_ampanmda_rng()
         self.hsynapse.synapseID = self.syn_id.sid
+        self._set_conductance_from_weight()
 
     @property
     def info_dict(self):
@@ -478,4 +507,129 @@ class Exp2Syn(Synapse):
         synapse_dict['synapse_parameters']['tau1'] = self.hsynapse.tau1
         synapse_dict['synapse_parameters']['tau2'] = self.hsynapse.tau2
         synapse_dict['synapse_parameters']['erev'] = self.hsynapse.e
+        return synapse_dict
+
+
+class GenericSpikeSynapse(Synapse):
+    """Spike-mediated synapse driven by a user-supplied helper HOC template.
+
+    Follows the neurodamus convention: ``mod_override = "<SUFFIX>"`` selects
+    a NMODL mechanism, and the companion HOC template ``<SUFFIX>Helper`` is
+    invoked to construct the point process. The helper is expected to expose
+    the resulting point process as a public objref ``synapse``.
+
+    Helper template signature (matching neurodamus):
+
+        ``<SUFFIX>Helper(post_gid, params, x, syn_id, base_seed, src_pop_id, dst_pop_id)``
+
+    where ``params`` is a Python object with attribute-style access to the
+    synapse parameters (e.g. ``params.weight``, ``params.U``).
+    """
+
+    def __init__(self, gid, hoc_args, syn_id, syn_description, popids,
+                 post_gid, extracellular_calcium, mod_suffix: str,
+                 helper_dirs: tuple[str, ...] = ()):
+        super().__init__(gid, hoc_args, syn_id, syn_description, popids,
+                         post_gid, extracellular_calcium)
+        # Circuit directories searched for the helper HOC.
+        self.helper_dirs = tuple(helper_dirs)
+        self._build_via_helper(mod_suffix)
+
+    def _build_via_helper(self, mod_suffix: str) -> None:
+        """Load helper HOC and invoke it to construct ``self.hsynapse``.
+
+        Raises:
+            BluecellulabError: if the synapse lacks an attribute declared in
+                the helper's ``_NeededAttributes`` (mandatory, as in
+                neurodamus; only ``maskValue`` and ``location`` are
+                reserved with defaults).
+        """
+        from bluecellulab.synapse.synapse_helpers import (
+            build_helper_params,
+            get_helper_needed_attributes,
+            get_helper_uhill_scale_vars,
+            helper_loaded_from,
+            load_synapse_helper,
+            warn_if_not_random123,
+        )
+
+        helper_dirs = getattr(self, "helper_dirs", ())
+        helper_name = load_synapse_helper(mod_suffix, helper_dirs)
+        helper_cls = getattr(neuron.h, helper_name)
+
+        params = build_helper_params(
+            self.syn_description,
+            get_helper_needed_attributes(mod_suffix, helper_dirs),
+            helper_name=helper_name,
+            synapse_label=str(tuple(self.syn_id)),
+            scale_vars=get_helper_uhill_scale_vars(mod_suffix, helper_dirs),
+        )
+
+        rng_settings = RNGSettings.get_instance()
+        base_seed = rng_settings.base_seed
+        warn_if_not_random123(rng_settings.mode)
+
+        # Match neurodamus calling convention. tgid+1 mirrors the legacy
+        # 1-based GID used by neurodamus seeding. Keep the target section
+        # active while the helper constructs its point process because the
+        # helper API receives x but not an explicit section argument.
+        self.hoc_args.section.push()
+        try:
+            helper = helper_cls(
+                self.post_gid + 1,
+                params,
+                self.hoc_args.location,
+                self.syn_id.sid,
+                base_seed,
+                self.source_popid,
+                self.target_popid,
+            )
+        finally:
+            neuron.h.pop_section()
+        # Helper must expose the point process as ``synapse``.
+        if not hasattr(helper, "synapse"):
+            raise AttributeError(
+                f"Helper template '{helper_name}' does not expose a public "
+                "'synapse' objref."
+            )
+        self._helper = helper  # keep reference alive
+        self.hsynapse = helper.synapse
+        # As neurodamus Connection._create_synapse: conductance = weight when
+        # the mechanism exposes it (no conductance_ratio on overrides).
+        weight = getattr(params, "weight", None)
+        if weight is not None and hasattr(self.hsynapse, "conductance"):
+            self.hsynapse.conductance = weight
+        self.mech_name = mod_suffix
+        self.helper_path = helper_loaded_from(mod_suffix)
+        self.persistent.append(helper)
+
+    # Mechanism parameters reported by info_dict when the mechanism has them.
+    _INFO_PARAMETERS = (
+        "Use", "Dep", "Fac", "Nrrp", "conductance",
+        "tau_d_AMPA", "NMDA_ratio", "tau_d_GABAA", "tau_r_GABAA", "GABAB_ratio",
+    )
+
+    @property
+    def info_dict(self) -> dict[str, Any]:
+        """Synapse info; seeds are chosen inside the helper (None here)."""
+        synapse_dict: dict[str, Any] = {
+            'synapse_id': self.syn_id,
+            'pre_cell_id': self.pre_gid,
+            'post_cell_id': self.post_cell_id.id,
+            'syn_description': {
+                str(k): v for k, v in self.syn_description.to_dict().items()},
+            'post_segx': self.hoc_args.location,
+            'mech_name': self.mech_name,
+            'helper_path': self.helper_path,
+            'randseed1': None,
+            'randseed2': None,
+            'randseed3': None,
+            'synapseconfigure_cmds': self.synapseconfigure_cmds,
+        }
+        synapse_dict['synapse_parameters'] = {
+            name: getattr(self.hsynapse, name)
+            for name in self._INFO_PARAMETERS if hasattr(self.hsynapse, name)
+        }
+        synapse_dict['synapse_parameters']['extracellular_calcium'] = \
+            self.extracellular_calcium
         return synapse_dict
