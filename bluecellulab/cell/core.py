@@ -41,6 +41,11 @@ from bluecellulab.circuit.node_id import CellId
 from bluecellulab.circuit.simulation_access import get_synapse_replay_spikes
 from bluecellulab.exceptions import BluecellulabError
 from bluecellulab.importer import load_mod_files
+from bluecellulab.mod_compilation import (
+    internal_mods_path,
+    mechanisms_with_split_ion_coupling,
+    registered_mechanisms,
+)
 from bluecellulab.neuron_interpreter import eval_neuron
 from bluecellulab.rngsettings import RNGSettings
 from bluecellulab.stimulus.circuit_stimulus_definitions import SynapseReplay
@@ -239,12 +244,49 @@ class Cell(InjectableMixin, PlottableMixin):
                     neuron.h('uninsert %s' % mech_name, sec=section)
         self.is_made_passive = True
 
+    @staticmethod
+    def _check_ttx_available() -> None:
+        """Refuse to touch TTX unless it can actually take effect.
+
+        ``TTXDynamicsSwitch`` influences the sodium channels by writing the
+        ``ttx`` ion that they read. NEURON does not share an ion between
+        separately compiled mechanism libraries, so if the switch was compiled
+        apart from the sodium channels it is present but inert: inserting it and
+        setting ``ttxo_level`` changes nothing at all, and the simulation would
+        otherwise run to completion reporting success while the channels stay
+        unblocked.
+
+        Raises:
+            BluecellulabError: if TTXDynamicsSwitch is missing, or present but
+                unable to reach the sodium channels.
+        """
+        if "TTXDynamicsSwitch" in mechanisms_with_split_ion_coupling():
+            raise BluecellulabError(
+                "TTX cannot be applied: TTXDynamicsSwitch was compiled separately"
+                " from the sodium channel mechanisms, so it cannot reach them and"
+                " would have no effect. Compile TTXDynamicsSwitch.mod together"
+                " with the model's own mod files in a single nrnivmodl"
+                f" invocation; a copy ships in {internal_mods_path()}."
+            )
+        if "TTXDynamicsSwitch" not in registered_mechanisms():
+            raise BluecellulabError(
+                "TTX cannot be applied: the TTXDynamicsSwitch mechanism is not"
+                " available in NEURON. Compile TTXDynamicsSwitch.mod together"
+                " with the model's own mod files in a single nrnivmodl"
+                f" invocation; a copy ships in {internal_mods_path()}."
+            )
+
     def enable_ttx(self) -> None:
         """Add TTX to the environment (i.e. block the Na channels).
 
         Enable TTX by inserting TTXDynamicsSwitch and setting ttxo to
         1.0
+
+        Raises:
+            BluecellulabError: if TTX cannot take effect; see
+                `_check_ttx_available`.
         """
+        self._check_ttx_available()
         if hasattr(public_hoc_cell(self.cell), 'enable_ttx'):
             public_hoc_cell(self.cell).enable_ttx()
         else:
@@ -255,7 +297,12 @@ class Cell(InjectableMixin, PlottableMixin):
 
         Disable TTX by inserting TTXDynamicsSwitch and setting ttxo to
         1e-14
+
+        Raises:
+            BluecellulabError: if TTX cannot take effect; see
+                `_check_ttx_available`.
         """
+        self._check_ttx_available()
         if hasattr(public_hoc_cell(self.cell), 'disable_ttx'):
             public_hoc_cell(self.cell).disable_ttx()
         else:
