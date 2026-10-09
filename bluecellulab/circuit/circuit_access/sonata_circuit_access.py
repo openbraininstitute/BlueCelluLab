@@ -16,14 +16,16 @@
 from __future__ import annotations
 import hashlib
 from functools import lru_cache
+import json
 import logging
 from pathlib import Path
-from typing import Mapping, Optional
+from typing import Optional
 
 from bluepysnap.bbp import Cell as SnapCell
 from bluepysnap.circuit_ids import CircuitNodeId, CircuitEdgeIds
 from bluepysnap.exceptions import BluepySnapError
 from bluepysnap import Circuit as SnapCircuit
+import libsonata
 import neuron
 import pandas as pd
 from bluecellulab import circuit
@@ -326,18 +328,48 @@ class SonataCircuitAccess(CircuitAccess):
     def is_valid_group(self, group: str) -> bool:
         return group in self._circuit.node_sets
 
+    @lru_cache(maxsize=1)
+    def _libsonata_node_sets(self) -> libsonata.NodeSets:
+        """Circuit and simulation node sets merged, parsed by libsonata."""
+        try:
+            return libsonata.NodeSets(json.dumps(self.config.get_node_sets()))
+        except libsonata.SonataError as e:
+            raise ValueError(f"Invalid node sets: {e}") from e
+
     @lru_cache(maxsize=16)
     def get_target_cell_ids(self, target: str) -> set[CellId]:
-        """Resolve a node set name into a set of CellIds."""
-        node_sets = self.config.get_node_sets()
-        return self._resolve_node_set_to_cell_ids(target, node_sets)
+        """Resolve a node set name into a set of CellIds.
+
+        Follows neurodamus: the node set is materialized by libsonata in
+        every population, and a population where that fails (e.g. it lacks
+        an attribute the node set filters on) is skipped with a warning.
+        """
+        node_sets = self._libsonata_node_sets()
+        if target not in node_sets.names:
+            raise KeyError(f"Unknown node set: {target}")
+
+        result: set[CellId] = set()
+        for population_name, node_population in self._circuit.nodes.items():
+            try:
+                selection = node_sets.materialize(target, node_population.to_libsonata)
+            except libsonata.SonataError as e:
+                logger.warning(
+                    "SonataError for node set %s from population %s: %s, skip",
+                    target, population_name, e,
+                )
+                continue
+            result.update(
+                CellId(str(population_name), int(node_id)) for node_id in selection.flatten()
+            )
+        return result
 
     def get_simulation_cell_ids(self) -> list[CellId]:
         """Resolve the cells simulated by the simulation config.
 
-        Follows neurodamus: the simulation ``node_set`` is resolved against the circuit and simulation node
-        sets; without one, all nodes are simulated. Virtual populations are skipped as
-        they can't be instantiated. Cells are sorted by population and node id, so every
+        Follows neurodamus: the simulation ``node_set`` is resolved against
+        the circuit and simulation node sets; without one, all nodes are
+        simulated. Virtual populations are skipped as they can't be
+        instantiated. Cells are sorted by population and node id, so every
         MPI rank gets the same order.
         """
         node_set = self.config.node_set
@@ -354,38 +386,6 @@ class SonataCircuitAccess(CircuitAccess):
             cell_id for cell_id in cell_ids
             if not self.is_virtual_population(cell_id.population_name)
         )
-
-    def _resolve_node_set_to_cell_ids(
-        self,
-        target: str,
-        node_sets: Mapping[str, object],
-    ) -> set[CellId]:
-        if target not in node_sets:
-            raise KeyError(f"Unknown node set: {target}")
-
-        node_set_def = node_sets[target]
-
-        # Alias/composite node set, e.g. "All": ["L4_SBC", "L5_TPC:B", ...]
-        if isinstance(node_set_def, list):
-            result: set[CellId] = set()
-            for item in node_set_def:
-                if isinstance(item, str) and item in node_sets:
-                    result.update(self._resolve_node_set_to_cell_ids(item, node_sets))
-                else:
-                    raise ValueError(
-                        f"Unsupported composite node set entry {item!r} in node set {target!r}"
-                    )
-            return result
-
-        # Concrete single-population node set
-        if isinstance(node_set_def, dict) and "population" in node_set_def:
-            population = str(node_set_def["population"])
-            ids = self._circuit.nodes[population].ids(node_set_def)
-            return {CellId(population, int(x)) for x in ids}
-
-        # Fallback: let BluePySnap resolve it
-        ids = self._circuit.nodes.ids(node_set_def)
-        return {CellId(x.population, x.id) for x in ids}
 
     @lru_cache(maxsize=100)
     def fetch_cell_info(self, cell_id: CellId) -> pd.Series:
