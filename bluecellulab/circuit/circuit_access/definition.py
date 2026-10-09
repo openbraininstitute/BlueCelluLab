@@ -108,6 +108,9 @@ class CircuitAccess(Protocol):
     def get_target_cell_ids(self, target: str) -> set[CellId]:
         raise NotImplementedError
 
+    def get_simulation_cell_ids(self) -> list[CellId]:
+        raise NotImplementedError
+
     def fetch_cell_info(self, cell_id: CellId) -> pd.Series:
         raise NotImplementedError
 

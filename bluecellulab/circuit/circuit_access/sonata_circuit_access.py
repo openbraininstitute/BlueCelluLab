@@ -332,6 +332,29 @@ class SonataCircuitAccess(CircuitAccess):
         node_sets = self.config.get_node_sets()
         return self._resolve_node_set_to_cell_ids(target, node_sets)
 
+    def get_simulation_cell_ids(self) -> list[CellId]:
+        """Resolve the cells simulated by the simulation config.
+
+        Follows neurodamus: the simulation ``node_set`` is resolved against the circuit and simulation node
+        sets; without one, all nodes are simulated. Virtual populations are skipped as
+        they can't be instantiated. Cells are sorted by population and node id, so every
+        MPI rank gets the same order.
+        """
+        node_set = self.config.node_set
+        if node_set is None:
+            cell_ids = {
+                CellId(str(pop_name), int(node_id))
+                for pop_name, node_pop in self._circuit.nodes.items()
+                for node_id in node_pop.ids()
+            }
+        else:
+            cell_ids = self.get_target_cell_ids(node_set)
+
+        return sorted(
+            cell_id for cell_id in cell_ids
+            if not self.is_virtual_population(cell_id.population_name)
+        )
+
     def _resolve_node_set_to_cell_ids(
         self,
         target: str,

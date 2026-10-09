@@ -236,6 +236,11 @@ class SonataSimulationConfig:
         return self.impl.conditions.spike_location.name
 
     @property
+    def node_set(self) -> Optional[str]:
+        """Name of the node set to simulate, None means all nodes."""
+        return self.impl.config.get("node_set")
+
+    @property
     def tstart(self) -> Optional[float]:
         return self.impl.config.get("run", {}).get("tstart", 0.0)
 
