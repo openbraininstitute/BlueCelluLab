@@ -279,6 +279,11 @@ class BluepyCircuitAccess(CircuitAccess):
         ids = self._bluepy_circuit.cells.ids(target)
         return {CellId("", id) for id in ids}
 
+    def get_simulation_cell_ids(self) -> list[CellId]:
+        raise NotImplementedError(
+            "Resolving the simulated cells is only supported for SONATA circuits."
+        )
+
     @lru_cache(maxsize=1000)
     def _target_has_gid(self, target: str, cell_id: CellId) -> bool:
         """Checks if target has the gid."""
