@@ -90,11 +90,19 @@ def import_mod_lib(
             " the mechanisms are not already available.",
             e,
         )
-        libnrnmech = None
+        return _describe_preloaded(preloaded)
 
-    if libnrnmech is not None:
-        neuron.h.nrn_load_dll(str(libnrnmech))
-        return str(libnrnmech)
+    if libnrnmech is None:
+        # Not an error: NEURON already provides every mechanism needed, e.g. a
+        # hand-compiled directory it auto-loaded from the working directory.
+        return _describe_preloaded(preloaded)
+
+    neuron.h.nrn_load_dll(str(libnrnmech))
+    return str(libnrnmech)
+
+
+def _describe_preloaded(preloaded: set[str]) -> str:
+    """Summarise the mechanisms NEURON had before BlueCelluLab loaded any."""
     if preloaded:
         return f"{len(preloaded)} mechanisms already available in NEURON."
     return "No mechanisms are loaded."
