@@ -415,7 +415,11 @@ def default_mod_build_dir(mod_files: dict[Path, str]) -> Path:
     if MOD_BUILD_DIR_ENV_VAR in os.environ:
         return Path(os.environ[MOD_BUILD_DIR_ENV_VAR]).absolute()
 
-    key = "|".join(f"{p.name}:{h}" for p, h in sorted(mod_files.items(), key=lambda kv: kv[0].name))
+    # The NEURON version is part of the key: a library built by one NEURON
+    # release must not be reused after an upgrade.
+    key = f"neuron={neuron_version()}|" + "|".join(
+        f"{p.name}:{h}" for p, h in sorted(mod_files.items(), key=lambda kv: kv[0].name)
+    )
     digest = hashlib.sha1(key.encode(), usedforsecurity=False).hexdigest()[:16]  # noqa: S324
     return Path.home() / ".cache" / "bluecellulab" / "mods" / digest
 
@@ -424,9 +428,17 @@ def _generate_mod_metadata(mod_files: dict[Path, str], options: Options) -> dict
     """Create metadata about the compiled mod files, to track cache hits."""
     return {
         "version": VERSION,
+        "neuron_version": neuron_version(),
         "hashes": sorted([p.name, hash_] for p, hash_ in mod_files.items()),
         **asdict(options),
     }
+
+
+def neuron_version() -> str:
+    """Return the version of the NEURON installation in use."""
+    import neuron
+
+    return str(neuron.__version__)
 
 
 def _get_dynamic_file(output_dir: Path, name: str) -> Path:
@@ -608,11 +620,22 @@ def _internal_mods_path() -> Path:
 def extract_mechanisms_dir(circuit_config_path: str | Path) -> list[Path]:
     """Get the `mechanisms_dir` path(s) declared in a SONATA circuit config."""
     cc = libsonata.CircuitConfig.from_file(str(circuit_config_path))
-    paths = set()
-    for name in cc.node_populations:
-        properties = cc.node_population_properties(name)
-        if d := properties.mechanisms_dir:
-            paths.add(Path(d).absolute())
+    # Edge populations can override `mechanisms_dir` too (synapse mechanisms
+    # often live there). Order matters, since later directories win duplicate
+    # mechanisms in `select_mod_files`, so deduplicate while keeping a stable
+    # order: node populations, then edge populations, each sorted by name
+    # (libsonata returns population names as an unordered set).
+    declared = [
+        cc.node_population_properties(name).mechanisms_dir
+        for name in sorted(cc.node_populations)
+    ] + [
+        cc.edge_population_properties(name).mechanisms_dir
+        for name in sorted(cc.edge_populations)
+    ]
+    paths: dict[Path, None] = {}
+    for d in declared:
+        if d:
+            paths.setdefault(Path(d).absolute(), None)
     return list(paths)
 
 
@@ -639,6 +662,15 @@ def compile_mechanisms(
     is nothing left to compile because NEURON already provides everything.
     """
     circuit_dirs = [Path(d) for d in input_dirs]
+    # A directory the circuit explicitly declares must exist: skipping it would
+    # compile only the bundled files and fail much later, at first use of a
+    # missing circuit mechanism, with a far less helpful error.
+    missing = [d for d in circuit_dirs if not d.is_dir()]
+    if missing:
+        raise ModCompilationError(
+            "Declared mechanisms_dir does not exist: "
+            + ", ".join(str(d) for d in missing)
+        )
     internal_dir = _internal_mods_path() if include_internal_mods else None
 
     # Later directories win. neurodamus appends its internal mods last, so

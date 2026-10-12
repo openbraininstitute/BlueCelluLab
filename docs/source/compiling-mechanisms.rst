@@ -120,6 +120,11 @@ single shared library, which is loaded before any cell is instantiated. A relati
 ``mechanisms_dir`` is resolved against the directory holding the circuit config, not the current
 working directory.
 
+A ``mechanisms_dir`` set on an individual node or edge population, overriding ``components``, is
+picked up too. A declared ``mechanisms_dir`` that does not exist is an error, raised before
+anything is compiled. The compilation cache is keyed on the NEURON version as well, so upgrading
+NEURON triggers a fresh build.
+
 If the circuit config does not declare a ``mechanisms_dir``, or declares it as an empty string,
 BlueCelluLab has nothing to discover and compiles only its own bundled files. The circuit's ion
 channel and synapse mechanisms then have to come from somewhere else, normally a directory you

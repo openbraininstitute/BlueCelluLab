@@ -603,6 +603,67 @@ def test_extract_mechanisms_dir_set(tmp_path):
     assert res == [mods_dir.absolute()]
 
 
+def _write_circuit_config(tmp_path, *, node_dir=None, edge_dir=None):
+    src = Path(__file__).parent / "examples/circuit_sonata_quick_scx/circuit_sonata.json"
+    js = json.loads(src.read_text())
+    if node_dir is not None:
+        js["networks"]["nodes"][0]["populations"]["NodeA"]["mechanisms_dir"] = str(node_dir)
+    if edge_dir is not None:
+        js["networks"]["edges"][0]["populations"]["NodeA__NodeA__chemical"][
+            "mechanisms_dir"
+        ] = str(edge_dir)
+    path = tmp_path / "circuit_sonata.json"
+    path.write_text(json.dumps(js))
+    return path
+
+
+def test_extract_mechanisms_dir_includes_edge_populations(tmp_path):
+    """SONATA lets an edge population override `mechanisms_dir` too."""
+    edge_dir = tmp_path / "edge_mod"
+    config = _write_circuit_config(tmp_path, edge_dir=edge_dir)
+    assert mc.extract_mechanisms_dir(config) == [edge_dir.absolute()]
+
+
+def test_extract_mechanisms_dir_is_ordered_and_deduplicated(tmp_path):
+    """Order decides which duplicate mechanism wins, so it must be stable.
+
+    Node populations come before edge populations, and a directory declared
+    by both appears once.
+    """
+    node_dir, edge_dir = tmp_path / "node_mod", tmp_path / "edge_mod"
+    config = _write_circuit_config(tmp_path, node_dir=node_dir, edge_dir=edge_dir)
+    assert mc.extract_mechanisms_dir(config) == [node_dir.absolute(), edge_dir.absolute()]
+
+    config = _write_circuit_config(tmp_path, node_dir=node_dir, edge_dir=node_dir)
+    assert mc.extract_mechanisms_dir(config) == [node_dir.absolute()]
+
+
+def test_compile_mechanisms_missing_declared_dir_raises(tmp_path):
+    """A declared but absent mechanisms_dir must fail now, not at first use."""
+    with patch("bluecellulab.mod_compilation._build_mod_files") as mock_build:
+        with pytest.raises(mc.ModCompilationError, match="does not exist"):
+            mc.compile_mechanisms([tmp_path / "missing"], already_registered=set())
+    mock_build.assert_not_called()
+
+
+def test_cache_key_and_metadata_include_neuron_version(monkeypatch, tmp_path):
+    """A library built by one NEURON release must not be reused by another."""
+    monkeypatch.delenv(mc.MOD_BUILD_DIR_ENV_VAR, raising=False)
+    mod_files = {tmp_path / "a.mod": "h1"}
+    options = Options()
+
+    with patch("bluecellulab.mod_compilation.neuron_version", return_value="9.0.1"):
+        dir_old = mc.default_mod_build_dir(mod_files)
+        meta_old = mc._generate_mod_metadata(mod_files, options)
+    with patch("bluecellulab.mod_compilation.neuron_version", return_value="9.1.0"):
+        dir_new = mc.default_mod_build_dir(mod_files)
+        meta_new = mc._generate_mod_metadata(mod_files, options)
+
+    assert dir_old != dir_new
+    assert meta_old != meta_new
+    assert meta_new["neuron_version"] == "9.1.0"
+
+
 # --------------------------------------------------------------------------
 # compile_mechanisms
 # --------------------------------------------------------------------------
