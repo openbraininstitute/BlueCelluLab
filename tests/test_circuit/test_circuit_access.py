@@ -209,6 +209,41 @@ class TestSonataCircuitAccess:
             assert self.circuit_access._mod_override_suffixes(
                 CellId("hippocampus_neurons", 1)) == ("AMPANMDA",)
 
+    def test_unhandled_edge_type_is_skipped_with_one_warning(self, caplog):
+        """Like neurodamus, edge populations of a type it has no connection
+        manager for (e.g. electrical) are skipped with a warning."""
+        import logging
+        from unittest.mock import PropertyMock
+
+        edge_cls = type(next(iter(self.circuit_access._circuit.edges.values())))
+        with patch.object(
+            edge_cls, "type", new_callable=PropertyMock, return_value="electrical",
+        ), caplog.at_level(logging.WARNING):
+            res = self.circuit_access.extract_synapses(CellId("hippocampus_neurons", 1), True)
+            self.circuit_access.extract_synapses(CellId("hippocampus_neurons", 2), True)
+
+        assert res.empty
+        assert "unhandled type 'electrical'" in caplog.text
+        names = list(self.circuit_access._circuit.edges)
+        assert caplog.text.count("is skipped") == len(names)
+
+    def test_edge_properties_follow_declared_type(self):
+        from bluecellulab.circuit.synapse_properties import SynapseProperties
+
+        pop = SimpleNamespace(property_names={"u_syn"})
+        access = type(self.circuit_access)
+        assert access._edge_properties_for("Exp2Syn_synapse", pop, "p") == list(
+            SynapseProperties.allen_chemical)
+        assert access._edge_properties_for("point_process", pop, "p") == list(
+            SynapseProperties.allen_point)
+
+    def test_chemical_edges_without_tsodyks_markram_fields_raise(self):
+        """No guessing the Allen schema from the fields: a chemical
+        population must provide the standard fields."""
+        pop = SimpleNamespace(property_names={"tau1", "tau2", "erev", "conductance"})
+        with pytest.raises(BluecellulabError, match="lacks the Tsodyks-Markram field"):
+            type(self.circuit_access)._edge_properties_for("chemical", pop, "my_pop")
+
     def test_mod_override_suffixes_only_from_applicable_blocks(self):
         """Delayed blocks and blocks not targeting the cell never set the
         mechanism, so their helpers are not loaded (a bad helper there

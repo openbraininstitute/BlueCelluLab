@@ -762,11 +762,11 @@ def test_native_override_missing_fields_raise(monkeypatch, mod_override, descrip
         _create_with_override(monkeypatch, description, mod_override)
 
 
-def test_no_override_keeps_data_driven_selection(monkeypatch):
-    """Without modoverride, plasticity columns still select GluSynapse
-    (backward compatible; neurodamus would use AMPANMDA)."""
+def test_no_override_ignores_plasticity_columns(monkeypatch):
+    """Without modoverride, plasticity columns do not select GluSynapse;
+    as in neurodamus the synapse type alone picks AMPANMDA/GABAAB."""
     description = {SynapseProperty.TYPE: 113, **_PLASTICITY}
-    assert _create_with_override(monkeypatch, description, None) == "GluSynapse"
+    assert _create_with_override(monkeypatch, description, None) == "AmpanmdaSynapse"
 
 
 def test_generic_spike_synapse_rejects_helper_without_synapse(monkeypatch):

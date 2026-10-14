@@ -44,6 +44,11 @@ from bluecellulab.circuit.synapse_properties import (
 logger = logging.getLogger(__name__)
 
 
+# Edge population types read as synapses; the others are skipped with a
+# warning, as neurodamus does for types it has no connection manager for.
+HANDLED_EDGE_TYPES = frozenset({"chemical", "Exp2Syn_synapse", "point_process"})
+
+
 class SonataCircuitAccess(CircuitAccess):
     """Sonata implementation of CircuitAccess protocol."""
 
@@ -59,6 +64,7 @@ class SonataCircuitAccess(CircuitAccess):
         circuit_config = self.config.impl.config["network"]
         self._circuit = SnapCircuit(circuit_config)
         self.helper_dirs: tuple[str, ...] = self._circuit_helper_dirs()
+        self._warned_edge_populations: set[str] = set()
         self._helper_fields_cache: dict[tuple[str, tuple[str, ...]], list[str]] = {}
         self._inner_edge_pop_names = {
             name for name, epop in self._circuit.edges.items()
@@ -270,44 +276,14 @@ class SonataCircuitAccess(CircuitAccess):
         all_synapses_dfs: list[pd.DataFrame] = []
         for edge_population_name in edge_population_names:
             edge_population = edges[edge_population_name]
+            edge_type = edge_population.type
+            if edge_type not in HANDLED_EDGE_TYPES:
+                self._warn_unhandled_edge_type(edge_population_name, edge_type)
+                continue
             afferent_edges: CircuitEdgeIds = edge_population.afferent_edges(snap_node_id)
             if len(afferent_edges) != 0:
-                # first copy the common properties to modify them
-                edge_properties: list[SynapseProperty | str] = list(
-                    SynapseProperties.common
-                )
-
-                # remove optional properties if they are not present
-                for optional_property in [SynapseProperty.U_HILL_COEFFICIENT,
-                                          SynapseProperty.CONDUCTANCE_RATIO,
-                                          SynapseProperty.AFFERENT_SECTION_POS,
-                                          SynapseProperty.POST_SEGMENT_ID,
-                                          SynapseProperty.POST_SEGMENT_OFFSET]:
-                    if optional_property.to_snap() not in edge_population.property_names:
-                        edge_properties.remove(optional_property)
-
-                # if all plasticity props are present, add them
-                if all(
-                    x in edge_population.property_names
-                    for x in SynapseProperties.plasticity
-                ):
-                    edge_properties += list(SynapseProperties.plasticity)
-
-                # check that minimal tsodyks markram property exists - if missing, then try allen
-                # check for allen instance - replace the entire edge_properties list as appropriate
-                # properties for allen point/chemical neuron connection type edges
-                if SynapseProperty.U_SYN.to_snap() not in edge_population.property_names:
-                    logging.debug("Missing required tsodyks markram property u_syn, checking for allen properties")
-                    if all(
-                        x in edge_population.property_names
-                        for x in SynapseProperties.allen_chemical
-                    ):
-                        edge_properties = list(SynapseProperties.allen_chemical)
-                    elif all(
-                        x in edge_population.property_names
-                        for x in SynapseProperties.allen_point
-                    ):
-                        edge_properties = list(SynapseProperties.allen_point)
+                edge_properties = self._edge_properties_for(
+                    edge_type, edge_population, edge_population_name)
 
                 # Fields declared by modoverride helpers
                 # (``<prefix>Helper_NeededAttributes``), only those this
@@ -366,6 +342,55 @@ class SonataCircuitAccess(CircuitAccess):
         else:
             return pd.concat(all_synapses_dfs)  # outer join that creates NaNs
 
+    def _warn_unhandled_edge_type(self, name: str, edge_type: str) -> None:
+        """Warn (once per population) that an edge population is skipped."""
+        if name not in self._warned_edge_populations:
+            self._warned_edge_populations.add(name)
+            logger.warning(
+                "Edge population '%s' has unhandled type '%s' and is skipped "
+                "(handled types: %s).",
+                name, edge_type, ", ".join(sorted(HANDLED_EDGE_TYPES)),
+            )
+
+    @staticmethod
+    def _edge_properties_for(
+        edge_type: str, edge_population, name: str
+    ) -> list[SynapseProperty | str]:
+        """Edge fields to read, chosen by the declared SONATA population type.
+
+        As in neurodamus, the schema follows the population ``type``
+        (``chemical``, ``Exp2Syn_synapse``, ``point_process``) and is never
+        guessed from which fields happen to exist.
+
+        Raises:
+            BluecellulabError: if a ``chemical`` population lacks the
+                Tsodyks-Markram fields neurodamus requires.
+        """
+        if edge_type == "Exp2Syn_synapse":
+            return list(SynapseProperties.allen_chemical)
+        if edge_type == "point_process":
+            return list(SynapseProperties.allen_point)
+        names = edge_population.property_names
+        if SynapseProperty.U_SYN.to_snap() not in names:
+            raise BluecellulabError(
+                f"Edge population '{name}' has type '{edge_type}' but lacks the "
+                f"Tsodyks-Markram field '{SynapseProperty.U_SYN.to_snap()}'. Declare "
+                "the matching population type, or provide the fields."
+            )
+        edge_properties: list[SynapseProperty | str] = list(SynapseProperties.common)
+        # remove optional properties if they are not present
+        for optional_property in [SynapseProperty.U_HILL_COEFFICIENT,
+                                  SynapseProperty.CONDUCTANCE_RATIO,
+                                  SynapseProperty.AFFERENT_SECTION_POS,
+                                  SynapseProperty.POST_SEGMENT_ID,
+                                  SynapseProperty.POST_SEGMENT_OFFSET]:
+            if optional_property.to_snap() not in names:
+                edge_properties.remove(optional_property)
+        # if all plasticity props are present, add them
+        if all(x in names for x in SynapseProperties.plasticity):
+            edge_properties += list(SynapseProperties.plasticity)
+        return edge_properties
+
     def _mod_override_suffixes(self, cell_id: CellId) -> tuple[str, ...]:
         """Sorted, de-duplicated modoverride prefixes of the connection
         overrides that can apply to synapses onto ``cell_id``.
@@ -399,8 +424,9 @@ class SonataCircuitAccess(CircuitAccess):
         Reserved fields (``maskValue``, ``location``) are never read from
         the edges, even if a helper declares them. As in neurodamus
         (``SynapseParameters._reserved``), they get fixed defaults (``-1.0``
-        and ``0.5``); the synapse position is passed to the helper
-        separately. Cached per (edge population, modoverride set) so helpers
+        and ``0.5``). ``maskValue`` is vestigial, never set from data and so
+        always ``-1``; it only stays because the helper HOCs still check it.
+        Cached per (edge population, modoverride set) so helpers
         are not reloaded for every cell.
         """
         key = (edge_population_name, self._mod_override_suffixes(cell_id))

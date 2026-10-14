@@ -56,6 +56,7 @@ class TestSynapseFactory:
         popids = (0, 0)
         extracellular_calcium = 2.0
         connection_modifiers = {
+            'ModOverride': 'GluSynapse',
             'Weight': 1.15143,
             'SpontMinis': 0.0,
             'SynapseConfigure': ['%s.Use = 1 %s.Use_GB = 1 %s.Use_p = 1 %s.gmax0_AMPA = gmax_p_AMPA %s.rho_GB = 1 %s.rho0_GB = 1 %s.gmax_AMPA = %s.gmax_p_AMPA']
@@ -97,6 +98,7 @@ class TestSynapseFactory:
         popids = (0, 0)
         extracellular_calcium = 2.0
         connection_modifiers = {
+            "ModOverride": "GluSynapse",
             "Weight": 1.15143,
             "SpontMinis": 0.0,
             "SynapseConfigure": [
@@ -147,29 +149,37 @@ class TestSynapseFactory:
         assert synapse.post_gid == self.cell.cell_id.id
 
 
-def test_determine_synapse_type():
-    # Mocking a pd.Series for syn_description
-    syn_description = pd.Series({
-        SynapseProperty.TYPE: 50,
-        SynapseProperties.plasticity[0]: None,
-        SynapseProperties.plasticity[1]: float('nan')
-    })
-
-    # Test when synapse is inhibitory
+def test_determine_synapse_type(caplog):
+    syn_description = pd.Series({SynapseProperty.TYPE: 50})
     assert SynapseFactory.determine_synapse_type(syn_description) == SynapseType.GABAAB
 
-    # Test when synapse is excitatory with no plasticity
     syn_description[SynapseProperty.TYPE] = 150
-    for prop in SynapseProperties.plasticity:
-        syn_description[prop] = float('nan')  # All properties are NaN
     assert SynapseFactory.determine_synapse_type(syn_description) == SynapseType.AMPANMDA
 
-    # Test when synapse is excitatory with all plasticity properties filled
-    for prop in SynapseProperties.plasticity:
-        syn_description[prop] = 1.0  # Assign a valid value to each plasticity property
-    assert SynapseFactory.determine_synapse_type(syn_description) == SynapseType.GLUSYNAPSE
 
-    # Test when synapse is excitatory with one plasticity property as NaN (should raise an exception)
-    syn_description[SynapseProperties.plasticity[1]] = float('nan')
-    with pytest.raises(BluecellulabError, match="SynapseFactory: Cannot determine synapse type"):
+def test_plasticity_fields_do_not_select_glusynapse(caplog):
+    """As in neurodamus, GluSynapse needs modoverride; the data alone never
+    selects it. The ignored plasticity fields are reported once."""
+    import logging
+
+    from bluecellulab.synapse import synapse_factory
+
+    synapse_factory._plasticity_warned = False
+    syn_description = pd.Series({SynapseProperty.TYPE: 150})
+    for prop in SynapseProperties.plasticity:
+        syn_description[prop] = 1.0
+    with caplog.at_level(logging.WARNING):
+        assert SynapseFactory.determine_synapse_type(syn_description) == SynapseType.AMPANMDA
         SynapseFactory.determine_synapse_type(syn_description)
+    assert caplog.text.count("modoverride='GluSynapse'") == 1
+
+
+def test_tau1_does_not_select_exp2syn():
+    """Exp2Syn comes only from modoverride, not from the presence of tau1."""
+    syn_description = pd.Series({SynapseProperty.TYPE: 150, "tau1": 1.0})
+    assert SynapseFactory.determine_synapse_type(syn_description) == SynapseType.AMPANMDA
+
+
+def test_missing_synapse_type_points_to_exp2syn_override():
+    with pytest.raises(BluecellulabError, match="modoverride='Exp2Syn'"):
+        SynapseFactory.determine_synapse_type(pd.Series({"tau1": 1.0}))

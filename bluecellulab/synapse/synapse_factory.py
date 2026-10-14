@@ -15,7 +15,6 @@
 from __future__ import annotations  # PEP-563 forward reference annotations
 from enum import Enum
 import logging
-import math
 
 import neuron
 import numpy as np
@@ -39,6 +38,18 @@ SynapseType = Enum("SynapseType", "GABAAB AMPANMDA GLUSYNAPSE ALLEN_CHEMICAL")
 NATIVE_MOD_OVERRIDES = ("GluSynapse", "Exp2Syn")
 
 logger = logging.getLogger(__name__)
+_plasticity_warned = False
+
+
+def _warn_plasticity_without_override() -> None:
+    """Warn once that plasticity fields are ignored without modoverride."""
+    global _plasticity_warned
+    if not _plasticity_warned:
+        _plasticity_warned = True
+        logger.warning(
+            "Excitatory synapses carry GluSynapse plasticity fields but no "
+            "modoverride='GluSynapse' applies; building AMPANMDA, as neurodamus does."
+        )
 
 
 class SynapseFactory:
@@ -63,7 +74,7 @@ class SynapseFactory:
         # "GluSynapse" and "Exp2Syn" force the native GluSynapse/Exp2Syn
         # classes instead of their helpers (same mechanism, whatever the
         # syn_type, as neurodamus). Without an override the class stays
-        # data-driven (determine_synapse_type).
+        # determined by the synapse type only (determine_synapse_type).
         synapse: Synapse
         mod_override = connection_modifiers.get("ModOverride")
         if mod_override and mod_override not in NATIVE_MOD_OVERRIDES:
@@ -140,28 +151,32 @@ class SynapseFactory:
     def determine_synapse_type(
         syn_description: pd.Series,
     ) -> SynapseType:
-        """Returns the type of synapse to be created."""
-        if "tau1" in syn_description:
-            return SynapseType.ALLEN_CHEMICAL
+        """Returns the type of synapse to be created, without a modoverride.
 
-        is_inhibitory: bool = int(syn_description[SynapseProperty.TYPE]) < 100
-        all_plasticity_props_available: bool = all(
-            x in syn_description and syn_description[x] is not None and not math.isnan(syn_description[x])
-            for x in SynapseProperties.plasticity
-        )
-        no_plasticity_props_available: bool = all(
-            x not in syn_description or syn_description[x] is None or math.isnan(syn_description[x])
-            for x in SynapseProperties.plasticity
-        )
-        if is_inhibitory:
+        As in neurodamus, the choice only depends on ``synapse_type``:
+        inhibitory (< 100) gives GABAAB, otherwise AMPANMDA. ``GluSynapse`` and
+        ``Exp2Syn`` are never selected from the data; they require
+        ``modoverride``.
+
+        Raises:
+            BluecellulabError: if the edges carry no ``synapse_type``, as
+                ``Exp2Syn_synapse`` edges do.
+        """
+        if SynapseProperty.TYPE not in syn_description or pd.isna(
+            syn_description[SynapseProperty.TYPE]
+        ):
+            raise BluecellulabError(
+                "Synapse has no 'synapse_type', so GABAAB/AMPANMDA cannot be chosen. "
+                "Edges of type 'Exp2Syn_synapse' need modoverride='Exp2Syn'."
+            )
+        if int(syn_description[SynapseProperty.TYPE]) < 100:
             return SynapseType.GABAAB
-        else:
-            if all_plasticity_props_available:
-                return SynapseType.GLUSYNAPSE
-            elif no_plasticity_props_available:
-                return SynapseType.AMPANMDA
-            else:
-                raise BluecellulabError("SynapseFactory: Cannot determine synapse type")
+        if all(
+            x in syn_description and not pd.isna(syn_description[x])
+            for x in SynapseProperties.plasticity
+        ):
+            _warn_plasticity_without_override()
+        return SynapseType.AMPANMDA
 
     @classmethod
     def determine_synapse_location(cls, syn_description: pd.Series, cell: bluecellulab.Cell) -> SynapseHocArgs:

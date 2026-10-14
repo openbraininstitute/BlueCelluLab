@@ -30,11 +30,10 @@ used as the point process.
    ``BluecellulabError``. The native ``GluSynapse`` seeds its RNG with
    ``post_gid + 1``, like ``GluSynapseHelper``.
 
-   Without ``modoverride``, BlueCelluLab keeps its data-driven selection for
-   backward compatibility: edges with all plasticity fields get
-   ``GluSynapse`` and Allen edges get ``Exp2Syn``. Neurodamus would build
-   ``AMPANMDA`` / ``GABAAB`` synapses there.
-
+   Without ``modoverride`` the synapse type alone decides, as in Neurodamus:
+   ``synapse_type`` < 100 gives ``GABAAB``, otherwise ``AMPANMDA``. Plasticity
+   fields or ``tau1`` on the edges never select ``GluSynapse`` or ``Exp2Syn``;
+   a warning is logged when plasticity fields are present but ignored.
 * ``ProbAMPANMDA_EMS`` / ``ProbGABAAB_EMS`` are mechanism names, not helper
   prefixes. They are the default synapse path and need no override; setting
   ``modoverride = "ProbAMPANMDA_EMS"`` fails with a missing-helper error.
@@ -182,3 +181,19 @@ See :doc:`compiling-mechanisms` for compiling mechanisms and configuring
 ``HOC_LIBRARY_PATH`` or a circuit directory, but a replacement must define
 the expected ``<Prefix>Helper`` template and expose a ``synapse`` object. The replacement
 also remains responsible for any compiled mechanisms it uses.
+
+Edge population types
+---------------------
+
+As in Neurodamus, the edge fields read for a population follow its declared
+SONATA ``type``, never the fields that happen to be present:
+
+* ``chemical`` (the default): the standard Tsodyks-Markram fields. A
+  population lacking them raises ``BluecellulabError``.
+* ``Exp2Syn_synapse``: ``tau1``, ``tau2``, ``erev`` and the position fields.
+  These edges carry no ``synapse_type``, so they need
+  ``modoverride = "Exp2Syn"``.
+* ``point_process``: the point neuron connection fields.
+
+Populations of any other type (for example ``electrical``) are skipped with a
+warning.

@@ -147,7 +147,9 @@ ND_OPTIONAL_FIELDS = MappingProxyType({
 })
 
 # Reserved fields, never read from the edges (neurodamus
-# ``SynapseParameters._reserved``).
+# ``SynapseParameters._reserved``). ``maskValue`` is vestigial: it is never set
+# from data, so it is always -1, and is kept only because the bundled helper
+# HOCs (copied from neurodamus) still check ``synParams.maskValue``.
 ND_RESERVED_FIELDS = MappingProxyType({"maskValue": -1.0, "location": 0.5})
 
 # Every name with a fixed meaning in the helper parameter object.
