@@ -397,10 +397,11 @@ class SonataCircuitAccess(CircuitAccess):
         """Helper-declared fields that the population provides.
 
         Reserved fields (``maskValue``, ``location``) are never read from
-        the edges, even if a helper declares them: as in neurodamus, the
-        simulator sets them per synapse (``maskValue`` from the synapse mask,
-        ``location`` from the synapse's section position). Cached per (edge population,
-        modoverride set) so helpers are not reloaded for every cell.
+        the edges, even if a helper declares them. As in neurodamus
+        (``SynapseParameters._reserved``), they get fixed defaults (``-1.0``
+        and ``0.5``); the synapse position is passed to the helper
+        separately. Cached per (edge population, modoverride set) so helpers
+        are not reloaded for every cell.
         """
         key = (edge_population_name, self._mod_override_suffixes(cell_id))
         if key not in self._helper_fields_cache:
