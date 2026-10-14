@@ -32,6 +32,7 @@ from bluecellulab.circuit import CellId, SynapseProperty
 from bluecellulab.circuit.config import SimulationConfig
 from bluecellulab.circuit.synapse_properties import SynapseProperties
 from bluecellulab.circuit.config import SonataSimulationConfig
+from bluecellulab.exceptions import BluecellulabError
 from bluecellulab.circuit.synapse_properties import (
     properties_from_snap,
     properties_to_snap,
@@ -71,23 +72,19 @@ class SonataCircuitAccess(CircuitAccess):
         sonata_simplify filter helpers) place them under ``mechanisms_dir``
         and/or ``biophysical_neuron_models_dir``. These existing directories
         are searched for this circuit only (after ``HOC_LIBRARY_PATH``,
-        before the bundled helpers). Never raises: helper lookup must not
-        break circuit loading.
+        before the bundled helpers).
         """
         dirs: list[str] = []
-        try:
-            components = self._circuit.config.get("components", {}) or {}
-            configs = [components] + [
-                self._circuit.nodes[pop_name].config or {}
-                for pop_name in self._circuit.nodes
-            ]
-            for cfg in configs:
-                for key in ("mechanisms_dir", "biophysical_neuron_models_dir"):
-                    path = cfg.get(key)
-                    if path and Path(path).is_dir() and str(path) not in dirs:
-                        dirs.append(str(path))
-        except Exception as exc:  # noqa: BLE001 - must never break loading
-            logger.debug("Could not read circuit helper search dirs: %s", exc)
+        components = self._circuit.config.get("components", {}) or {}
+        configs = [components] + [
+            self._circuit.nodes[pop_name].config or {}
+            for pop_name in self._circuit.nodes
+        ]
+        for cfg in configs:
+            for key in ("mechanisms_dir", "biophysical_neuron_models_dir"):
+                path = cfg.get(key)
+                if path and Path(path).is_dir() and str(path) not in dirs:
+                    dirs.append(str(path))
         return tuple(dirs)
 
     @property
@@ -319,7 +316,7 @@ class SonataCircuitAccess(CircuitAccess):
                 # attributes are reported per overridden synapse when it is
                 # built (GenericSpikeSynapse), not here.
                 helper_fields = self._helper_fields_for_population(
-                    edge_population_name, edge_population.property_names)
+                    edge_population_name, edge_population.property_names, cell_id)
                 requested = set(properties_to_snap(edge_properties))
                 edge_properties += [
                     field for field in helper_fields if field not in requested
@@ -369,30 +366,43 @@ class SonataCircuitAccess(CircuitAccess):
         else:
             return pd.concat(all_synapses_dfs)  # outer join that creates NaNs
 
-    def _mod_override_suffixes(self) -> tuple[str, ...]:
+    def _mod_override_suffixes(self, cell_id: CellId) -> tuple[str, ...]:
         """Sorted, de-duplicated modoverride prefixes of the connection
-        overrides."""
+        overrides that can apply to synapses onto ``cell_id``.
+
+        Mirrors how the overrides are applied: delayed blocks (delay > 0) do
+        not set the mechanism, and a block only applies to cells in its
+        target. Overrides that cannot apply are ignored, so a helper named
+        in an unrelated block is never loaded.
+        """
         from bluecellulab.synapse.synapse_factory import NATIVE_MOD_OVERRIDES
 
         try:
             entries = self.config.connection_entries()
         except (AttributeError, NotImplementedError):
             return ()
-        suffixes = {getattr(entry, "mod_override", None) for entry in entries}
-        # Native values use BlueCelluLab classes, not helpers (no discovery).
-        return tuple(sorted(
-            s for s in suffixes if s and s not in NATIVE_MOD_OVERRIDES))
+        suffixes = {
+            entry.mod_override for entry in entries
+            if entry.mod_override
+            and entry.mod_override not in NATIVE_MOD_OVERRIDES
+            and not (entry.delay is not None and entry.delay > 0)
+            and self.target_contains_cell(entry.target, cell_id)
+        }
+        return tuple(sorted(suffixes))
 
     def _helper_fields_for_population(
-        self, edge_population_name: str, property_names: Iterable[str]
+        self, edge_population_name: str, property_names: Iterable[str],
+        cell_id: CellId,
     ) -> list[str]:
         """Helper-declared fields that the population provides.
 
         Reserved fields (``maskValue``, ``location``) are never read from
-        the edges, as in neurodamus. Cached per (edge population,
+        the edges, even if a helper declares them: as in neurodamus, the
+        simulator sets them per synapse (``maskValue`` from the synapse mask,
+        ``location`` from the synapse's section position). Cached per (edge population,
         modoverride set) so helpers are not reloaded for every cell.
         """
-        key = (edge_population_name, self._mod_override_suffixes())
+        key = (edge_population_name, self._mod_override_suffixes(cell_id))
         if key not in self._helper_fields_cache:
             declared = self._collect_helper_needed_attributes(key[1])
             self._helper_fields_cache[key] = [
@@ -409,9 +419,11 @@ class SonataCircuitAccess(CircuitAccess):
 
         Loads each helper HOC and reads its ``_NeededAttributes`` metadata
         (semicolon-separated field names), as neurodamus
-        ``SynapseReader.configure_override()`` does. A helper that cannot be
-        loaded is skipped here; building an overridden synapse raises the
-        loader error.
+        ``SynapseReader.configure_override()`` does.
+
+        Raises:
+            BluecellulabError: if a helper named in ``modoverride`` cannot be
+                loaded; the simulation could not build those synapses.
 
         Returns:
             De-duplicated mapping of field name -> the modoverride prefix
@@ -422,14 +434,13 @@ class SonataCircuitAccess(CircuitAccess):
         fields: dict[str, str] = {}
         for suffix in suffixes:
             try:
-                for attr in get_helper_needed_attributes(suffix, self.helper_dirs):
-                    fields.setdefault(attr, suffix)
-            except (FileNotFoundError, AttributeError):
-                logger.warning(
-                    "Could not load helper for mod_override='%s'; "
-                    "skipping _NeededAttributes discovery.",
-                    suffix,
-                )
+                attrs = get_helper_needed_attributes(suffix, self.helper_dirs)
+            except (FileNotFoundError, AttributeError) as exc:
+                raise BluecellulabError(
+                    f"Could not load the helper for modoverride='{suffix}': {exc}"
+                ) from exc
+            for attr in attrs:
+                fields.setdefault(attr, suffix)
         return fields
 
     def target_contains_cell(self, target: str, cell_id: CellId) -> bool:

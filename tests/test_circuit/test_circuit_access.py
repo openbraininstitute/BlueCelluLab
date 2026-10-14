@@ -19,6 +19,8 @@ from unittest.mock import patch
 
 import pandas as pd
 import pytest
+
+from bluecellulab.exceptions import BluecellulabError
 from bluepysnap.exceptions import BluepySnapError
 
 from bluecellulab.circuit import CellId, SonataCircuitAccess
@@ -85,7 +87,7 @@ def test_mod_override_suffixes_without_connection_entries():
     with patch.object(
         circuit_access.config, "connection_entries", side_effect=NotImplementedError,
     ):
-        assert circuit_access._mod_override_suffixes() == ()
+        assert circuit_access._mod_override_suffixes(CellId("hippocampus_neurons", 1)) == ()
 
 
 def test_collect_helper_needed_attributes_first_declarer_wins():
@@ -188,7 +190,7 @@ class TestSonataCircuitAccess:
             return_value={"conductance": "Fake", "maskValue": "Fake"},
         ):
             fields = self.circuit_access._helper_fields_for_population(
-                "any_population", {"conductance", "maskValue"})
+                "any_population", {"conductance", "maskValue"}, cell_id)
             res = self.circuit_access.extract_synapses(cell_id, True)
 
         assert fields == ["conductance"]
@@ -199,12 +201,39 @@ class TestSonataCircuitAccess:
     def test_native_mod_overrides_skip_helper_discovery(self):
         """``GluSynapse``/``Exp2Syn`` use native classes: no helper is
         loaded for field discovery."""
-        entries = [SimpleNamespace(mod_override=v)
+        entries = [SimpleNamespace(mod_override=v, delay=None, target="Mosaic")
                    for v in ("GluSynapse", "Exp2Syn", "AMPANMDA", None)]
         with patch.object(
             self.circuit_access.config, "connection_entries", return_value=entries,
+        ), patch.object(self.circuit_access, "target_contains_cell", return_value=True):
+            assert self.circuit_access._mod_override_suffixes(
+                CellId("hippocampus_neurons", 1)) == ("AMPANMDA",)
+
+    def test_mod_override_suffixes_only_from_applicable_blocks(self):
+        """Delayed blocks and blocks not targeting the cell never set the
+        mechanism, so their helpers are not loaded (a bad helper there
+        stays harmless)."""
+        entries = [
+            SimpleNamespace(mod_override="AMPANMDA", delay=None, target="Here"),
+            SimpleNamespace(mod_override="ZeroDelay", delay=0.0, target="Here"),
+            SimpleNamespace(mod_override="Delayed", delay=5.0, target="Here"),
+            SimpleNamespace(mod_override="Elsewhere", delay=None, target="There"),
+        ]
+        with patch.object(
+            self.circuit_access.config, "connection_entries", return_value=entries,
+        ), patch.object(
+            self.circuit_access, "target_contains_cell",
+            side_effect=lambda target, _cell: target == "Here",
         ):
-            assert self.circuit_access._mod_override_suffixes() == ("AMPANMDA",)
+            assert self.circuit_access._mod_override_suffixes(
+                CellId("hippocampus_neurons", 1)) == ("AMPANMDA", "ZeroDelay")
+
+    def test_unloadable_applicable_helper_raises(self):
+        with patch.object(
+            self.circuit_access, "_mod_override_suffixes", return_value=("NoSuch",),
+        ):
+            with pytest.raises(BluecellulabError, match="modoverride='NoSuch'"):
+                self.circuit_access.extract_synapses(CellId("hippocampus_neurons", 1), True)
 
     def test_helper_fields_cached_per_population_and_override_set(self):
         with patch.object(
@@ -231,7 +260,7 @@ class TestSonataCircuitAccess:
         logged."""
         import logging
 
-        assert self.circuit_access._mod_override_suffixes() == ()
+        assert self.circuit_access._mod_override_suffixes(CellId("hippocampus_neurons", 1)) == ()
         with caplog.at_level(logging.WARNING):
             res = self.circuit_access.extract_synapses(CellId("hippocampus_neurons", 1), True)
 

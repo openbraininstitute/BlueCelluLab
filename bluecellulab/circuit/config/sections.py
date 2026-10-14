@@ -254,7 +254,7 @@ class ConnectionOverrides:
         """
         if value is not None and (not isinstance(value, str) or not value.strip()):
             raise ConfigError(
-                f"mod_override must be a non-empty helper prefix, got {value!r}."
+                f"modoverride must be a non-empty helper prefix, got {value!r}."
             )
         return value
 
