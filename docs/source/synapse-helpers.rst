@@ -34,6 +34,7 @@ used as the point process.
    ``synapse_type`` < 100 gives ``GABAAB``, otherwise ``AMPANMDA``. Plasticity
    fields or ``tau1`` on the edges never select ``GluSynapse`` or ``Exp2Syn``;
    a warning is logged when plasticity fields are present but ignored.
+
 * ``ProbAMPANMDA_EMS`` / ``ProbGABAAB_EMS`` are mechanism names, not helper
   prefixes. They are the default synapse path and need no override; setting
   ``modoverride = "ProbAMPANMDA_EMS"`` fails with a missing-helper error.
