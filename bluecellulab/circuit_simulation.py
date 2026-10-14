@@ -70,6 +70,9 @@ from bluecellulab.circuit.gap_junction_manager import (
     ContinuousConnectionManager,
     GapJunctionManager,
 )
+from bluecellulab.circuit.gap_junction_user_corrections import (
+    load_user_modifications,
+)
 
 from bluecellulab.cell.point_process import BasePointProcessCell, HocPointProcessCell, mechanism_name_from_model_template
 
@@ -146,6 +149,9 @@ class CircuitSimulation:
         self._deleted = False
         self.print_cellstate = print_cellstate
         self.save_time = save_time
+        self.holding_ic_per_gid: dict[int, Any] = {}
+        self.seclamp_per_gid: dict[int, Any] = {}
+        self.seclamp_current_per_gid_recorder: dict[int, Any] = {}
 
         self.rng_settings = RNGSettings.get_instance()
         self.rng_settings.set_seeds(
@@ -996,6 +1002,54 @@ class CircuitSimulation:
                     cfg.edge_population, exc,
                 )
                 raise
+        self._apply_gap_junction_user_corrections()
+
+    def _apply_gap_junction_user_corrections(self) -> None:
+        """Apply ``beta_features`` user corrections (neurodamus
+        ``load_user_modifications`` port): ``gjc`` conductance overwrite,
+        channel removal, per-cell ``g_pas``, holding IClamps and find- holding-
+        current SEClamps.
+
+        SEClamp currents are recorded so they can be persisted by
+        :meth:`_save_seclamp_currents` at the end of :meth:`run`.
+        """
+        try:
+            beta = self.circuit_access.config.beta_features()
+        except (AttributeError, NotImplementedError):
+            return
+        if not beta:
+            return
+        self.holding_ic_per_gid, self.seclamp_per_gid = load_user_modifications(self)
+        if self.seclamp_per_gid:
+            # Record seclamp currents for saving to a file at the end
+            self.seclamp_current_per_gid_recorder = {}
+            for gid, seclamp in self.seclamp_per_gid.items():
+                self.seclamp_current_per_gid_recorder[gid] = neuron.h.Vector()
+                self.seclamp_current_per_gid_recorder[gid].record(seclamp._ref_i)
+
+    def _save_seclamp_currents(self) -> None:
+        """Save recorded SEClamp currents for gap junction user corrections.
+
+        Mirrors neurodamus' ``save_seclamp``: one pickle per rank under
+        ``<output>/gap_junction_seclamps/data_for_host_<rank>.p``.
+        """
+        if not self.seclamp_current_per_gid_recorder:
+            return
+        import pickle
+
+        logger.info("Save SEClamp currents for gap junction user corrections")
+        vals = {
+            gid: hoc_vec.as_numpy()
+            for gid, hoc_vec in self.seclamp_current_per_gid_recorder.items()
+        }
+        output_dir = (
+            Path(self.circuit_access.config.output_root_path)
+            / "gap_junction_seclamps"
+        )
+        output_dir.mkdir(parents=True, exist_ok=True)
+        rank = int(self.pc.id()) if self.pc is not None else 0
+        with open(output_dir / f"data_for_host_{rank}.p", "wb") as f:
+            pickle.dump(vals, f)
 
     def _add_continuous_connections(self) -> None:
         """Instantiate continuous (graded) connection blocks from sim
@@ -1200,6 +1254,7 @@ class CircuitSimulation:
             forward_skip_value=effective_skip_value,
             show_progress=show_progress,
         )
+        self._save_seclamp_currents()
 
     def get_mainsim_voltage_trace(
         self, cell_id: int | tuple[str, int], t_start=None, t_stop=None, t_step=None

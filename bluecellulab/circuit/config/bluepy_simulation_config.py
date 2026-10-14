@@ -99,6 +99,10 @@ class BluepySimulationConfig:
         """BlueConfig does not support continuous_connections blocks."""
         return []
 
+    def beta_features(self) -> dict:
+        """BlueConfig does not support beta_features."""
+        return {}
+
     @property
     def base_seed(self) -> int:
         """Base seed of blueconfig."""

@@ -213,6 +213,16 @@ class SonataSimulationConfig:
         return [GapJunctionConfig(**entry) for entry in raw]
 
     @lru_cache(maxsize=1)
+    def beta_features(self) -> dict:
+        """Return the ``beta_features`` dict from the simulation config.
+
+        Neurodamus-experimental settings (e.g. gap-junction user
+        corrections); empty dict when absent.
+        """
+        raw = self.impl.config.get("beta_features")
+        return dict(raw) if isinstance(raw, dict) else {}
+
+    @lru_cache(maxsize=1)
     def continuous_connections(self) -> list[ContinuousConnectionConfig]:
         """Return the list of continuous (graded) connection blocks.
 

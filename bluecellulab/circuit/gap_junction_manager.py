@@ -17,20 +17,29 @@ and ``Connection.finalize_gap_junctions``):
 - conductance comes from the ``conductance`` edge property (neurodamus maps
   it to ``weight``) and is assigned to the mechanism's ``g``/``weight``/
   ``conductance`` RANGE variable, whichever it defines.
-- under MPI, ``pc.target_var`` subscribes the junction's ``POINTER`` to the
-  ``efferent_junction_id`` broadcast and ``pc.source_var`` exports the
-  target's voltage under ``afferent_junction_id`` — junction ids come from
-  the edge properties when present, and are synthesized per unordered cell
-  pair otherwise. Single-rank wiring binds the pointer directly with
-  ``neuron.h.setpointer`` (``pc.source_var`` under multiple ids on the same
-  ``_ref_v`` is fragile in NEURON).
+- under MPI, ``pc.target_var`` subscribes the junction's peer-voltage
+  variable to the ``efferent_junction_id`` broadcast and ``pc.source_var``
+  exports the target's voltage under ``afferent_junction_id`` — junction
+  ids come from the edge properties when present, and are synthesized per
+  unordered cell pair otherwise. Transfer targets must be ``RANGE``
+  variables (NEURON cannot transfer into a ``POINTER``): mechanisms that
+  expose the peer voltage only as a ``POINTER`` (serial ``setpointer``
+  style) are wired via a ``RANGE vgap`` transfer variable + ``use_vgap``
+  selector switch when those members exist (neurodamus ``Gap``
+  convention). Single-rank wiring binds the pointer directly with
+  ``neuron.h.setpointer`` (``pc.source_var`` under multiple ids on the
+  same ``_ref_v`` is fragile in NEURON).
 - ``continuous_connections`` reuse the same pointer-transfer path for
   graded chemical synapses (directional source -> target), a BlueCelluLab
-  extension with no neurodamus counterpart.
+  extension with no neurodamus counterpart. Under MPI each source cell
+  exports its soma voltage once per population under a broadcast id of
+  ``1e9 + global_gid`` (kept clear of the junction-id space).
 
 The mod mechanism for each block must define:
-- a ``POINTER`` named per ``GapJunctionConfig.pointer_name`` (default
-  ``vgap``) which receives the peer voltage,
+- a peer-voltage variable named per ``GapJunctionConfig.pointer_name``
+  (default ``vgap``) — a ``POINTER`` for serial ``setpointer`` wiring, or
+  a ``RANGE`` variable for MPI ``target_var`` wiring (dual-mode mechs
+  provide both: ``POINTER vpre`` + ``RANGE vgap``/``use_vgap``),
 - a ``RANGE`` conductance variable (``g``, ``weight`` or ``conductance``)
   settable from the edge ``conductance`` column.
 """
@@ -58,6 +67,10 @@ class _PointerConnectionManager:
     Both drive `pc.source_var` (broadcast a continuous variable from the
     pre-cell) and `pc.target_var` (subscribe a POINTER on the post-cell).
     """
+
+    #: Base of the broadcast-id space used for continuous connections under
+    #: MPI (per source cell). Kept far above typical junction-id ranges.
+    _MPI_TRANSFER_BASE = 1_000_000_000
 
     def __init__(self, sim: Any):
         self._sim = sim
@@ -160,6 +173,53 @@ class _PointerConnectionManager:
             section = cell.soma
         return section, pos
 
+    def _local_and_instantiated_node_ids(self) -> tuple[dict, set]:
+        """(local node-id -> Cell, ids instantiated on any rank).
+
+        Under MPI the global set is the gathered
+        ``_instantiated_cells_mpi``; serially it equals the local set.
+        """
+        local_node_ids = {cid.id: cell for cid, cell in self._sim.cells.items()}
+        instantiated = getattr(self._sim, "_instantiated_cells_mpi", None)
+        all_node_ids = (
+            {cid.id for cid in instantiated}
+            if instantiated is not None
+            else set(local_node_ids)
+        )
+        return local_node_ids, all_node_ids
+
+    def _target_var(self, pp, pointer_name: str, src_id: int):
+        """Subscribe ``pp``'s peer-voltage variable to broadcast ``src_id``.
+
+        NEURON transfers can only write into ``RANGE`` variables — a
+        ``POINTER`` member can never be a transfer target, and probing it
+        would abort the MPI run (``hoc_execerror`` is fatal under MPI,
+        not a catchable Python exception). The decision is therefore
+        convention-based:
+
+        - if the mech exposes ``RANGE vgap`` (neurodamus ``Gap``
+          convention — also the dual-mode transfer var), transfer into it
+          and set the ``use_vgap`` selector when present;
+        - otherwise ``pointer_name`` must name a RANGE variable
+          (neurodamus style).
+        """
+        if hasattr(pp, "vgap"):
+            self._pc.target_var(pp, pp._ref_vgap, src_id)
+            if hasattr(pp, "use_vgap"):
+                pp.use_vgap = 1
+            return
+        ref = getattr(pp, f"_ref_{pointer_name}", None)
+        if ref is None:
+            raise AttributeError(
+                f"Mechanism '{type(pp).__name__}' has no variable named "
+                f"'{pointer_name}' and no RANGE 'vgap'. Under MPI the "
+                "peer-voltage variable must be a RANGE variable (e.g. "
+                "'vgap'); POINTER members cannot be transfer targets. For "
+                "serial-only mechs provide 'RANGE vgap' + a 'use_vgap' "
+                "selector (dual-mode)."
+            )
+        self._pc.target_var(pp, ref, src_id)
+
 
 class GapJunctionManager(_PointerConnectionManager):
     """Wires one ``"type": "electrical"`` edge population as gap junctions.
@@ -177,14 +237,17 @@ class GapJunctionManager(_PointerConnectionManager):
         # file does not carry afferent/efferent_junction_id columns.
         synthesized_pair_ids: dict[tuple[int, int], int] = {}
 
-        local_node_ids = {cid.id: cell for cid, cell in self._sim.cells.items()}
+        local_node_ids, all_node_ids = self._local_and_instantiated_node_ids()
 
         for src, tgt, idx, props in self._iter_edges(
             cfg.edge_population, set(), set()
         ):
-            # Only wire pairs where both endpoints exist locally; otherwise
-            # pc.setup_transfer() would see an unmatched target_var.
-            if src not in local_node_ids or tgt not in local_node_ids:
+            # The junction lives on the rank owning the *target*; the
+            # source's broadcast is registered by the reciprocal edge on
+            # whichever rank owns the source. Only require that the source
+            # is instantiated somewhere, so no target_var is left
+            # unmatched for pc.setup_transfer().
+            if tgt not in local_node_ids or src not in all_node_ids:
                 continue
 
             conductance = float(props.get("conductance", 1.0)) * cfg.weight_factor
@@ -237,8 +300,15 @@ class GapJunctionManager(_PointerConnectionManager):
         tgt_section, tgt_x = self._resolve_target_section(tgt_cell, props)
         gj = self._build_pointer_mech(cfg, tgt_section, tgt_x, conductance)
 
-        src_cell = local_node_ids[src]
-        src_section, src_x = self._resolve_source_section(src_cell, props)
+        # The source cell object is only needed for the serial setpointer
+        # path; under MPI it may live on another rank (its broadcast is
+        # matched by junction id).
+        src_cell = local_node_ids.get(src)
+        src_section, src_x = (
+            self._resolve_source_section(src_cell, props)
+            if src_cell is not None
+            else (None, None)
+        )
         self._bind_pointer(
             gj, cfg.pointer_name,
             tgt_section=tgt_section, tgt_x=tgt_x,
@@ -268,12 +338,15 @@ class GapJunctionManager(_PointerConnectionManager):
         return gj
 
     def _bind_pointer(self, gj, pointer_name: str, tgt_section, tgt_x: float,
-                      eff_id: int, aff_id: int, src_section, src_x: float):
-        """Bind gj's POINTER to the peer voltage (neurodamus conventions).
+                      eff_id: int, aff_id: int, src_section, src_x) -> None:
+        """Bind gj's peer-voltage input to the source (neurodamus conventions).
 
-        MPI: ``target_var`` subscribes the POINTER to the source broadcast
-        under ``eff_id``; ``source_var`` exports the target's voltage under
-        ``aff_id`` (consumed by the reciprocal edge's junction).
+        MPI: ``target_var`` subscribes the RANGE peer-voltage variable
+        (``vgap`` — see ``_target_var``) to the source broadcast under
+        ``eff_id``; ``source_var`` exports the target's voltage under
+        ``aff_id`` (consumed by the reciprocal edge's junction). On
+        dual-mode mechs the serial ``POINTER`` is additionally bound to a
+        local voltage so it never dangles.
 
         Serial: direct ``setpointer`` from the source section to the
         junction's POINTER.
@@ -285,10 +358,28 @@ class GapJunctionManager(_PointerConnectionManager):
                 f"'{pointer_name}'."
             )
         if self._pc is not None:
+            if hasattr(gj, "use_vgap"):
+                # Dual-mode mech: bind the serial POINTER to a local
+                # voltage so it is never dangling (the RANGE transfer var
+                # drives the current under MPI anyway).
+                bind_sec, bind_x = (
+                    (src_section, src_x)
+                    if src_section is not None
+                    else (tgt_section, tgt_x)
+                )
+                neuron.h.setpointer(
+                    bind_sec(bind_x)._ref_v, pointer_name, gj
+                )
             with _section_in_stack(tgt_section):
-                self._pc.target_var(gj, getattr(gj, ptr_attr), eff_id)
+                self._target_var(gj, pointer_name, eff_id)
                 self._pc.source_var(tgt_section(tgt_x)._ref_v, aff_id)
+            # Seed the transfer var with the resting voltage so a
+            # mechanism INITIAL that reads it before the first transfer
+            # sees a sane value.
+            if getattr(gj, "use_vgap", 0):
+                gj.vgap = self._sim.circuit_access.config.v_init
         else:
+            assert src_section is not None
             neuron.h.setpointer(src_section(src_x)._ref_v, pointer_name, gj)
 
 
@@ -300,14 +391,27 @@ class ContinuousConnectionManager(_PointerConnectionManager):
         tgt_filter = self._resolve_node_set(cfg.target)
         n_added = 0
 
-        local_cells = self._sim.cells
-        local_node_ids = {cid.id: cell for cid, cell in local_cells.items()}
+        local_node_ids, all_node_ids = self._local_and_instantiated_node_ids()
+        broadcasted_srcs: set[int] = set()
 
         for src, tgt, idx, props in self._iter_edges(
             cfg.edge_population, src_filter, tgt_filter
         ):
-            # Only wire pairs where both endpoints exist locally.
-            if src not in local_node_ids or tgt not in local_node_ids:
+            # Under MPI each source cell exports its soma voltage once, on
+            # the rank where it lives.
+            if (
+                self._pc is not None
+                and src in local_node_ids
+                and src not in broadcasted_srcs
+            ):
+                src_cell = local_node_ids[src]
+                with _section_in_stack(src_cell.soma):
+                    self._pc.source_var(
+                        src_cell.soma(0.5)._ref_v, self._broadcast_id(src, cfg)
+                    )
+                broadcasted_srcs.add(src)
+
+            if tgt not in local_node_ids or src not in all_node_ids:
                 continue
             cond = float(props.get("conductance", 1.0)) * cfg.weight_factor
 
@@ -315,17 +419,34 @@ class ContinuousConnectionManager(_PointerConnectionManager):
             section, x = self._resolve_target_section(cell, props)
             syn = self._build_pointer_mech(cfg, section, x, cond)
 
-            # Single-process direct pointer wiring (works for serial; for
-            # MPI we'd switch to pc.source_var/target_var with a single
-            # broadcast id per source cell).
-            src_section = local_node_ids[src].soma
             ptr_attr = f"_ref_{cfg.pointer_name}"
             if not hasattr(syn, ptr_attr):
                 raise AttributeError(
                     f"Mechanism '{cfg.mod}' has no POINTER named "
                     f"'{cfg.pointer_name}'."
                 )
-            neuron.h.setpointer(src_section(0.5)._ref_v, cfg.pointer_name, syn)
+            if self._pc is not None:
+                if hasattr(syn, "use_vgap"):
+                    # Dual-mode mech: keep the serial POINTER bound (to
+                    # the source v when local, else the target's own v)
+                    # so it is never dangling.
+                    src_sec = (
+                        local_node_ids[src].soma
+                        if src in local_node_ids
+                        else section
+                    )
+                    neuron.h.setpointer(
+                        src_sec(0.5)._ref_v, cfg.pointer_name, syn
+                    )
+                with _section_in_stack(section):
+                    self._target_var(
+                        syn, cfg.pointer_name, self._broadcast_id(src, cfg)
+                    )
+                if getattr(syn, "use_vgap", 0):
+                    syn.vgap = self._sim.circuit_access.config.v_init
+            else:
+                src_section = local_node_ids[src].soma
+                neuron.h.setpointer(src_section(0.5)._ref_v, cfg.pointer_name, syn)
 
             cell.continuous_synapses = getattr(cell, "continuous_synapses", [])
             cell.continuous_synapses.append(syn)
@@ -337,6 +458,18 @@ class ContinuousConnectionManager(_PointerConnectionManager):
             cfg.name, n_added, cfg.edge_population, cfg.mod, cfg.pointer_name,
         )
         return n_added
+
+    def _broadcast_id(self, src: int, cfg: ContinuousConnectionConfig) -> int:
+        """Broadcast id under which cell ``src`` exports its voltage.
+
+        One id per source cell, offset far above the junction-id space.
+        Uses the global gid namespace so multi-population circuits stay
+        collision-free.
+        """
+        pop = self._sim.circuit_access._circuit.edges[
+            cfg.edge_population
+        ].source.name
+        return self._MPI_TRANSFER_BASE + self._sim.global_gid(pop, src)
 
     def _build_pointer_mech(self, cfg: ContinuousConnectionConfig, section,
                             x: float, conductance: float):
@@ -352,19 +485,6 @@ class ContinuousConnectionManager(_PointerConnectionManager):
                 setattr(syn, name, conductance)
                 break
         return syn
-
-    def _bind_pointer(self, syn, pointer_name: str, section, x: float,
-                      receive_id: int, broadcast_id: int,
-                      broadcast_section):
-        ptr_attr = f"_ref_{pointer_name}"
-        if not hasattr(syn, ptr_attr):
-            raise AttributeError(
-                f"Mechanism '{type(syn).__name__}' has no POINTER named "
-                f"'{pointer_name}'."
-            )
-        if self._pc is not None:
-            with _section_in_stack(section):
-                self._pc.target_var(syn, getattr(syn, ptr_attr), receive_id)
 
 
 class _section_in_stack:

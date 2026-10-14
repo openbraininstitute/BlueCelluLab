@@ -58,6 +58,13 @@ class SimulationConfig(Protocol):
         """
         return []
 
+    def beta_features(self) -> dict:
+        """Return the ``beta_features`` experimental-settings dict.
+
+        Empty if not supported (neurodamus SONATA extension).
+        """
+        return {}
+
     def get_modifications(self) -> list[ModificationBase]:
         raise NotImplementedError
 
