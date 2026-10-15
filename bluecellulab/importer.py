@@ -38,7 +38,7 @@ def import_mod_lib(neuron: ModuleType) -> str:
                                     " Please remove one of them.")
 
         mod_lib_path = os.environ["BLUECELLULAB_MOD_LIBRARY_PATH"]
-        if mod_lib_path.endswith(".so"):
+        if mod_lib_path.endswith((".so", ".dylib")):
             neuron.h.nrn_load_dll(mod_lib_path)
         else:
             neuron.load_mechanisms(mod_lib_path)

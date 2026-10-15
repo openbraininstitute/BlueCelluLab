@@ -97,6 +97,19 @@ class RNGSettings:
             self.minis_seed = sim_config.minis_seed
 
     @property
+    def synapse_seed(self) -> int:
+        """Synapse seed, shared by native and helper synapses."""
+        return self._synapse_seed
+
+    @synapse_seed.setter
+    def synapse_seed(self, new_val: int) -> None:
+        # Neurodamus-compatible helper HOCs read the synapse seed through
+        # RNGSettings.getSynapseSeed(); write it to HOC on every change so
+        # native and helper synapses never diverge.
+        self._synapse_seed = new_val
+        neuron.h.synapseSeed = new_val
+
+    @property
     def mode(self):
         return self._mode
 

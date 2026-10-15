@@ -1,0 +1,25 @@
+begintemplate Exp2SynHelper
+
+objref synapse
+public synapse
+
+proc init() { local tgid, x, synapseID, baseSeed, spopid, tpopid localobj synParams
+    tgid = $1
+    synParams = $o2
+    x = $3
+    synapseID = $4
+    baseSeed = $5
+    if (numarg()>=7) {
+        spopid = $6
+        tpopid = $7
+    } else {
+        spopid = 0
+        tpopid = 1
+    }
+    synapse = new Exp2Syn(x)
+    synapse.e = synParams.erev   // erev
+    synapse.tau1 = synParams.tau1 //tau1
+    synapse.tau2 = synParams.tau2 //tau2
+}
+
+endtemplate Exp2SynHelper
