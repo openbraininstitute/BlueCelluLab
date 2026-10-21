@@ -17,6 +17,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from math import ceil, isfinite
 from numbers import Integral, Real
+from typing import Literal
 
 from bluecellulab.analysis.inject_sequence import Recording, run_stimulus
 from bluecellulab.stimulus.factory import IDRestTimings, StimulusFactory
@@ -94,6 +95,9 @@ class StepProtocol(Protocol):
 
     Attributes:
         threshold_percentage: Percentage of rheobase to inject (e.g. 130 = 130%).
+            Used when ``amplitude`` is not set.
+        amplitude: Raw current to inject in nA. When set, it is used directly
+            and ``threshold_percentage`` and the rheobase are ignored.
         dt: Time step for the stimulus waveform in ms.
         section: Section to inject into.
         segment: Segment position along the section (0.0 to 1.0).
@@ -101,6 +105,7 @@ class StepProtocol(Protocol):
     """
 
     threshold_percentage: float = 130.0
+    amplitude: float | None = None
     dt: float = 1.0
     section: str = "soma[0]"
     segment: float = 0.5
@@ -110,6 +115,8 @@ class StepProtocol(Protocol):
         """Validate the waveform time step before simulating."""
         _validate_time_value("dt", self.dt, strictly_positive=True)
         _validate_real("threshold_percentage", self.threshold_percentage)
+        if self.amplitude is not None:
+            _validate_real("amplitude", self.amplitude)
 
     @property
     def stim_start(self) -> float:
@@ -125,10 +132,13 @@ class StepProtocol(Protocol):
     def execute(self, template_params, rheobase: float) -> Recording:
         """Inject a step current and record the response."""
         stim_factory = StimulusFactory(dt=self.dt)
-        stimulus = stim_factory.idrest(
-            threshold_current=rheobase,
-            threshold_percentage=self.threshold_percentage,
-        )
+        if self.amplitude is not None:
+            stimulus = stim_factory.idrest(amplitude=self.amplitude)
+        else:
+            stimulus = stim_factory.idrest(
+                threshold_current=rheobase,
+                threshold_percentage=self.threshold_percentage,
+            )
         return run_stimulus(
             template_params,
             stimulus,
@@ -143,8 +153,8 @@ class SequenceProtocol(Protocol):
     """Multi-phase stimulus protocol composed of sequential steps.
 
     Each phase is defined by a duration and amplitude. By default, amplitudes are
-    interpreted as percentages of rheobase. Set `absolute_amplitudes=True` to use
-    raw current values in nA instead.
+    interpreted as percentages of rheobase (``amplitude_mode="threshold_percentage"``).
+    Set ``amplitude_mode="amplitude"`` to use raw current values in nA instead.
 
     Phases are concatenated in order with a configurable pre-delay and post-delay.
     Timing windows are aligned to the stimulus sample grid, so they match the
@@ -155,15 +165,18 @@ class SequenceProtocol(Protocol):
 
     Attributes:
         phases: List of (duration_ms, amplitude) tuples. Amplitude meaning depends
-            on `absolute_amplitudes`.
+            on ``amplitude_mode``.
         pre_delay: Delay before the first phase in ms.
         post_delay: Delay after the last phase in ms.
         dt: Time step for the stimulus waveform in ms.
         section: Section to inject into.
         segment: Segment position along the section (0.0 to 1.0).
         add_hypamp: Whether to add the holding current.
-        absolute_amplitudes: If True, phase amplitudes are in nA. If False (default),
-            they are percentages of rheobase.
+        amplitude_mode: How to interpret phase amplitudes. ``"threshold_percentage"``
+            (default) treats them as percentages of rheobase; ``"amplitude"`` treats
+            them as raw currents in nA. Matches the ``amplitude`` /
+            ``threshold_percentage`` naming used by ``StepProtocol`` and the
+            stimulus factory.
         measurement_phase: If set, stim_start/stim_end cover only this phase index
             (0-based). Useful when feature extraction should target a specific phase
             (e.g. the release window in a rebound burst protocol).
@@ -175,7 +188,7 @@ class SequenceProtocol(Protocol):
         ...     phases=[(250.0, 0.087), (500.0, -0.145), (1000.0, 0.087)],
         ...     pre_delay=0.0,
         ...     post_delay=250.0,
-        ...     absolute_amplitudes=True,
+        ...     amplitude_mode="amplitude",
         ...     measurement_phase=2,
         ... )
     """
@@ -187,7 +200,7 @@ class SequenceProtocol(Protocol):
     section: str = "soma[0]"
     segment: float = 0.5
     add_hypamp: bool = True
-    absolute_amplitudes: bool = False
+    amplitude_mode: Literal["threshold_percentage", "amplitude"] = "threshold_percentage"
     measurement_phase: int | None = None
 
     def __post_init__(self) -> None:
@@ -195,6 +208,11 @@ class SequenceProtocol(Protocol):
         _validate_time_value("dt", self.dt, strictly_positive=True)
         _validate_time_value("pre_delay", self.pre_delay)
         _validate_time_value("post_delay", self.post_delay)
+
+        if self.amplitude_mode not in ("threshold_percentage", "amplitude"):
+            raise ValueError(
+                "amplitude_mode must be 'threshold_percentage' or 'amplitude'."
+            )
 
         if not isinstance(self.phases, (list, tuple)) or not self.phases:
             raise ValueError(
@@ -261,7 +279,7 @@ class SequenceProtocol(Protocol):
 
     def _compute_amplitude(self, amplitude_value: float, rheobase: float) -> float:
         """Convert phase amplitude to nA based on amplitude mode."""
-        if self.absolute_amplitudes:
+        if self.amplitude_mode == "amplitude":
             return amplitude_value
         return rheobase * amplitude_value / 100.0
 

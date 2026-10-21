@@ -231,6 +231,39 @@ class TestStepProtocol:
         )
         assert result == mock_recording
 
+    def test_amplitude_defaults_to_none(self):
+        assert StepProtocol().amplitude is None
+
+    def test_custom_amplitude(self):
+        p = StepProtocol(amplitude=0.42)
+        assert p.amplitude == 0.42
+
+    @pytest.mark.parametrize("amplitude", [float("nan"), float("inf")])
+    def test_rejects_invalid_amplitude(self, amplitude):
+        with pytest.raises(ValueError):
+            StepProtocol(amplitude=amplitude)
+
+    @patch("bluecellulab.validation.protocol.run_stimulus")
+    @patch("bluecellulab.validation.protocol.StimulusFactory")
+    def test_execute_uses_absolute_amplitude(self, mock_factory_cls, mock_run):
+        mock_factory = MagicMock()
+        mock_factory_cls.return_value = mock_factory
+        mock_stimulus = MagicMock()
+        mock_factory.idrest.return_value = mock_stimulus
+        mock_recording = MagicMock()
+        mock_run.return_value = mock_recording
+
+        p = StepProtocol(amplitude=0.3)
+        result = p.execute("template_params", 0.5)
+
+        mock_factory_cls.assert_called_once_with(dt=1.0)
+        # amplitude overrides the rheobase/threshold_percentage path
+        mock_factory.idrest.assert_called_once_with(amplitude=0.3)
+        mock_run.assert_called_once_with(
+            "template_params", mock_stimulus, "soma[0]", 0.5, add_hypamp=True
+        )
+        assert result == mock_recording
+
 
 class TestSequenceProtocol:
     @pytest.mark.parametrize(
@@ -243,11 +276,15 @@ class TestSequenceProtocol:
             {"phases": [(1.0, 1.0)], "dt": 0.0},
             {"phases": [(float("nan"), 1.0)]},
             {"phases": [(1.0, float("inf"))]},
+            {"phases": [(1.0, 1.0)], "amplitude_mode": "nonsense"},
         ],
     )
     def test_rejects_invalid_configuration(self, kwargs):
         with pytest.raises(ValueError):
             SequenceProtocol(**kwargs)
+
+    def test_amplitude_mode_defaults_to_threshold_percentage(self):
+        assert SequenceProtocol().amplitude_mode == "threshold_percentage"
 
     def test_rejects_out_of_range_measurement_phase(self):
         with pytest.raises(IndexError):
@@ -259,14 +296,14 @@ class TestSequenceProtocol:
             pre_delay=5.0,
             post_delay=5.0,
             dt=10.0,
-            absolute_amplitudes=True,
+            amplitude_mode="amplitude",
         )
         phase_protocol = SequenceProtocol(
             phases=[(5.0, 1.0), (15.0, 2.0)],
             pre_delay=5.0,
             post_delay=5.0,
             dt=10.0,
-            absolute_amplitudes=True,
+            amplitude_mode="amplitude",
             measurement_phase=1,
         )
 
@@ -283,7 +320,7 @@ class TestSequenceProtocol:
             pre_delay=5.0,
             post_delay=5.0,
             dt=10.0,
-            absolute_amplitudes=True,
+            amplitude_mode="amplitude",
         )
 
         protocol.execute("template_params", 0.5)
