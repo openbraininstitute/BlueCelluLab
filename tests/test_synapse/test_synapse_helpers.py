@@ -20,6 +20,19 @@ from bluecellulab.synapse.synapse_types import (
 )
 from bluecellulab.synapse.synapse_helpers import build_helper_params
 
+
+@pytest.fixture
+def real_mods_loaded():
+    """Load the real mod files before tests swap ``neuron.h`` for a stub.
+
+    The first ``RNGSettings`` access compiles and loads mechanisms through
+    ``neuron.h``, which a stubbed ``h`` cannot do.
+    """
+    from bluecellulab.rngsettings import RNGSettings
+
+    RNGSettings.get_instance()
+
+
 _PLASTICITY: dict[Any, float] = {
     "volume_CR": 0.1, "rho0_GB": 0.0, "Use_d_TM": 0.3, "Use_p_TM": 0.6,
     "gmax_d_AMPA": 1.0, "gmax_p_AMPA": 2.0, "theta_d": 0.006, "theta_p": 0.001,
@@ -653,7 +666,7 @@ def test_generic_spike_synapse_update_removes_invalid_optional_values():
     assert result[SynapseProperty.U_SYN] == 2.0
 
 
-def test_generic_spike_synapse_builds_from_helper(monkeypatch):
+def test_generic_spike_synapse_builds_from_helper(monkeypatch, real_mods_loaded):
     active_section = {}
 
     class Section:
@@ -769,7 +782,7 @@ def test_no_override_ignores_plasticity_columns(monkeypatch):
     assert _create_with_override(monkeypatch, description, None) == "AmpanmdaSynapse"
 
 
-def test_generic_spike_synapse_rejects_helper_without_synapse(monkeypatch):
+def test_generic_spike_synapse_rejects_helper_without_synapse(monkeypatch, real_mods_loaded):
     class Section:
         def push(self):
             pass
@@ -851,7 +864,7 @@ def test_missing_needed_attribute_raises_before_helper(monkeypatch, description)
     assert calls == []
 
 
-def test_needed_attributes_present_builds(monkeypatch):
+def test_needed_attributes_present_builds(monkeypatch, real_mods_loaded):
     synapse, calls = _helper_synapse(
         monkeypatch, {"w_corr": 0.1, "tau_corr": 2.0}, "w_corr;tau_corr;maskValue"
     )
