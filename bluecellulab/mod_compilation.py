@@ -11,33 +11,25 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Discover and compile the NEURON MOD files needed to run a simulation.
+"""Compile the NEURON MOD files needed to run a simulation.
 
-This mirrors neurodamus's ``neurodamus.utils.compile_mods``: MOD files are
-gathered from one or more directories, fingerprinted, and compiled with
-``nrnivmodl`` into a shared library that NEURON can load. Repeated calls with
-the same inputs reuse the previous build instead of recompiling.
+This mirrors neurodamus's ``neurodamus-compile-mods``: compilation is an
+explicit step run before the simulation, never on import. MOD files are
+gathered from a circuit's ``mechanisms_dir`` and/or given directories plus
+BlueCelluLab's bundled "technical" MOD files (``bluecellulab/data/mod``),
+fingerprinted, and compiled with ``nrnivmodl`` into ``<output_dir>/<arch>``.
+With the default output directory, the working directory, NEURON loads that
+folder automatically on import. Re-running with unchanged files does nothing.
 
-Like neurodamus, BlueCelluLab bundles the shared "technical" MOD files that
-circuits should not have to carry themselves (``bluecellulab/data/mod``, see
-`_internal_mods_path`), and includes them in every compilation. Unlike
-neurodamus there is no CLI and no CoreNEURON support: compilation is driven
-from `bluecellulab.importer` when a `Cell` or `CircuitSimulation` is created.
+Use the ``bcl-compile-mods`` command or `compile_mods`.
 
-Two behaviours are deliberately stricter than neurodamus, both because
-BlueCelluLab runs against circuits as it finds them rather than against
-inputs curated by a launcher:
-
-* Duplicate mechanisms are resolved by the mechanism name each MOD file
-  *declares*, not just by filename. Two differently named files can define
-  the same mechanism (the legacy ``VecStim.mod`` and the current
-  ``vecevent.mod`` both declare ``ARTIFICIAL_CELL VecStim``). ``nrnivmodl``
-  compiles such a pair without complaint and NEURON then refuses to load the
-  result with "The user defined name already exists".
-* MOD files whose mechanism NEURON has already registered are skipped. NEURON
-  auto-loads a compiled directory found in the current working directory at
-  import time, which is what the ``nrnivmodl`` step in our example notebooks
-  produces, and mechanisms cannot be registered twice in one process.
+One behaviour is deliberately stricter than neurodamus: duplicate mechanisms
+are resolved by the mechanism name each MOD file *declares*, not just by
+filename. Two differently named files can define the same mechanism (the
+legacy ``VecStim.mod`` and the current ``vecevent.mod`` both declare
+``ARTIFICIAL_CELL VecStim``). ``nrnivmodl`` compiles such a pair without
+complaint and NEURON then refuses to load the result with "The user defined
+name already exists".
 
 Which copy wins when a circuit and BlueCelluLab both supply a mechanism is
 controlled by ``BLUECELLULAB_MOD_PRECEDENCE`` (see `circuit_mods_take_precedence`).
@@ -45,7 +37,7 @@ controlled by ``BLUECELLULAB_MOD_PRECEDENCE`` (see `circuit_mods_take_precedence
 
 from __future__ import annotations
 
-import fcntl
+import argparse
 import hashlib
 import json
 import logging
@@ -55,7 +47,6 @@ import re
 import shutil
 import subprocess  # noqa: S404
 import sys
-import time
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from importlib.util import find_spec
@@ -70,16 +61,9 @@ VERSION = 1
 # Path within the output/cache dir where gathered mod files are placed.
 MOD_FILES_PATH = "mod_files"
 
-# Env var to override the default cache location.
-MOD_BUILD_DIR_ENV_VAR = "BLUECELLULAB_MOD_BUILD_DIR"
-
 # Env var selecting which copy wins when a circuit and BlueCelluLab both
 # provide the same mechanism. "simulator" (default) or "circuit".
 MOD_PRECEDENCE_ENV_VAR = "BLUECELLULAB_MOD_PRECEDENCE"
-
-# How long to wait for another process to finish compiling before giving up.
-_LOCK_TIMEOUT_S = 600
-_LOCK_POLL_INTERVAL_S = 0.5
 
 # NMODL declares the name a file provides with exactly one of these keywords.
 _MECH_DECL_RE = re.compile(
@@ -95,30 +79,7 @@ _COMMENT_BLOCK_RE = re.compile(
 
 
 class ModCompilationError(Exception):
-    """Raised when gathering or compiling MOD files fails.
-
-    `involves_circuit_files` says whether any circuit MOD file was part of
-    what failed. Callers use it to tell a fatal failure (the circuit cannot
-    run without its mechanisms) from a failure to build only BlueCelluLab's
-    bundled files, which may never be needed.
-    """
-
-    def __init__(self, message: str, involves_circuit_files: bool = False):
-        super().__init__(message)
-        self.involves_circuit_files = involves_circuit_files
-
-
-# Mechanisms NEURON registers on its own, without any compiled library loaded
-# (identical in NEURON 8.2 and 9.0). Anything else registered means a user
-# library was loaded, e.g. a compiled directory auto-loaded from the cwd. A
-# built-in added by a future NEURON only makes that check err towards
-# "a library is loaded", i.e. warning instead of raising.
-NEURON_BUILTIN_MECHANISMS = frozenset({
-    "APCount", "AlphaSynapse", "Exp2Syn", "ExpSyn", "IClamp", "IntFire1",
-    "IntFire2", "IntFire4", "NetStim", "OClamp", "PatternStim",
-    "PointProcessMark", "SEClamp", "VClamp", "capacitance", "extracellular",
-    "fastpas", "hh", "k_ion", "morphology", "na_ion", "pas",
-})
+    """Raised when gathering or compiling MOD files fails."""
 
 
 # Passed to nrnivmodl by default. Neurodamus's "Class 1" reporting MOD files
@@ -358,33 +319,13 @@ def select_mod_files(
     return result
 
 
-def default_mod_build_dir(mod_files: dict[Path, str]) -> Path:
-    """Return the cache directory for a given set of mod files.
-
-    Keyed by the names and contents of the files actually being compiled, so
-    that two runs compiling different subsets (for instance one that had to
-    skip mechanisms NEURON already had) never share a directory and
-    invalidate each other's cache. Can be overridden wholesale with the
-    ``BLUECELLULAB_MOD_BUILD_DIR`` environment variable.
-    """
-    if MOD_BUILD_DIR_ENV_VAR in os.environ:
-        return Path(os.environ[MOD_BUILD_DIR_ENV_VAR]).absolute()
-
-    # The NEURON version is part of the key: a library built by one NEURON
-    # release must not be reused after an upgrade.
-    key = f"neuron={neuron_version()}|" + "|".join(
-        f"{p.name}:{h}" for p, h in sorted(mod_files.items(), key=lambda kv: kv[0].name)
-    )
-    digest = hashlib.sha1(key.encode(), usedforsecurity=False).hexdigest()[:16]  # noqa: S324
-    return Path.home() / ".cache" / "bluecellulab" / "mods" / digest
-
-
 def _generate_mod_metadata(mod_files: dict[Path, str], options: Options) -> dict:
     """Create metadata about the compiled mod files, to track cache hits."""
     return {
         "version": VERSION,
         "neuron_version": neuron_version(),
         "hashes": sorted([p.name, hash_] for p, hash_ in mod_files.items()),
+        "sources": sorted(str(p) for p in mod_files),
         **asdict(options),
     }
 
@@ -439,51 +380,6 @@ def _place_mod_files(output_dir: Path, mod_files: Iterable[Path]) -> Path:
     return mod_dir
 
 
-class _CompileLock:
-    """A simple cross-process file lock guarding the compilation step.
-
-    Unlike neurodamus (a single launcher process), BlueCelluLab is commonly
-    used from multiple worker processes (``NestedPool``, MPI ranks) that may
-    try to compile the same circuit's mod files concurrently. This lock makes
-    concurrent callers wait for the first compilation to finish and reuse its
-    result, rather than racing on ``nrnivmodl`` and corrupting the output.
-
-    The lock is an OS-level ``flock`` on ``.compile.lock``, so it is released
-    when the holder exits for any reason, including being killed mid-build.
-    The file itself is left in place: unlinking a file others may be waiting
-    on would let two processes hold "the" lock at once.
-    """
-
-    def __init__(self, output_dir: Path, timeout: float = _LOCK_TIMEOUT_S):
-        self._lock_path = output_dir / ".compile.lock"
-        self._timeout = timeout
-        self._fd: int | None = None
-
-    def __enter__(self) -> "_CompileLock":
-        self._lock_path.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(str(self._lock_path), os.O_CREAT | os.O_RDWR)
-        start = time.monotonic()
-        while True:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                self._fd = fd
-                return self
-            except BlockingIOError:
-                if time.monotonic() - start > self._timeout:
-                    os.close(fd)
-                    raise ModCompilationError(
-                        f"Timed out after {self._timeout}s waiting for another process"
-                        f" to finish compiling (lock {self._lock_path})."
-                    ) from None
-                time.sleep(_LOCK_POLL_INTERVAL_S)
-
-    def __exit__(self, exc_type, exc, tb) -> None:
-        if self._fd is not None:
-            fcntl.flock(self._fd, fcntl.LOCK_UN)
-            os.close(self._fd)
-            self._fd = None
-
-
 def _build_mod_files(
     mod_files: dict[Path, str],
     output_dir: Path,
@@ -499,60 +395,58 @@ def _build_mod_files(
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    with _CompileLock(output_dir):
-        if _check_cache(mod_files, output_dir, options):
-            logger.debug("Mod file cache hit in %s, skipping compilation", output_dir)
-            return _get_dynamic_file(output_dir, "libnrnmech")
+    if _check_cache(mod_files, output_dir, options):
+        logger.info("Mechanisms in %s are up to date, nothing to compile", output_dir)
+        return _get_dynamic_file(output_dir, "libnrnmech")
 
-        nrnivmodl = nrnivmodl_path or shutil.which("nrnivmodl")
-        if not nrnivmodl:
-            raise ModCompilationError("nrnivmodl not found in PATH")
+    nrnivmodl = nrnivmodl_path or shutil.which("nrnivmodl")
+    if not nrnivmodl:
+        raise ModCompilationError("nrnivmodl not found in PATH")
 
-        cmd = [nrnivmodl]
-        if options.incflags:
-            cmd.extend(["-incflags", options.incflags])
-        if options.loadflags:
-            cmd.extend(["-loadflags", options.loadflags])
+    cmd = [nrnivmodl]
+    if options.incflags:
+        cmd.extend(["-incflags", options.incflags])
+    if options.loadflags:
+        cmd.extend(["-loadflags", options.loadflags])
 
-        mod_dir = _place_mod_files(output_dir, mod_files.keys())
-        cmd.append(str(mod_dir))
+    mod_dir = _place_mod_files(output_dir, mod_files.keys())
+    cmd.append(str(mod_dir))
 
-        logger.info("Compiling %d mod file(s) with: %s", len(mod_files), " ".join(cmd))
-        # Output is captured rather than inherited: under Jupyter, `sys.stdout`
-        # and `sys.stderr` are ipykernel streams with no usable file
-        # descriptor, and handing one to a subprocess raises. Capturing also
-        # lets the compiler output be reported as part of the failure.
-        res = subprocess.run(  # noqa: S603
-            cmd,
-            cwd=str(output_dir),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            check=False,
+    logger.info("Compiling %d mod file(s) with: %s", len(mod_files), " ".join(cmd))
+    # Output is captured rather than inherited: under Jupyter, `sys.stdout`
+    # and `sys.stderr` are ipykernel streams with no usable file
+    # descriptor, and handing one to a subprocess raises. Capturing also
+    # lets the compiler output be reported as part of the failure.
+    res = subprocess.run(  # noqa: S603
+        cmd,
+        cwd=str(output_dir),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        check=False,
+    )
+    if res.returncode:
+        raise ModCompilationError(
+            f"Failed to compile mod files (exit code {res.returncode}):\n"
+            f"{res.stdout}"
         )
-        if res.returncode:
-            raise ModCompilationError(
-                f"Failed to compile mod files (exit code {res.returncode}):\n"
-                f"{res.stdout}"
-            )
-        logger.debug("nrnivmodl output:\n%s", res.stdout)
+    logger.debug("nrnivmodl output:\n%s", res.stdout)
 
-        _write_cache(mod_files, output_dir, options)
+    _write_cache(mod_files, output_dir, options)
 
-        libnrnmech = _get_dynamic_file(output_dir, "libnrnmech")
-        if not libnrnmech.exists():
-            raise ModCompilationError(
-                f"{libnrnmech} does not exist after running nrnivmodl, compilation may have failed"
-            )
-        return libnrnmech
+    libnrnmech = _get_dynamic_file(output_dir, "libnrnmech")
+    if not libnrnmech.exists():
+        raise ModCompilationError(
+            f"{libnrnmech} does not exist after running nrnivmodl, compilation may have failed"
+        )
+    return libnrnmech
 
 
 def internal_mods_path() -> Path:
     """Public accessor for BlueCelluLab's bundled technical MOD directory.
 
-    Useful to a caller that compiles mechanisms itself and wants to include
-    these files in its own ``nrnivmodl`` invocation, which is the only way to
-    get a working ``ttx`` modification when the mechanisms are pre-compiled.
+    Useful to a caller that runs ``nrnivmodl`` itself and wants to include
+    these files in that invocation.
     """
     return _internal_mods_path()
 
@@ -599,81 +493,157 @@ def extract_mechanisms_dir(circuit_config_path: str | Path) -> list[Path]:
     return list(paths)
 
 
-def compile_mechanisms(
-    input_dirs: Iterable[str | Path],
-    nrnivmodl_path: str | None = None,
-    options: Options | None = None,
-    include_internal_mods: bool = True,
-    already_registered: Iterable[str] | None = None,
-) -> Path | None:
-    """Discover and compile the mod files needed on top of what NEURON has.
-
-    `input_dirs` are a circuit's mechanisms directories (see
-    `extract_mechanisms_dir`); pass an empty iterable when there is no
-    circuit. BlueCelluLab's own bundled technical mod files are included
-    unless `include_internal_mods` is ``False``, so circuits need not carry
-    them.
-
-    `already_registered` is the set of mechanisms NEURON already knows (see
-    `registered_mechanisms`); those are skipped, because NEURON cannot
-    register a mechanism twice in one process. Pass ``None`` to query NEURON.
-
-    Returns the path to the compiled shared library, or ``None`` when there
-    is nothing left to compile because NEURON already provides everything.
-    """
-    if already_registered is None:
-        already_registered = registered_mechanisms()
-    already_registered = set(already_registered)
-
-    circuit_dirs = [Path(d) for d in input_dirs]
-    missing = [d for d in circuit_dirs if not d.is_dir()]
+def _ordered_input_dirs(
+    input_dirs: Iterable[str | Path], with_internal_mods: bool
+) -> tuple[list[Path], Path | None]:
+    """Return the directories to compile from, in increasing priority."""
+    dirs = [Path(d).absolute() for d in input_dirs]
+    missing = [d for d in dirs if not d.is_dir()]
     if missing:
-        listed = ", ".join(str(d) for d in missing)
-        # With nothing but NEURON's built-ins loaded, the circuit's mechanisms
-        # can only come from these directories, so carrying on would just fail
-        # later, at first use of a missing mechanism, with a worse error. With
-        # a pre-compiled library loaded they may well already be there (an
-        # outdated path that used to work), so only warn.
-        if already_registered <= NEURON_BUILTIN_MECHANISMS:
-            raise ModCompilationError(
-                f"Declared mechanisms_dir does not exist: {listed}",
-                involves_circuit_files=True,
-            )
-        logger.warning(
-            "Declared mechanisms_dir does not exist: %s. Continuing with the"
-            " mechanisms already loaded in NEURON; the circuit will fail at"
-            " first use of any mechanism they do not provide.",
-            listed,
+        raise ModCompilationError(
+            "Mod file directory does not exist: " + ", ".join(str(d) for d in missing)
         )
-        circuit_dirs = [d for d in circuit_dirs if d.is_dir()]
-    internal_dir = _internal_mods_path() if include_internal_mods else None
-
+    internal_dir = _internal_mods_path().absolute() if with_internal_mods else None
     # Later directories win. neurodamus appends its internal mods last, so
     # the simulator's copy overrides the circuit's; inverted on request.
     if internal_dir is None:
-        ordered = circuit_dirs
-    elif circuit_mods_take_precedence():
-        ordered = [internal_dir, *circuit_dirs]
-    else:
-        ordered = [*circuit_dirs, internal_dir]
+        return dirs, None
+    if circuit_mods_take_precedence():
+        return [internal_dir, *dirs], internal_dir
+    return [*dirs, internal_dir], internal_dir
 
-    if not ordered:
-        return None
 
-    mod_files = select_mod_files(ordered, internal_dir, already_registered)
-    if not mod_files:
-        logger.debug("No mod files left to compile, NEURON already has everything needed")
-        return None
+def compile_mods(
+    input_dirs: Iterable[str | Path] = (),
+    circuit_config: str | Path | None = None,
+    output_dir: str | Path = ".",
+    with_internal_mods: bool = True,
+    nrnivmodl_path: str | None = None,
+    options: Options | None = None,
+    load: bool = True,
+) -> Path:
+    """Compile MOD files into ``<output_dir>/<arch>``.
 
+    Takes the MOD files in `input_dirs` and in the ``mechanisms_dir`` of
+    `circuit_config`, plus BlueCelluLab's bundled ones unless
+    `with_internal_mods` is ``False``. Nothing is compiled if the previous
+    build in `output_dir` came from identical files and options.
+
+    With `load` (the default), the library is also loaded into this process
+    if NEURON does not have its mechanisms yet. This makes the function
+    usable from a notebook after ``bluecellulab`` was imported. If an older
+    build is already loaded, NEURON cannot replace it and a warning asks for
+    a restart.
+
+    Returns the path to the compiled library.
+    """
+    dirs = list(input_dirs)
+    if circuit_config is not None:
+        dirs.extend(extract_mechanisms_dir(circuit_config))
+    ordered, internal_dir = _ordered_input_dirs(dirs, with_internal_mods)
+    mod_files = select_mod_files(ordered, internal_dir)
+    output_dir = Path(output_dir).absolute()
     options = options or Options()
-    output_dir = default_mod_build_dir(mod_files)
-    try:
-        return _build_mod_files(mod_files, output_dir, nrnivmodl_path, options)
-    except ModCompilationError as e:
-        # What matters is what was being built, not whether the circuit
-        # declared directories: their files may all be registered already.
-        internal = internal_dir.absolute() if internal_dir is not None else None
-        e.involves_circuit_files = any(
-            internal is None or path.parent != internal for path in mod_files
+    up_to_date = _check_cache(mod_files, output_dir, options)
+    libnrnmech = _build_mod_files(mod_files, output_dir, nrnivmodl_path, options)
+    if load:
+        _load_into_running_neuron(libnrnmech, mod_files, rebuilt=not up_to_date)
+    return libnrnmech
+
+
+def _load_into_running_neuron(
+    libnrnmech: Path, mod_files: dict[Path, str], rebuilt: bool
+) -> None:
+    """Load `libnrnmech` unless NEURON already has its mechanisms."""
+    if "neuron" not in sys.modules:
+        # NEURON loads the folder itself when it is imported.
+        return
+    mechanisms: set[str] = set()
+    for path in mod_files:
+        mechanisms |= declared_mechanisms(path)
+    registered = registered_mechanisms() & mechanisms
+    if not registered:
+        sys.modules["neuron"].h.nrn_load_dll(str(libnrnmech))
+        logger.info("Loaded %s", libnrnmech)
+    elif rebuilt:
+        # Loaded before this rebuild, e.g. auto-loaded from the working
+        # directory at import: the process runs the old build.
+        logger.warning(
+            "NEURON already has mechanisms from the previous build loaded and"
+            " cannot replace them in a running process. Restart the Python"
+            " process or kernel to use the new build in %s.",
+            libnrnmech,
         )
-        raise
+
+
+def changed_mod_files(output_dir: str | Path = ".") -> list[Path]:
+    """Return the source MOD files changed since `output_dir` was compiled.
+
+    Empty if there is no BlueCelluLab build in `output_dir`. A recorded
+    source that was deleted counts as changed.
+    """
+    metadata = _metadata_path(Path(output_dir))
+    if not metadata.exists():
+        return []
+    try:
+        recorded = json.loads(metadata.read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+    hashes = dict(recorded.get("hashes", []))
+    changed = []
+    for source in map(Path, recorded.get("sources", [])):
+        if not source.exists() or _md5sum(source) != hashes.get(source.name):
+            changed.append(source)
+    return changed
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the ``bcl-compile-mods`` argument parser."""
+    parser = argparse.ArgumentParser(
+        prog="bcl-compile-mods",
+        description="Compile MOD files for BlueCelluLab into <output-dir>/<arch>.",
+    )
+    parser.add_argument("dirs", nargs="*", help="Directories with MOD files, as for nrnivmodl")
+    parser.add_argument("--circuit-config", help="Circuit config for `mechanisms_dir` discovery")
+    parser.add_argument(
+        "--input-dir", nargs="*", default=[], help="Same as DIRS (neurodamus-compatible)"
+    )
+    parser.add_argument("--output-dir", default=".", help="Output path (default: .)")
+    parser.add_argument(
+        "--with-internal-mods",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Include BlueCelluLab's bundled mods (default: yes)",
+    )
+    parser.add_argument("--incflags", default=DEFAULT_INCFLAGS, help="`-incflags` for nrnivmodl")
+    parser.add_argument("--loadflags", default="", help="`-loadflags` for nrnivmodl")
+    parser.add_argument("--nrnivmodl", help="Optional path to nrnivmodl")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Entry point of ``bcl-compile-mods``."""
+    args = build_parser().parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    input_dirs = [*args.dirs, *args.input_dir]
+    if not input_dirs and not args.circuit_config and not args.with_internal_mods:
+        build_parser().error("nothing to compile")
+    try:
+        libnrnmech = compile_mods(
+            input_dirs,
+            circuit_config=args.circuit_config,
+            output_dir=args.output_dir,
+            with_internal_mods=args.with_internal_mods,
+            nrnivmodl_path=args.nrnivmodl,
+            options=Options(incflags=args.incflags, loadflags=args.loadflags),
+            load=False,
+        )
+    except ModCompilationError as e:
+        logger.error("%s", e)
+        return 1
+    print(libnrnmech)  # noqa: T201
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

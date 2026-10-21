@@ -253,8 +253,9 @@ class Cell(InjectableMixin, PlottableMixin):
         if "TTXDynamicsSwitch" not in registered_mechanisms():
             raise BluecellulabError(
                 "TTX cannot be applied: the TTXDynamicsSwitch mechanism is not"
-                " available in NEURON. Add TTXDynamicsSwitch.mod to the model's"
-                f" mod files; a copy ships in {internal_mods_path()}."
+                " available in NEURON. Compile the model's mechanisms with"
+                " `bcl-compile-mods`, which includes it (a copy ships"
+                f" in {internal_mods_path()})."
             )
 
     def enable_ttx(self) -> None:

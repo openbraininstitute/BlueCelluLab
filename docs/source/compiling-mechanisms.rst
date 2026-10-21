@@ -5,11 +5,42 @@ Welcome to a brief tutorial on compiling mechanisms in BlueCelluLab!
 
 In order to facilitate smooth simulations with this tool, one must navigate through specific steps, especially given its dependency on the NEURON simulator. This guide aims to detail the necessary steps and considerations for compiling neuron mechanisms in BlueCelluLab.
 
-Automatic Compilation
----------------------
+Compiling with bcl-compile-mods
+----------------------------------------
 
-BlueCelluLab compiles the MOD files it needs and loads them for you, so in most cases you do
-**not** need to run ``nrnivmodl`` yourself. Two sets of files are involved.
+As with neurodamus (``neurodamus-compile-mods``), compiling MOD files is an explicit step run
+before the simulation. BlueCelluLab never compiles on import. Run, in the directory you will run
+the simulation from:
+
+.. code-block:: shell
+
+   # A SONATA circuit: compiles its mechanisms_dir plus BlueCelluLab's bundled files
+   bcl-compile-mods --circuit-config /path/to/circuit_config.json
+
+   # Or plain directories of MOD files
+   bcl-compile-mods /path/to/mod
+
+This builds into ``./<arch>`` (``arm64`` or ``x86_64``), the folder NEURON loads automatically when
+it is imported. The MOD files used are copied to ``./mod_files`` and recorded in
+``./modules.json``. Running the command again with unchanged files does nothing; after you edit a
+MOD file it rebuilds. Use ``--output-dir`` to build elsewhere, and
+``--no-with-internal-mods`` to leave out the bundled files.
+
+From a notebook or script, call the function instead:
+
+.. code-block:: python
+
+   from bluecellulab.mod_compilation import compile_mods
+
+   compile_mods(["/path/to/mod"])  # or compile_mods(circuit_config="circuit_config.json")
+
+Because NEURON can only load mechanisms once per process, ``compile_mods`` loads the new build
+into the running process only if its mechanisms are not loaded yet. If an older build was already
+loaded (for example auto-loaded at import), it logs a warning asking you to restart the kernel.
+
+BlueCelluLab also warns, when it first loads mechanisms, if any MOD file changed since the build in
+the working directory was compiled, and when a SONATA circuit declares mechanisms that are not
+loaded.
 
 Technical MOD files supplied by BlueCelluLab
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -49,7 +80,7 @@ NEURON's own ``IClamp``/``SEClamp``, which is why the two source mechanisms are 
 those.
 
 The first three are used by :class:`bluecellulab.Cell` itself, independently of any circuit, so
-they are supplied for bare single-cell workflows as well as for circuits.
+``bcl-compile-mods`` includes them for single-cell workflows as well as for circuits.
 
 Circuits often ship these same mechanisms under different filenames: ``VecStim.mod`` for
 ``VecStim`` and ``netstim_inhpoisson.mod`` for ``InhPoissonStim``. They are recognised by the
@@ -99,10 +130,10 @@ otherwise fail the whole compilation, so BlueCelluLab passes ``-DDISABLE_REPORTI
 Circuit MOD files (SONATA)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-When you load a SONATA circuit via :class:`bluecellulab.CircuitSimulation`, BlueCelluLab also
-reads the ``mechanisms_dir`` declared under ``components`` in the circuit's
+With ``--circuit-config``, the ``mechanisms_dir`` declared under ``components`` in the circuit's
 ``circuit_config.json`` (see the `SONATA config documentation
-<https://sonata-extension.readthedocs.io/en/latest/sonata_config.html>`_):
+<https://sonata-extension.readthedocs.io/en/latest/sonata_config.html>`_) is compiled together with
+the bundled technical files into a single library:
 
 .. code-block:: json
 
@@ -112,59 +143,16 @@ reads the ``mechanisms_dir`` declared under ``components`` in the circuit's
        }
    }
 
-The ``.mod`` files found there are compiled together with the bundled technical files into a
-single shared library, which is loaded before any cell is instantiated. A relative
-``mechanisms_dir`` is resolved against the directory holding the circuit config, not the current
-working directory.
-
-A ``mechanisms_dir`` set on an individual node or edge population, overriding ``components``, is
-picked up too. A declared ``mechanisms_dir`` that does not exist is an error, raised before
-anything is compiled, unless NEURON already has a compiled library loaded (for example a
-directory you compiled yourself): then it is only a warning, since the mechanisms may already be
-there. The compilation cache is keyed on the NEURON version as well, so upgrading NEURON triggers
-a fresh build.
-
-A compilation failure is an error if any of the circuit's own MOD files were being compiled. If
-only the bundled files were left to compile, because there is no circuit or because all of the
-circuit's mechanisms are already loaded, it is a warning instead, and only the features that need
-them (spike replay, minis, ``ttx``) fail.
-
-If the circuit config does not declare a ``mechanisms_dir``, or declares it as an empty string,
-BlueCelluLab has nothing to discover and compiles only its own bundled files. The circuit's ion
-channel and synapse mechanisms then have to come from somewhere else, normally a directory you
-compiled yourself with ``nrnivmodl`` as described under `Manual Compilation`_.
-
-Caching and concurrency
-^^^^^^^^^^^^^^^^^^^^^^^
-
-The compiled library is cached under ``~/.cache/bluecellulab/mods/`` by default, keyed by the
-names and contents of the files actually compiled plus the compilation options, so subsequent runs
-reuse it instead of recompiling. Relocate the cache with the ``BLUECELLULAB_MOD_BUILD_DIR``
-environment variable.
-
-If two processes try to compile the same set of files at once (multiple MPI ranks, or parallel
-workers), the first to start wins and the others wait for it and reuse the result, rather than
-racing on ``nrnivmodl``. The wait uses an OS-level file lock, which is released if the compiling
-process is killed, so a crashed build never blocks later runs.
+A relative ``mechanisms_dir`` is resolved against the directory holding the circuit config. A
+``mechanisms_dir`` set on an individual node or edge population is picked up too. A declared
+directory that does not exist is an error.
 
 Pre-compiling for a service
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-If you compile a model's MOD files yourself, for example in a container image, copy every file
-from :func:`bluecellulab.mod_compilation.internal_mods_path` into the same directory before running
-``nrnivmodl``. BlueCelluLab then finds all of its mechanisms already registered and compiles
-nothing at runtime. Anything left out is compiled on first use into the user cache directory,
-which in a container is usually local and lost between runs.
-
-Mechanisms NEURON already has are left alone
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-NEURON cannot register a mechanism twice in one process, and it automatically loads an
-architecture-specific folder found in the current working directory when it is imported. So
-BlueCelluLab only compiles and loads what NEURON does not already provide.
-
-This means a directory you compiled by hand with ``nrnivmodl`` keeps working exactly as before:
-whatever it provides takes precedence, and BlueCelluLab fills in only what is missing.
+If you run ``nrnivmodl`` yourself, for example in a container image, copy every file from
+:func:`bluecellulab.mod_compilation.internal_mods_path` into the same directory first, or simply
+use ``bcl-compile-mods``, which does this for you.
 
 Duplicate mechanisms
 ^^^^^^^^^^^^^^^^^^^^
@@ -172,9 +160,9 @@ Duplicate mechanisms
 Two MOD files can define the same mechanism under different filenames. The clearest example is the
 legacy ``VecStim.mod`` and its successor ``vecevent.mod``, which both declare
 ``ARTIFICIAL_CELL VecStim``. ``nrnivmodl`` compiles such a pair without complaint, and NEURON then
-refuses to load the result with *"The user defined name already exists"*. BlueCelluLab therefore
-resolves duplicates by the mechanism name each file declares, not just by filename, and compiles
-only one of them.
+refuses to load the result with *"The user defined name already exists"*.
+``bcl-compile-mods`` therefore resolves duplicates by the mechanism name each file
+declares, not just by filename, and compiles only one of them.
 
 By default BlueCelluLab's own copy wins, as in neurodamus, and a warning names the circuit file
 that was skipped. To keep a circuit's own copy instead, for example to reproduce results from a
@@ -185,35 +173,13 @@ circuit shipping a customised technical MOD file, set:
    export BLUECELLULAB_MOD_PRECEDENCE=circuit
 
 ``BLUECELLULAB_MOD_PRECEDENCE`` takes one of two keywords, ``simulator`` (the default) or
-``circuit``. It is **not** a path, unlike ``BLUECELLULAB_MOD_LIBRARY_PATH`` and
-``BLUECELLULAB_MOD_BUILD_DIR``. Any other value is ignored with a warning, and ``simulator`` is
-used.
-
-This only changes which copy is used where both the circuit and BlueCelluLab provide the same
-mechanism. BlueCelluLab still fills in any technical mechanism the circuit does not provide.
-
-To leave out the bundled files altogether, call the compilation entry point directly:
-
-.. code-block:: python
-
-   from bluecellulab.mod_compilation import compile_mechanisms
-
-   compile_mechanisms(["/path/to/mod"], include_internal_mods=False)
-
-Be aware that this can reintroduce ``not a MECHANISM`` errors for any feature whose mechanism is
-then missing, so prefer ``BLUECELLULAB_MOD_PRECEDENCE`` unless you are deliberately taking over
-the whole set.
-
-Note that, like any NEURON mechanism library, mod files can only be loaded once per Python
-process. If your workflow instantiates more than one :class:`bluecellulab.CircuitSimulation` for
-*different* circuits in the same process, only the mod files from whichever circuit is loaded
-first will take effect; BlueCelluLab logs a warning if it detects this situation.
+``circuit``. Any other value is ignored with a warning, and ``simulator`` is used.
 
 Manual Compilation
 ------------------
 
-You can still compile mechanisms yourself, and anything you provide this way takes precedence over
-BlueCelluLab's automatic compilation. The rest of this page describes that workflow.
+You can still run ``nrnivmodl`` yourself; BlueCelluLab loads the result the same way. You then
+have to include the bundled technical files and avoid duplicate mechanisms yourself.
 
 Importance of the Working Directory
 -----------------------------------
@@ -267,21 +233,5 @@ Important Note on Path Specification
 ------------------------------------
 
 Be mindful to adhere to the condition that **either** the current working directory should contain the compiled mechanisms **or** the ``BLUECELLULAB_MOD_LIBRARY_PATH`` environment variable should be set—**not both**. Setting the environment variable and importing BlueCelluLab from a directory containing (e.g.) an "x86_64" folder results in an error.
-
-In summary, BlueCelluLab resolves mechanisms in the following order:
-
-1. ``BLUECELLULAB_MOD_LIBRARY_PATH``, if set. The library it points at is loaded verbatim and
-   nothing else happens: no discovery, no compilation. This is the full manual override.
-2. Otherwise, whatever NEURON already provides is kept, including an architecture-specific folder
-   ("x86_64", etc.) in the current working directory that NEURON auto-loads on import.
-3. Anything still missing is compiled and loaded: the ``mechanisms_dir`` of a SONATA circuit if one
-   is being used, plus BlueCelluLab's own bundled technical MOD files.
-
-Steps 2 and 3 cooperate rather than conflict, so a hand-compiled directory and BlueCelluLab's
-automatic compilation can coexist.
-
-If a circuit declares mechanisms that cannot be compiled, that is an error: the simulation cannot
-run without them. Failing to compile only BlueCelluLab's own bundled files is logged as a warning
-instead, since a given script may never use the features that need them.
 
 May your simulations run smoothly with BlueCelluLab!

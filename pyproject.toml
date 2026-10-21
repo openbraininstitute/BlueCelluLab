@@ -47,6 +47,9 @@ dependencies = [
 ]
 requires-python = ">=3.10"
 
+[project.scripts]
+bcl-compile-mods = "bluecellulab.mod_compilation:main"
+
 [project.optional-dependencies]
 examples = [
     "ipywidgets",

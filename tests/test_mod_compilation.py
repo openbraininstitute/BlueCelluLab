@@ -253,21 +253,6 @@ def test_default_incflags_disables_reportinglib():
     assert Options().incflags == mc.DEFAULT_INCFLAGS
 
 
-def test_compile_mechanisms_passes_default_incflags(tmp_path, monkeypatch):
-    monkeypatch.setenv(mc.MOD_BUILD_DIR_ENV_VAR, str(tmp_path / "cache"))
-
-    def fake_run(cmd, **kwargs):
-        write(mc._get_dynamic_file(tmp_path / "cache", "libnrnmech"), b"")
-        return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="")
-
-    with patch("bluecellulab.mod_compilation.subprocess.run", side_effect=fake_run) as mock_run:
-        mc.compile_mechanisms([], nrnivmodl_path="echo", already_registered=set())
-
-    cmd = mock_run.call_args[0][0]
-    assert "-incflags" in cmd
-    assert mc.DEFAULT_INCFLAGS in cmd
-
-
 def test_select_mod_files_returns_md5sums(tmp_path):
     d = tmp_path / "mods"
     path = write(d / "a.mod", b"hello")
@@ -278,31 +263,6 @@ def test_select_mod_files_returns_md5sums(tmp_path):
 # --------------------------------------------------------------------------
 # cache keying
 # --------------------------------------------------------------------------
-
-
-def test_default_mod_build_dir_env_override(tmp_path, monkeypatch):
-    monkeypatch.setenv(mc.MOD_BUILD_DIR_ENV_VAR, str(tmp_path / "custom"))
-    assert mc.default_mod_build_dir({}) == (tmp_path / "custom").absolute()
-
-
-def test_default_mod_build_dir_keyed_on_selected_files(monkeypatch):
-    """Two runs compiling different file sets must not share a cache dir.
-
-    Keying on the input directories instead would make a run that skipped
-    some mechanisms invalidate the cache of a run that did not.
-    """
-    monkeypatch.delenv(mc.MOD_BUILD_DIR_ENV_VAR, raising=False)
-    full = {Path("/x/a.mod"): "h1", Path("/x/b.mod"): "h2"}
-    subset = {Path("/x/a.mod"): "h1"}
-    reordered = {Path("/x/b.mod"): "h2", Path("/x/a.mod"): "h1"}
-    moved = {Path("/other/a.mod"): "h1", Path("/other/b.mod"): "h2"}
-    changed = {Path("/x/a.mod"): "h1", Path("/x/b.mod"): "DIFFERENT"}
-
-    assert mc.default_mod_build_dir(full) == mc.default_mod_build_dir(reordered)
-    # Same names and contents from elsewhere compile to the same thing.
-    assert mc.default_mod_build_dir(full) == mc.default_mod_build_dir(moved)
-    assert mc.default_mod_build_dir(full) != mc.default_mod_build_dir(subset)
-    assert mc.default_mod_build_dir(full) != mc.default_mod_build_dir(changed)
 
 
 def test__metadata_path(tmp_path):
@@ -566,234 +526,9 @@ def test_extract_mechanisms_dir_is_ordered_and_deduplicated(tmp_path):
     assert mc.extract_mechanisms_dir(config) == [node_dir.absolute()]
 
 
-def test_compile_mechanisms_missing_declared_dir_raises(tmp_path):
-    """A declared but absent mechanisms_dir must fail now, not at first use."""
-    with patch("bluecellulab.mod_compilation._build_mod_files") as mock_build:
-        with pytest.raises(mc.ModCompilationError, match="does not exist") as excinfo:
-            mc.compile_mechanisms(
-                [tmp_path / "missing"], already_registered={"pas", "hh"}
-            )
-    assert excinfo.value.involves_circuit_files
-    mock_build.assert_not_called()
-
-
-def test_compile_mechanisms_missing_declared_dir_warns_if_library_loaded(
-    tmp_path, caplog
-):
-    """With a pre-compiled library loaded, an outdated path may be harmless."""
-    with patch("bluecellulab.mod_compilation._build_mod_files") as mock_build:
-        with caplog.at_level(logging.WARNING):
-            mc.compile_mechanisms(
-                [tmp_path / "missing"],
-                include_internal_mods=False,
-                already_registered={"pas", "NaTs2_t"},
-            )
-    assert "does not exist" in caplog.text
-    mock_build.assert_not_called()
-
-
-@pytest.mark.parametrize("circuit_file_left, expected", [(False, False), (True, True)])
-def test_compile_failure_reports_whether_circuit_files_were_involved(
-    tmp_path, circuit_file_left, expected
-):
-    """Fatal only if a circuit file was part of the failed build: when the
-    circuit's mechanisms are all registered, only the bundled ones remain."""
-    circuit = tmp_path / "circuit"
-    write(circuit / "Chan.mod", mod("Chan", "Chan", keyword="SUFFIX"))
-    registered = {"pas"} if circuit_file_left else {"pas", "Chan"}
-    with patch(
-        "bluecellulab.mod_compilation._build_mod_files",
-        side_effect=mc.ModCompilationError("boom"),
-    ):
-        with patch("bluecellulab.mod_compilation.default_mod_build_dir", return_value=tmp_path):
-            with pytest.raises(mc.ModCompilationError) as excinfo:
-                mc.compile_mechanisms([circuit], already_registered=registered)
-    assert excinfo.value.involves_circuit_files is expected
-
-
-def test_cache_key_and_metadata_include_neuron_version(monkeypatch, tmp_path):
-    """A library built by one NEURON release must not be reused by another."""
-    monkeypatch.delenv(mc.MOD_BUILD_DIR_ENV_VAR, raising=False)
-    mod_files = {tmp_path / "a.mod": "h1"}
-    options = Options()
-
-    with patch("bluecellulab.mod_compilation.neuron_version", return_value="9.0.1"):
-        dir_old = mc.default_mod_build_dir(mod_files)
-        meta_old = mc._generate_mod_metadata(mod_files, options)
-    with patch("bluecellulab.mod_compilation.neuron_version", return_value="9.1.0"):
-        dir_new = mc.default_mod_build_dir(mod_files)
-        meta_new = mc._generate_mod_metadata(mod_files, options)
-
-    assert dir_old != dir_new
-    assert meta_old != meta_new
-    assert meta_new["neuron_version"] == "9.1.0"
-
-
 # --------------------------------------------------------------------------
-# compile_mechanisms
+# bundled mod files and NEURON queries
 # --------------------------------------------------------------------------
-
-
-def test_internal_mods_path_exists_and_contains_expected_files():
-    """BlueCelluLab bundles the shared "Class 2" technical mod files that
-    neurodamus also bundles internally (vecevent, TTX switch, etc.), so
-    circuits don't need to carry them in their own mechanisms_dir.
-
-    See https://github.com/openbraininstitute/prod-build-circuit/issues/32
-    """
-    path = mc._internal_mods_path()
-    assert path.exists()
-    names = {f.name for f in path.glob("*.mod")}
-    assert names == {
-        "vecevent.mod",
-        "TTXDynamicsSwitch.mod",
-        "InhPoissonStim.mod",
-        "ConductanceSource.mod",
-        "MembraneCurrentSource.mod",
-    }
-
-
-def test_compile_mechanisms_empty_input_without_internal_mods():
-    assert (
-        mc.compile_mechanisms(
-            [], include_internal_mods=False, already_registered=set()
-        )
-        is None
-    )
-
-
-def test_compile_mechanisms_returns_none_when_nothing_left(tmp_path):
-    """Everything we would supply is already registered in NEURON."""
-    already = {
-        "VecStim",
-        "TTXDynamicsSwitch",
-        "InhPoissonStim",
-        "ConductanceSource",
-        "MembraneCurrentSource",
-    }
-    with patch("bluecellulab.mod_compilation._build_mod_files") as mock_build:
-        assert mc.compile_mechanisms([], already_registered=already) is None
-    mock_build.assert_not_called()
-
-
-def test_compile_mechanisms_includes_internal_mods_by_default(tmp_path, monkeypatch):
-    """With no circuit dirs, the bundled technical mod files are still built."""
-    monkeypatch.setenv(mc.MOD_BUILD_DIR_ENV_VAR, str(tmp_path / "cache"))
-
-    def fake_run(cmd, **kwargs):
-        write(mc._get_dynamic_file(tmp_path / "cache", "libnrnmech"), b"")
-        return subprocess.CompletedProcess(args=cmd, returncode=0)
-
-    with patch("bluecellulab.mod_compilation.subprocess.run", side_effect=fake_run) as mock_run:
-        result = mc.compile_mechanisms(
-            [], nrnivmodl_path="echo", already_registered=set()
-        )
-
-    assert result == mc._get_dynamic_file(tmp_path / "cache", "libnrnmech")
-    staged = Path(mock_run.call_args[0][0][-1])
-    assert {f.name for f in staged.glob("*.mod")} == {
-        "vecevent.mod",
-        "TTXDynamicsSwitch.mod",
-        "InhPoissonStim.mod",
-        "ConductanceSource.mod",
-        "MembraneCurrentSource.mod",
-    }
-
-
-def test_compile_mechanisms_combines_circuit_and_internal_mods(tmp_path, monkeypatch):
-    monkeypatch.setenv(mc.MOD_BUILD_DIR_ENV_VAR, str(tmp_path / "cache"))
-    circuit = tmp_path / "inputs"
-    write(circuit / "Ca.mod", mod("Ca", "Ca", "SUFFIX"))
-
-    def fake_run(cmd, **kwargs):
-        write(mc._get_dynamic_file(tmp_path / "cache", "libnrnmech"), b"")
-        return subprocess.CompletedProcess(args=cmd, returncode=0)
-
-    with patch("bluecellulab.mod_compilation.subprocess.run", side_effect=fake_run) as mock_run:
-        mc.compile_mechanisms([circuit], nrnivmodl_path="echo", already_registered=set())
-
-    staged = Path(mock_run.call_args[0][0][-1])
-    assert {f.name for f in staged.glob("*.mod")} == {
-        "Ca.mod",
-        "vecevent.mod",
-        "TTXDynamicsSwitch.mod",
-        "InhPoissonStim.mod",
-        "ConductanceSource.mod",
-        "MembraneCurrentSource.mod",
-    }
-
-
-def test_compile_mechanisms_include_internal_mods_false_uses_only_input_dirs(tmp_path, monkeypatch):
-    monkeypatch.setenv(mc.MOD_BUILD_DIR_ENV_VAR, str(tmp_path / "cache"))
-    input_dir = tmp_path / "inputs"
-    write(input_dir / "a.mod", mod("a", "A", "SUFFIX"))
-
-    def fake_run(cmd, **kwargs):
-        write(mc._get_dynamic_file(tmp_path / "cache", "libnrnmech"), b"")
-        return subprocess.CompletedProcess(args=cmd, returncode=0)
-
-    with patch("bluecellulab.mod_compilation.subprocess.run", side_effect=fake_run) as mock_run:
-        mc.compile_mechanisms(
-            [input_dir],
-            nrnivmodl_path="echo",
-            include_internal_mods=False,
-            already_registered=set(),
-        )
-
-    staged = Path(mock_run.call_args[0][0][-1])
-    assert {f.name for f in staged.glob("*.mod")} == {"a.mod"}
-
-
-def test_compile_mechanisms_precedence_env_var_selects_circuit_copy(tmp_path, monkeypatch):
-    """End to end: the escape hatch keeps a circuit's own technical mod."""
-    monkeypatch.setenv(mc.MOD_BUILD_DIR_ENV_VAR, str(tmp_path / "cache"))
-    monkeypatch.setenv(mc.MOD_PRECEDENCE_ENV_VAR, "circuit")
-    circuit = tmp_path / "inputs"
-    write(circuit / "VecStim.mod", mod("legacy", "VecStim", "ARTIFICIAL_CELL"))
-
-    def fake_run(cmd, **kwargs):
-        write(mc._get_dynamic_file(tmp_path / "cache", "libnrnmech"), b"")
-        return subprocess.CompletedProcess(args=cmd, returncode=0)
-
-    with patch("bluecellulab.mod_compilation.subprocess.run", side_effect=fake_run) as mock_run:
-        mc.compile_mechanisms([circuit], nrnivmodl_path="echo", already_registered=set())
-
-    staged = {f.name for f in Path(mock_run.call_args[0][0][-1]).glob("*.mod")}
-    assert "VecStim.mod" in staged
-    assert "vecevent.mod" not in staged
-
-
-def test_compile_mechanisms_default_precedence_selects_bundled_copy(tmp_path, monkeypatch):
-    monkeypatch.setenv(mc.MOD_BUILD_DIR_ENV_VAR, str(tmp_path / "cache"))
-    monkeypatch.delenv(mc.MOD_PRECEDENCE_ENV_VAR, raising=False)
-    circuit = tmp_path / "inputs"
-    write(circuit / "VecStim.mod", mod("legacy", "VecStim", "ARTIFICIAL_CELL"))
-
-    def fake_run(cmd, **kwargs):
-        write(mc._get_dynamic_file(tmp_path / "cache", "libnrnmech"), b"")
-        return subprocess.CompletedProcess(args=cmd, returncode=0)
-
-    with patch("bluecellulab.mod_compilation.subprocess.run", side_effect=fake_run) as mock_run:
-        mc.compile_mechanisms([circuit], nrnivmodl_path="echo", already_registered=set())
-
-    staged = {f.name for f in Path(mock_run.call_args[0][0][-1]).glob("*.mod")}
-    assert "vecevent.mod" in staged
-    assert "VecStim.mod" not in staged
-
-
-def test_compile_mechanisms_queries_neuron_when_not_told(tmp_path, monkeypatch):
-    """`already_registered=None` falls back to asking NEURON."""
-    monkeypatch.setenv(mc.MOD_BUILD_DIR_ENV_VAR, str(tmp_path / "cache"))
-
-    with patch(
-        "bluecellulab.mod_compilation.registered_mechanisms", return_value={"VecStim"}
-    ) as mock_reg:
-        with patch("bluecellulab.mod_compilation._build_mod_files") as mock_build:
-            mc.compile_mechanisms([], already_registered=None)
-
-    mock_reg.assert_called_once()
-    staged = mock_build.call_args[0][0]
-    assert "vecevent.mod" not in {p.name for p in staged}
 
 
 def test_registered_mechanisms_reports_builtins():
@@ -803,47 +538,181 @@ def test_registered_mechanisms_reports_builtins():
     assert "hh" in names
 
 
-class TestCompileLock:
-    # Holds the lock in a separate process until killed or told to exit.
-    _HOLDER = (
-        "import fcntl, os, sys, time\n"
-        "fd = os.open(sys.argv[1], os.O_CREAT | os.O_RDWR)\n"
-        "fcntl.flock(fd, fcntl.LOCK_EX)\n"
-        "print('locked', flush=True)\n"
-        "time.sleep(60)\n"
-    )
+# --------------------------------------------------------------------------
+# compile_mods / CLI
+# --------------------------------------------------------------------------
 
-    def _hold_in_child(self, tmp_path):
-        proc = subprocess.Popen(
-            [sys.executable, "-c", self._HOLDER, str(tmp_path / ".compile.lock")],
-            stdout=subprocess.PIPE,
-            text=True,
-        )
-        assert proc.stdout.readline().strip() == "locked"
-        return proc
 
-    def test_lock_is_released_after_use(self, tmp_path):
-        with mc._CompileLock(tmp_path):
-            pass
-        with mc._CompileLock(tmp_path, timeout=0):
-            pass
+def _fake_nrnivmodl(cmd, cwd, **_):
+    lib = Path(cwd) / platform.machine() / f"libnrnmech{'.dylib' if sys.platform == 'darwin' else '.so'}"
+    lib.parent.mkdir(parents=True, exist_ok=True)
+    lib.write_text("lib")
+    return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="")
 
-    def test_lock_times_out_if_held(self, tmp_path):
-        proc = self._hold_in_child(tmp_path)
-        try:
-            with patch.object(mc, "_LOCK_POLL_INTERVAL_S", 0.01):
-                with pytest.raises(mc.ModCompilationError, match="Timed out"):
-                    with mc._CompileLock(tmp_path, timeout=0.05):
-                        pass  # pragma: no cover
-        finally:
-            proc.kill()
-            proc.wait()
 
-    def test_lock_is_released_when_holder_is_killed(self, tmp_path):
-        """A crashed compile must not block later processes."""
-        proc = self._hold_in_child(tmp_path)
-        proc.kill()
-        proc.wait()
-        assert (tmp_path / ".compile.lock").exists()
-        with mc._CompileLock(tmp_path, timeout=0):
-            pass
+def _compile(*args, **kwargs):
+    with patch(
+        "bluecellulab.mod_compilation.subprocess.run", side_effect=_fake_nrnivmodl
+    ) as run:
+        result = mc.compile_mods(*args, nrnivmodl_path="nrnivmodl", load=False, **kwargs)
+    return result, run
+
+
+def _compiled_names(output_dir):
+    return sorted(p.name for p in (output_dir / mc.MOD_FILES_PATH).glob("*.mod"))
+
+
+def test_metadata_includes_neuron_version(monkeypatch, tmp_path):
+    path = write(tmp_path / "a.mod", mod("a", "A"))
+    monkeypatch.setattr(mc, "neuron_version", lambda: "8.2.4")
+    old = mc._generate_mod_metadata({path: "h"}, Options())
+    monkeypatch.setattr(mc, "neuron_version", lambda: "9.0.0")
+    new = mc._generate_mod_metadata({path: "h"}, Options())
+    assert old["neuron_version"] == "8.2.4" and new["neuron_version"] == "9.0.0"
+
+
+def test_internal_mods_path_exists_and_contains_expected_files():
+    path = mc.internal_mods_path()
+    names = {p.name for p in path.glob("*.mod")}
+    assert {"vecevent.mod", "InhPoissonStim.mod", "TTXDynamicsSwitch.mod"} <= names
+
+
+def test_compile_mods_into_output_dir_with_internal_mods(tmp_path):
+    circuit = tmp_path / "circuit"
+    write(circuit / "Chan.mod", mod("Chan", "Chan", keyword="SUFFIX"))
+    out = tmp_path / "out"
+    lib, run = _compile([circuit], output_dir=out)
+    assert lib.parent == out / platform.machine()
+    assert "Chan.mod" in _compiled_names(out)
+    assert "vecevent.mod" in _compiled_names(out)
+    assert run.call_args.kwargs["cwd"] == str(out)
+    assert "-DDISABLE_REPORTINGLIB" in run.call_args.args[0]
+
+
+def test_compile_mods_without_internal_mods(tmp_path):
+    circuit = tmp_path / "circuit"
+    write(circuit / "Chan.mod", mod("Chan", "Chan", keyword="SUFFIX"))
+    _compile([circuit], output_dir=tmp_path / "out", with_internal_mods=False)
+    assert _compiled_names(tmp_path / "out") == ["Chan.mod"]
+
+
+def test_compile_mods_skips_unchanged_and_rebuilds_on_change(tmp_path):
+    circuit = tmp_path / "circuit"
+    chan = write(circuit / "Chan.mod", mod("Chan", "Chan", keyword="SUFFIX"))
+    out = tmp_path / "out"
+    _compile([circuit], output_dir=out)
+    _, run = _compile([circuit], output_dir=out)
+    run.assert_not_called()
+    write(chan, mod("Chan", "Chan", keyword="SUFFIX", extra=": edited\n"))
+    _, run = _compile([circuit], output_dir=out)
+    run.assert_called_once()
+
+
+def test_compile_mods_dedups_legacy_vecstim(tmp_path, caplog):
+    """A circuit's legacy VecStim.mod must not be compiled next to vecevent.mod."""
+    circuit = tmp_path / "circuit"
+    write(circuit / "VecStim.mod", mod("VecStim", "VecStim", keyword="ARTIFICIAL_CELL"))
+    with caplog.at_level(logging.WARNING):
+        _compile([circuit], output_dir=tmp_path / "out")
+    names = _compiled_names(tmp_path / "out")
+    assert "vecevent.mod" in names and "VecStim.mod" not in names
+
+
+def test_compile_mods_precedence_env_keeps_circuit_copy(tmp_path, monkeypatch):
+    monkeypatch.setenv(mc.MOD_PRECEDENCE_ENV_VAR, "circuit")
+    circuit = tmp_path / "circuit"
+    write(circuit / "VecStim.mod", mod("VecStim", "VecStim", keyword="ARTIFICIAL_CELL"))
+    _compile([circuit], output_dir=tmp_path / "out")
+    names = _compiled_names(tmp_path / "out")
+    assert "VecStim.mod" in names and "vecevent.mod" not in names
+
+
+def test_compile_mods_reads_circuit_config(tmp_path):
+    node_dir = tmp_path / "node_mods"
+    write(node_dir / "Chan.mod", mod("Chan", "Chan", keyword="SUFFIX"))
+    config = _write_circuit_config(tmp_path, node_dir=node_dir)
+    _compile(circuit_config=config, output_dir=tmp_path / "out")
+    assert "Chan.mod" in _compiled_names(tmp_path / "out")
+
+
+def test_compile_mods_missing_dir_raises(tmp_path):
+    with pytest.raises(mc.ModCompilationError, match="does not exist"):
+        _compile([tmp_path / "missing"], output_dir=tmp_path / "out")
+
+
+class TestLoadIntoRunningNeuron:
+    def _lib(self, tmp_path):
+        path = write(tmp_path / "Chan.mod", mod("Chan", "Chan", keyword="SUFFIX"))
+        return tmp_path / "lib.so", {path: "h"}
+
+    def test_loads_when_mechanisms_absent(self, tmp_path):
+        lib, files = self._lib(tmp_path)
+        with patch.object(mc, "registered_mechanisms", return_value={"pas"}):
+            with patch("neuron.h") as h:
+                mc._load_into_running_neuron(lib, files, rebuilt=True)
+        h.nrn_load_dll.assert_called_once_with(str(lib))
+
+    def test_warns_to_restart_after_rebuild(self, tmp_path, caplog):
+        lib, files = self._lib(tmp_path)
+        with patch.object(mc, "registered_mechanisms", return_value={"Chan"}):
+            with patch("neuron.h") as h, caplog.at_level(logging.WARNING):
+                mc._load_into_running_neuron(lib, files, rebuilt=True)
+        h.nrn_load_dll.assert_not_called()
+        assert "Restart" in caplog.text
+
+    def test_silent_when_same_build_already_loaded(self, tmp_path, caplog):
+        lib, files = self._lib(tmp_path)
+        with patch.object(mc, "registered_mechanisms", return_value={"Chan"}):
+            with patch("neuron.h") as h, caplog.at_level(logging.WARNING):
+                mc._load_into_running_neuron(lib, files, rebuilt=False)
+        h.nrn_load_dll.assert_not_called()
+        assert caplog.text == ""
+
+
+def test_changed_mod_files(tmp_path):
+    circuit = tmp_path / "circuit"
+    chan = write(circuit / "Chan.mod", mod("Chan", "Chan", keyword="SUFFIX"))
+    out = tmp_path / "out"
+    assert mc.changed_mod_files(out) == []
+    _compile([circuit], output_dir=out, with_internal_mods=False)
+    assert mc.changed_mod_files(out) == []
+    write(chan, mod("Chan", "Chan", keyword="SUFFIX", extra=": edited\n"))
+    assert mc.changed_mod_files(out) == [chan.absolute()]
+    chan.unlink()
+    assert mc.changed_mod_files(out) == [chan.absolute()]
+
+
+def test_changed_mod_files_ignores_corrupt_metadata(tmp_path):
+    write(tmp_path / "modules.json", "{not json")
+    assert mc.changed_mod_files(tmp_path) == []
+
+
+class TestMain:
+    def test_compiles_and_prints_library(self, tmp_path, capsys):
+        circuit = tmp_path / "circuit"
+        write(circuit / "Chan.mod", mod("Chan", "Chan", keyword="SUFFIX"))
+        with patch(
+            "bluecellulab.mod_compilation.subprocess.run", side_effect=_fake_nrnivmodl
+        ):
+            with patch("bluecellulab.mod_compilation.shutil.which", return_value="nrnivmodl"):
+                rc = mc.main(["--input-dir", str(circuit), "--output-dir", str(tmp_path / "out")])
+        assert rc == 0
+        assert platform.machine() in capsys.readouterr().out
+
+    def test_positional_dirs_like_nrnivmodl(self, tmp_path):
+        circuit = tmp_path / "circuit"
+        write(circuit / "Chan.mod", mod("Chan", "Chan", keyword="SUFFIX"))
+        out = tmp_path / "out"
+        with patch(
+            "bluecellulab.mod_compilation.subprocess.run", side_effect=_fake_nrnivmodl
+        ):
+            with patch("bluecellulab.mod_compilation.shutil.which", return_value="nrnivmodl"):
+                assert mc.main([str(circuit), "--output-dir", str(out)]) == 0
+        assert "Chan.mod" in _compiled_names(out)
+
+    def test_error_returns_nonzero(self, tmp_path):
+        assert mc.main(["--input-dir", str(tmp_path / "missing")]) == 1
+
+    def test_nothing_to_compile_is_usage_error(self):
+        with pytest.raises(SystemExit):
+            mc.main(["--no-with-internal-mods"])
