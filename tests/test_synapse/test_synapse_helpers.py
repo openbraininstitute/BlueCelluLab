@@ -21,7 +21,7 @@ from bluecellulab.synapse.synapse_types import (
 from bluecellulab.synapse.synapse_helpers import build_helper_params
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def real_mods_loaded():
     """Load the real mod files before tests swap ``neuron.h`` for a stub.
 
@@ -666,7 +666,7 @@ def test_generic_spike_synapse_update_removes_invalid_optional_values():
     assert result[SynapseProperty.U_SYN] == 2.0
 
 
-def test_generic_spike_synapse_builds_from_helper(monkeypatch, real_mods_loaded):
+def test_generic_spike_synapse_builds_from_helper(monkeypatch):
     active_section = {}
 
     class Section:
@@ -782,7 +782,7 @@ def test_no_override_ignores_plasticity_columns(monkeypatch):
     assert _create_with_override(monkeypatch, description, None) == "AmpanmdaSynapse"
 
 
-def test_generic_spike_synapse_rejects_helper_without_synapse(monkeypatch, real_mods_loaded):
+def test_generic_spike_synapse_rejects_helper_without_synapse(monkeypatch):
     class Section:
         def push(self):
             pass
@@ -864,7 +864,7 @@ def test_missing_needed_attribute_raises_before_helper(monkeypatch, description)
     assert calls == []
 
 
-def test_needed_attributes_present_builds(monkeypatch, real_mods_loaded):
+def test_needed_attributes_present_builds(monkeypatch):
     synapse, calls = _helper_synapse(
         monkeypatch, {"w_corr": 0.1, "tau_corr": 2.0}, "w_corr;tau_corr;maskValue"
     )
