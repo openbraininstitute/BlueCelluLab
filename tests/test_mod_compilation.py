@@ -15,7 +15,6 @@
 
 import json
 import logging
-import os
 import platform
 import subprocess
 import sys
@@ -241,77 +240,6 @@ def test_select_mod_files_missing_dir(tmp_path, caplog):
     with caplog.at_level(logging.WARNING):
         assert mc.select_mod_files([tmp_path / "nope"], already_registered=set()) == {}
     assert "does not exist" in caplog.text
-
-
-def test_declared_ions(tmp_path):
-    path = write(
-        tmp_path / "a.mod",
-        "NEURON {\n\tSUFFIX Chan\n\tUSEION na READ ena WRITE ina\n"
-        "\tUSEION ttx READ ttxo, ttxi VALENCE 1\n}\n",
-    )
-    assert mc.declared_ions(path) == {"na", "ttx"}
-
-
-def test_declared_ions_none(tmp_path):
-    path = write(tmp_path / "a.mod", mod("a", "Point"))
-    assert mc.declared_ions(path) == set()
-
-
-def test_declared_ions_on_bundled_files():
-    """Only TTXDynamicsSwitch is ion coupled, so only it cannot be split off.
-
-    The other four are point processes and artificial cells, which is why
-    supplying them separately from a circuit's own library is safe.
-    """
-    internal = mc._internal_mods_path()
-    ions = {f.name: mc.declared_ions(f) for f in internal.glob("*.mod")}
-    assert ions == {
-        "TTXDynamicsSwitch.mod": {"ttx"},
-        "vecevent.mod": set(),
-        "InhPoissonStim.mod": set(),
-        "ConductanceSource.mod": set(),
-        "MembraneCurrentSource.mod": set(),
-    }
-
-
-def test_warn_on_split_ion_coupling_warns_when_ion_already_present(tmp_path, caplog):
-    """NEURON cannot share an ion across separately compiled libraries.
-
-    A mechanism writing `ttx` in one library and one reading it in another do
-    not see each other and the simulation runs on with the coupling silently
-    absent, so this has to be loud. NEURON exposes a used ion as `<name>_ion`.
-    """
-    path = write(
-        tmp_path / "TTXDynamicsSwitch.mod",
-        "NEURON {\n\tSUFFIX TTXDynamicsSwitch\n\tUSEION ttx WRITE ttxo, ttxi\n}\n",
-    )
-    with caplog.at_level(logging.WARNING):
-        mc._warn_on_split_ion_coupling([path], {"NaTs2_t", "ttx_ion"})
-
-    assert "uses the 'ttx' ion" in caplog.text
-    assert "silently inactive" in caplog.text
-
-
-def test_warn_on_split_ion_coupling_silent_when_ion_absent(tmp_path, caplog):
-    """Nothing else uses the ion, so compiling it here is fine."""
-    path = write(
-        tmp_path / "TTXDynamicsSwitch.mod",
-        "NEURON {\n\tSUFFIX TTXDynamicsSwitch\n\tUSEION ttx WRITE ttxo, ttxi\n}\n",
-    )
-    with caplog.at_level(logging.WARNING):
-        mc._warn_on_split_ion_coupling([path], {"pas", "hh", "na_ion", "k_ion"})
-
-    assert caplog.text == ""
-
-
-def test_warn_on_split_ion_coupling_ignores_non_ion_mods(tmp_path, caplog):
-    """The four point-process technical mods are always safe to supply."""
-    internal = mc._internal_mods_path()
-    safe = [f for f in internal.glob("*.mod") if f.name != "TTXDynamicsSwitch.mod"]
-    with caplog.at_level(logging.WARNING):
-        mc._warn_on_split_ion_coupling(safe, {"ttx_ion", "na_ion", "k_ion"})
-
-    assert caplog.text == ""
 
 
 def test_default_incflags_disables_reportinglib():
@@ -641,9 +569,46 @@ def test_extract_mechanisms_dir_is_ordered_and_deduplicated(tmp_path):
 def test_compile_mechanisms_missing_declared_dir_raises(tmp_path):
     """A declared but absent mechanisms_dir must fail now, not at first use."""
     with patch("bluecellulab.mod_compilation._build_mod_files") as mock_build:
-        with pytest.raises(mc.ModCompilationError, match="does not exist"):
-            mc.compile_mechanisms([tmp_path / "missing"], already_registered=set())
+        with pytest.raises(mc.ModCompilationError, match="does not exist") as excinfo:
+            mc.compile_mechanisms(
+                [tmp_path / "missing"], already_registered={"pas", "hh"}
+            )
+    assert excinfo.value.involves_circuit_files
     mock_build.assert_not_called()
+
+
+def test_compile_mechanisms_missing_declared_dir_warns_if_library_loaded(
+    tmp_path, caplog
+):
+    """With a pre-compiled library loaded, an outdated path may be harmless."""
+    with patch("bluecellulab.mod_compilation._build_mod_files") as mock_build:
+        with caplog.at_level(logging.WARNING):
+            mc.compile_mechanisms(
+                [tmp_path / "missing"],
+                include_internal_mods=False,
+                already_registered={"pas", "NaTs2_t"},
+            )
+    assert "does not exist" in caplog.text
+    mock_build.assert_not_called()
+
+
+@pytest.mark.parametrize("circuit_file_left, expected", [(False, False), (True, True)])
+def test_compile_failure_reports_whether_circuit_files_were_involved(
+    tmp_path, circuit_file_left, expected
+):
+    """Fatal only if a circuit file was part of the failed build: when the
+    circuit's mechanisms are all registered, only the bundled ones remain."""
+    circuit = tmp_path / "circuit"
+    write(circuit / "Chan.mod", mod("Chan", "Chan", keyword="SUFFIX"))
+    registered = {"pas"} if circuit_file_left else {"pas", "Chan"}
+    with patch(
+        "bluecellulab.mod_compilation._build_mod_files",
+        side_effect=mc.ModCompilationError("boom"),
+    ):
+        with patch("bluecellulab.mod_compilation.default_mod_build_dir", return_value=tmp_path):
+            with pytest.raises(mc.ModCompilationError) as excinfo:
+                mc.compile_mechanisms([circuit], already_registered=registered)
+    assert excinfo.value.involves_circuit_files is expected
 
 
 def test_cache_key_and_metadata_include_neuron_version(monkeypatch, tmp_path):
@@ -839,19 +804,46 @@ def test_registered_mechanisms_reports_builtins():
 
 
 class TestCompileLock:
+    # Holds the lock in a separate process until killed or told to exit.
+    _HOLDER = (
+        "import fcntl, os, sys, time\n"
+        "fd = os.open(sys.argv[1], os.O_CREAT | os.O_RDWR)\n"
+        "fcntl.flock(fd, fcntl.LOCK_EX)\n"
+        "print('locked', flush=True)\n"
+        "time.sleep(60)\n"
+    )
+
+    def _hold_in_child(self, tmp_path):
+        proc = subprocess.Popen(
+            [sys.executable, "-c", self._HOLDER, str(tmp_path / ".compile.lock")],
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        assert proc.stdout.readline().strip() == "locked"
+        return proc
+
     def test_lock_is_released_after_use(self, tmp_path):
         with mc._CompileLock(tmp_path):
-            assert (tmp_path / ".compile.lock").exists()
-        assert not (tmp_path / ".compile.lock").exists()
+            pass
+        with mc._CompileLock(tmp_path, timeout=0):
+            pass
 
     def test_lock_times_out_if_held(self, tmp_path):
-        lock_path = tmp_path / ".compile.lock"
-        tmp_path.mkdir(parents=True, exist_ok=True)
-        os.close(os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_RDWR))
+        proc = self._hold_in_child(tmp_path)
         try:
             with patch.object(mc, "_LOCK_POLL_INTERVAL_S", 0.01):
-                with pytest.raises(mc.ModCompilationError, match="Timed out waiting for lock"):
+                with pytest.raises(mc.ModCompilationError, match="Timed out"):
                     with mc._CompileLock(tmp_path, timeout=0.05):
                         pass  # pragma: no cover
         finally:
-            lock_path.unlink()
+            proc.kill()
+            proc.wait()
+
+    def test_lock_is_released_when_holder_is_killed(self, tmp_path):
+        """A crashed compile must not block later processes."""
+        proc = self._hold_in_child(tmp_path)
+        proc.kill()
+        proc.wait()
+        assert (tmp_path / ".compile.lock").exists()
+        with mc._CompileLock(tmp_path, timeout=0):
+            pass

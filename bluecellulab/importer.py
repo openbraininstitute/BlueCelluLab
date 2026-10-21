@@ -54,10 +54,11 @@ def import_mod_lib(
     keeps working unchanged: NEURON auto-loads it at import and it therefore
     takes precedence over anything BlueCelluLab would supply.
 
-    `mechanisms_dirs` only affects how a compilation failure is treated. A
-    circuit that declares mechanisms cannot run without them, so failure
-    raises; supplying only the bundled technical mod files is best effort, as
-    a caller may never touch the features that need them.
+    A compilation failure is fatal only if a circuit MOD file was part of
+    what failed to build, since a circuit cannot run without its mechanisms.
+    When only the bundled files were left to build (no circuit, or all of the
+    circuit's mechanisms already registered) it is best effort, as a caller
+    may never touch the features that need them.
     """
     if 'BLUECELLULAB_MOD_LIBRARY_PATH' in os.environ:
         # Check if the current directory contains 'x86_64'.
@@ -79,7 +80,7 @@ def import_mod_lib(
             mechanisms_dirs or [], already_registered=preloaded
         )
     except ModCompilationError as e:
-        if mechanisms_dirs:
+        if e.involves_circuit_files:
             raise BluecellulabError(f"Failed to compile circuit mod files: {e}") from e
         # Only BlueCelluLab's own technical mod files were involved. Warn and
         # carry on: the caller may not need them, and failing here would break

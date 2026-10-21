@@ -35,10 +35,7 @@ the "Class 1 / Class 2" classification in `prod-build-circuit#32
      - Spontaneous synaptic events (minis)
    * - ``TTXDynamicsSwitch``
      - ``TTXDynamicsSwitch.mod``
-     - The ``ttx`` modification, i.e. ``Cell.enable_ttx``. The only one of the five
-       that is ion coupled, so it cannot be supplied separately from a library that
-       already contains sodium channels; see `Ion coupling: one limit on what can be
-       supplied separately`_.
+     - The ``ttx`` modification, i.e. ``Cell.enable_ttx``
    * - ``ConductanceSource``
      - ``ConductanceSource.mod``
      - Not used directly. Bundled to keep the set aligned with neurodamus, and so a
@@ -122,8 +119,15 @@ working directory.
 
 A ``mechanisms_dir`` set on an individual node or edge population, overriding ``components``, is
 picked up too. A declared ``mechanisms_dir`` that does not exist is an error, raised before
-anything is compiled. The compilation cache is keyed on the NEURON version as well, so upgrading
-NEURON triggers a fresh build.
+anything is compiled, unless NEURON already has a compiled library loaded (for example a
+directory you compiled yourself): then it is only a warning, since the mechanisms may already be
+there. The compilation cache is keyed on the NEURON version as well, so upgrading NEURON triggers
+a fresh build.
+
+A compilation failure is an error if any of the circuit's own MOD files were being compiled. If
+only the bundled files were left to compile, because there is no circuit or because all of the
+circuit's mechanisms are already loaded, it is a warning instead, and only the features that need
+them (spike replay, minis, ``ttx``) fail.
 
 If the circuit config does not declare a ``mechanisms_dir``, or declares it as an empty string,
 BlueCelluLab has nothing to discover and compiles only its own bundled files. The circuit's ion
@@ -140,36 +144,17 @@ environment variable.
 
 If two processes try to compile the same set of files at once (multiple MPI ranks, or parallel
 workers), the first to start wins and the others wait for it and reuse the result, rather than
-racing on ``nrnivmodl``.
+racing on ``nrnivmodl``. The wait uses an OS-level file lock, which is released if the compiling
+process is killed, so a crashed build never blocks later runs.
 
-Ion coupling: one limit on what can be supplied separately
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Pre-compiling for a service
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-NEURON does not share an ion between separately compiled libraries. If a
-mechanism that writes an ion sits in one library and a mechanism that reads it
-sits in another, they do not see each other, and the simulation runs on with the
-coupling simply absent rather than reporting an error.
-
-Of the five bundled files only ``TTXDynamicsSwitch`` is affected: it writes the
-custom ``ttx`` ion, which the sodium channels of a circuit read
-(``USEION ttx READ ttxo, ttxi``). The other four are point processes and
-artificial cells with no ion coupling, so BlueCelluLab can always supply them.
-
-In practice this only matters if you pre-compile. When BlueCelluLab does the
-compiling it puts the circuit's MOD files and the bundled ones into a single
-library, so the coupling is intact. But if you compile a directory yourself and
-it contains sodium channels without ``TTXDynamicsSwitch.mod``, then the ``ttx``
-modification will not work, because BlueCelluLab can only add its copy in a
-second library. Include ``TTXDynamicsSwitch.mod`` in your own ``nrnivmodl``
-invocation in that case; :func:`bluecellulab.mod_compilation.internal_mods_path`
-returns the directory to take it from.
-
-BlueCelluLab does not let this pass quietly. It warns when it detects the split
-while loading, and :meth:`bluecellulab.Cell.enable_ttx` and
-:meth:`~bluecellulab.Cell.disable_ttx` raise
-:class:`~bluecellulab.exceptions.BluecellulabError` rather than run a simulation
-whose sodium channels are never actually blocked. Workflows that do not use the
-``ttx`` modification are unaffected.
+If you compile a model's MOD files yourself, for example in a container image, copy every file
+from :func:`bluecellulab.mod_compilation.internal_mods_path` into the same directory before running
+``nrnivmodl``. BlueCelluLab then finds all of its mechanisms already registered and compiles
+nothing at runtime. Anything left out is compiled on first use into the user cache directory,
+which in a container is usually local and lost between runs.
 
 Mechanisms NEURON already has are left alone
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

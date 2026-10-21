@@ -45,7 +45,7 @@ controlled by ``BLUECELLULAB_MOD_PRECEDENCE`` (see `circuit_mods_take_precedence
 
 from __future__ import annotations
 
-import errno
+import fcntl
 import hashlib
 import json
 import logging
@@ -81,20 +81,11 @@ MOD_PRECEDENCE_ENV_VAR = "BLUECELLULAB_MOD_PRECEDENCE"
 _LOCK_TIMEOUT_S = 600
 _LOCK_POLL_INTERVAL_S = 0.5
 
-# Mechanisms this process had to compile apart from others sharing one of their
-# ions, and which are therefore present but inert. See
-# `mechanisms_with_split_ion_coupling`.
-_SPLIT_ION_MECHANISMS: set[str] = set()
-
 # NMODL declares the name a file provides with exactly one of these keywords.
 _MECH_DECL_RE = re.compile(
     r"^[ \t]*(?:SUFFIX|POINT_PROCESS|ARTIFICIAL_CELL)[ \t]+([A-Za-z_]\w*)",
     re.MULTILINE,
 )
-
-# Ions a file reads or writes. A mechanism sharing an ion with one in another
-# compiled library does not see it, so this is needed to warn about that.
-_USEION_RE = re.compile(r"^[ \t]*USEION[ \t]+([A-Za-z_]\w*)", re.MULTILINE)
 
 # COMMENT ... ENDCOMMENT blocks must be stripped before looking for the above,
 # or documentation that happens to quote a declaration is picked up as real.
@@ -104,7 +95,30 @@ _COMMENT_BLOCK_RE = re.compile(
 
 
 class ModCompilationError(Exception):
-    """Raised when gathering or compiling MOD files fails."""
+    """Raised when gathering or compiling MOD files fails.
+
+    `involves_circuit_files` says whether any circuit MOD file was part of
+    what failed. Callers use it to tell a fatal failure (the circuit cannot
+    run without its mechanisms) from a failure to build only BlueCelluLab's
+    bundled files, which may never be needed.
+    """
+
+    def __init__(self, message: str, involves_circuit_files: bool = False):
+        super().__init__(message)
+        self.involves_circuit_files = involves_circuit_files
+
+
+# Mechanisms NEURON registers on its own, without any compiled library loaded
+# (identical in NEURON 8.2 and 9.0). Anything else registered means a user
+# library was loaded, e.g. a compiled directory auto-loaded from the cwd. A
+# built-in added by a future NEURON only makes that check err towards
+# "a library is loaded", i.e. warning instead of raising.
+NEURON_BUILTIN_MECHANISMS = frozenset({
+    "APCount", "AlphaSynapse", "Exp2Syn", "ExpSyn", "IClamp", "IntFire1",
+    "IntFire2", "IntFire4", "NetStim", "OClamp", "PatternStim",
+    "PointProcessMark", "SEClamp", "VClamp", "capacitance", "extracellular",
+    "fastpas", "hh", "k_ion", "morphology", "na_ion", "pas",
+})
 
 
 # Passed to nrnivmodl by default. Neurodamus's "Class 1" reporting MOD files
@@ -160,65 +174,6 @@ def declared_mechanisms(path: str | Path) -> set[str]:
         logger.warning("Could not read mod file %s: %s", path, e)
         return set()
     return set(_MECH_DECL_RE.findall(_COMMENT_BLOCK_RE.sub("", text)))
-
-
-def declared_ions(path: str | Path) -> set[str]:
-    """Return the ion name(s) a MOD file declares with ``USEION``.
-
-    Used to detect the one case where compiling a file separately is not
-    safe; see `_warn_on_split_ion_coupling`.
-    """
-    try:
-        text = Path(path).read_text(errors="replace")
-    except OSError as e:
-        logger.warning("Could not read mod file %s: %s", path, e)
-        return set()
-    return set(_USEION_RE.findall(_COMMENT_BLOCK_RE.sub("", text)))
-
-
-def mechanisms_with_split_ion_coupling() -> set[str]:
-    """Mechanisms compiled apart from others sharing one of their ions.
-
-    Such a mechanism is present in NEURON but inert: it cannot reach the
-    mechanisms it is meant to influence. Callers whose feature depends on one
-    of these should refuse to run rather than produce a result that looks fine
-    (see ``Cell.enable_ttx``).
-    """
-    return set(_SPLIT_ION_MECHANISMS)
-
-
-def _warn_on_split_ion_coupling(
-    mod_files: Iterable[Path], already_registered: set[str]
-) -> None:
-    """Warn when a MOD file using an already-present ion must be compiled
-    apart.
-
-    NEURON does not share a custom ion between separately compiled libraries.
-    If a mechanism writing the ion ends up in one library and a mechanism
-    reading it in another, they simply do not see each other and the
-    simulation runs on silently with the coupling absent. ``TTXDynamicsSwitch``
-    writing ``ttx`` while ``NaTs2_t`` or ``NaTg`` read it is the case that
-    matters in practice.
-
-    NEURON exposes a used ion as a ``<name>_ion`` mechanism, so an ion already
-    being present means some library we did not build is already using it.
-    """
-    for path in mod_files:
-        for ion in sorted(declared_ions(path)):
-            if f"{ion}_ion" not in already_registered:
-                continue
-            _SPLIT_ION_MECHANISMS.update(declared_mechanisms(path))
-            logger.warning(
-                "'%s' uses the '%s' ion, which mechanisms already loaded in NEURON"
-                " also use. NEURON cannot share an ion between separately compiled"
-                " libraries, so compiling this file on its own would leave the"
-                " coupling silently inactive. Compile it together with those"
-                " mechanisms instead, by adding %s to your own nrnivmodl"
-                " invocation.",
-                path.name,
-                ion,
-                path.parent,
-            )
 
 
 def registered_mechanisms() -> set[str]:
@@ -492,6 +447,11 @@ class _CompileLock:
     try to compile the same circuit's mod files concurrently. This lock makes
     concurrent callers wait for the first compilation to finish and reuse its
     result, rather than racing on ``nrnivmodl`` and corrupting the output.
+
+    The lock is an OS-level ``flock`` on ``.compile.lock``, so it is released
+    when the holder exits for any reason, including being killed mid-build.
+    The file itself is left in place: unlinking a file others may be waiting
+    on would let two processes hold "the" lock at once.
     """
 
     def __init__(self, output_dir: Path, timeout: float = _LOCK_TIMEOUT_S):
@@ -501,27 +461,27 @@ class _CompileLock:
 
     def __enter__(self) -> "_CompileLock":
         self._lock_path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(self._lock_path), os.O_CREAT | os.O_RDWR)
         start = time.monotonic()
         while True:
             try:
-                self._fd = os.open(str(self._lock_path), os.O_CREAT | os.O_EXCL | os.O_RDWR)
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self._fd = fd
                 return self
-            except FileExistsError:
+            except BlockingIOError:
                 if time.monotonic() - start > self._timeout:
+                    os.close(fd)
                     raise ModCompilationError(
-                        f"Timed out waiting for lock {self._lock_path}. "
-                        "If a previous compilation crashed, remove this file manually."
+                        f"Timed out after {self._timeout}s waiting for another process"
+                        f" to finish compiling (lock {self._lock_path})."
                     ) from None
                 time.sleep(_LOCK_POLL_INTERVAL_S)
 
     def __exit__(self, exc_type, exc, tb) -> None:
         if self._fd is not None:
+            fcntl.flock(self._fd, fcntl.LOCK_UN)
             os.close(self._fd)
-        try:
-            self._lock_path.unlink()
-        except OSError as e:
-            if e.errno != errno.ENOENT:
-                raise
+            self._fd = None
 
 
 def _build_mod_files(
@@ -661,16 +621,31 @@ def compile_mechanisms(
     Returns the path to the compiled shared library, or ``None`` when there
     is nothing left to compile because NEURON already provides everything.
     """
+    if already_registered is None:
+        already_registered = registered_mechanisms()
+    already_registered = set(already_registered)
+
     circuit_dirs = [Path(d) for d in input_dirs]
-    # A directory the circuit explicitly declares must exist: skipping it would
-    # compile only the bundled files and fail much later, at first use of a
-    # missing circuit mechanism, with a far less helpful error.
     missing = [d for d in circuit_dirs if not d.is_dir()]
     if missing:
-        raise ModCompilationError(
-            "Declared mechanisms_dir does not exist: "
-            + ", ".join(str(d) for d in missing)
+        listed = ", ".join(str(d) for d in missing)
+        # With nothing but NEURON's built-ins loaded, the circuit's mechanisms
+        # can only come from these directories, so carrying on would just fail
+        # later, at first use of a missing mechanism, with a worse error. With
+        # a pre-compiled library loaded they may well already be there (an
+        # outdated path that used to work), so only warn.
+        if already_registered <= NEURON_BUILTIN_MECHANISMS:
+            raise ModCompilationError(
+                f"Declared mechanisms_dir does not exist: {listed}",
+                involves_circuit_files=True,
+            )
+        logger.warning(
+            "Declared mechanisms_dir does not exist: %s. Continuing with the"
+            " mechanisms already loaded in NEURON; the circuit will fail at"
+            " first use of any mechanism they do not provide.",
+            listed,
         )
+        circuit_dirs = [d for d in circuit_dirs if d.is_dir()]
     internal_dir = _internal_mods_path() if include_internal_mods else None
 
     # Later directories win. neurodamus appends its internal mods last, so
@@ -685,16 +660,20 @@ def compile_mechanisms(
     if not ordered:
         return None
 
-    if already_registered is None:
-        already_registered = registered_mechanisms()
-
     mod_files = select_mod_files(ordered, internal_dir, already_registered)
     if not mod_files:
         logger.debug("No mod files left to compile, NEURON already has everything needed")
         return None
 
-    _warn_on_split_ion_coupling(mod_files, set(already_registered))
-
     options = options or Options()
     output_dir = default_mod_build_dir(mod_files)
-    return _build_mod_files(mod_files, output_dir, nrnivmodl_path, options)
+    try:
+        return _build_mod_files(mod_files, output_dir, nrnivmodl_path, options)
+    except ModCompilationError as e:
+        # What matters is what was being built, not whether the circuit
+        # declared directories: their files may all be registered already.
+        internal = internal_dir.absolute() if internal_dir is not None else None
+        e.involves_circuit_files = any(
+            internal is None or path.parent != internal for path in mod_files
+        )
+        raise

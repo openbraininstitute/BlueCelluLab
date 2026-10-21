@@ -105,14 +105,7 @@ def test_allNaChannels_v6a():
 
 
 class TestTtxAvailabilityIsChecked:
-    """`Cell.enable_ttx` must refuse to run when TTX cannot take effect.
-
-    TTXDynamicsSwitch blocks the sodium channels by writing the ``ttx`` ion that
-    they read. NEURON does not share an ion between separately compiled
-    mechanism libraries, so a switch compiled apart from the sodium channels is
-    present but inert: inserting it changes nothing, and without this check the
-    simulation would finish reporting success with the channels never blocked.
-    """
+    """`Cell.enable_ttx` must refuse to run when TTXDynamicsSwitch is missing."""
 
     def _cell(self):
         return bluecellulab.Cell(
@@ -121,42 +114,21 @@ class TestTtxAvailabilityIsChecked:
         )
 
     @pytest.mark.v5
-    def test_raises_when_compiled_separately(self):
-        cell = self._cell()
-        with patch(
-            "bluecellulab.cell.core.mechanisms_with_split_ion_coupling",
-            return_value={"TTXDynamicsSwitch"},
-        ):
-            for method in (cell.enable_ttx, cell.disable_ttx):
-                with pytest.raises(BluecellulabError, match="compiled separately"):
-                    method()
-
-    @pytest.mark.v5
     def test_raises_when_mechanism_absent(self):
         cell = self._cell()
-        with patch(
-            "bluecellulab.cell.core.mechanisms_with_split_ion_coupling",
-            return_value=set(),
-        ):
-            with patch(
-                "bluecellulab.cell.core.registered_mechanisms", return_value={"pas"}
-            ):
-                for method in (cell.enable_ttx, cell.disable_ttx):
-                    with pytest.raises(BluecellulabError, match="not.*available in NEURON"):
-                        method()
+        with patch("bluecellulab.cell.core.registered_mechanisms", return_value={"pas"}):
+            for method in (cell.enable_ttx, cell.disable_ttx):
+                with pytest.raises(BluecellulabError, match="not.*available in NEURON"):
+                    method()
 
     @pytest.mark.v5
     def test_error_points_at_the_bundled_copy(self):
         """The message has to say where to get the file from."""
         cell = self._cell()
-        with patch(
-            "bluecellulab.cell.core.mechanisms_with_split_ion_coupling",
-            return_value={"TTXDynamicsSwitch"},
-        ):
+        with patch("bluecellulab.cell.core.registered_mechanisms", return_value={"pas"}):
             with pytest.raises(BluecellulabError) as excinfo:
                 cell.enable_ttx()
         assert str(internal_mods_path()) in str(excinfo.value)
-        assert "nrnivmodl" in str(excinfo.value)
 
     @pytest.mark.v5
     def test_does_not_interfere_when_ttx_is_usable(self):

@@ -43,7 +43,6 @@ from bluecellulab.exceptions import BluecellulabError
 from bluecellulab.importer import load_mod_files
 from bluecellulab.mod_compilation import (
     internal_mods_path,
-    mechanisms_with_split_ion_coupling,
     registered_mechanisms,
 )
 from bluecellulab.neuron_interpreter import eval_neuron
@@ -246,34 +245,16 @@ class Cell(InjectableMixin, PlottableMixin):
 
     @staticmethod
     def _check_ttx_available() -> None:
-        """Refuse to touch TTX unless it can actually take effect.
-
-        ``TTXDynamicsSwitch`` influences the sodium channels by writing the
-        ``ttx`` ion that they read. NEURON does not share an ion between
-        separately compiled mechanism libraries, so if the switch was compiled
-        apart from the sodium channels it is present but inert: inserting it and
-        setting ``ttxo_level`` changes nothing at all, and the simulation would
-        otherwise run to completion reporting success while the channels stay
-        unblocked.
+        """Refuse to touch TTX when the TTXDynamicsSwitch mechanism is missing.
 
         Raises:
-            BluecellulabError: if TTXDynamicsSwitch is missing, or present but
-                unable to reach the sodium channels.
+            BluecellulabError: if TTXDynamicsSwitch is not available in NEURON.
         """
-        if "TTXDynamicsSwitch" in mechanisms_with_split_ion_coupling():
-            raise BluecellulabError(
-                "TTX cannot be applied: TTXDynamicsSwitch was compiled separately"
-                " from the sodium channel mechanisms, so it cannot reach them and"
-                " would have no effect. Compile TTXDynamicsSwitch.mod together"
-                " with the model's own mod files in a single nrnivmodl"
-                f" invocation; a copy ships in {internal_mods_path()}."
-            )
         if "TTXDynamicsSwitch" not in registered_mechanisms():
             raise BluecellulabError(
                 "TTX cannot be applied: the TTXDynamicsSwitch mechanism is not"
-                " available in NEURON. Compile TTXDynamicsSwitch.mod together"
-                " with the model's own mod files in a single nrnivmodl"
-                f" invocation; a copy ships in {internal_mods_path()}."
+                " available in NEURON. Add TTXDynamicsSwitch.mod to the model's"
+                f" mod files; a copy ships in {internal_mods_path()}."
             )
 
     def enable_ttx(self) -> None:

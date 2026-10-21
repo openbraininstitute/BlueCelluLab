@@ -158,10 +158,25 @@ def test_import_mod_lib_mechanisms_dirs_compile_error_wrapped():
         with patch("bluecellulab.importer.registered_mechanisms", return_value=set()):
             with patch(
                 "bluecellulab.importer.compile_mechanisms",
-                side_effect=ModCompilationError("boom"),
+                side_effect=ModCompilationError("boom", involves_circuit_files=True),
             ):
                 with pytest.raises(BluecellulabError, match="Failed to compile circuit mod files"):
                     importer.import_mod_lib(mock_neuron, mechanisms_dirs)
+
+
+def test_import_mod_lib_only_bundled_left_is_best_effort_with_circuit(caplog):
+    """Circuit mods all registered, bundled build fails: warn as without a
+    circuit, since nothing the circuit declared was being compiled."""
+    mock_neuron = MagicMock()
+    with patch.dict(os.environ, {}, clear=True):
+        with patch("bluecellulab.importer.registered_mechanisms", return_value=set()):
+            with patch(
+                "bluecellulab.importer.compile_mechanisms",
+                side_effect=ModCompilationError("no compiler"),
+            ):
+                with caplog.at_level(logging.WARNING):
+                    importer.import_mod_lib(mock_neuron, [Path("/fake/mod")])
+    assert "Could not compile BlueCelluLab's bundled mod files" in caplog.text
 
 
 @pytest.mark.parametrize("mechanisms_dirs", [None, []])
