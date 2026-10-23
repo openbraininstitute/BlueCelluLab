@@ -214,8 +214,8 @@ class TestEfelMeasurement:
 class TestStepProtocol:
     def test_default_values(self):
         p = StepProtocol()
-        assert p.amplitude == 130.0
-        assert p.amplitude_mode == "threshold_percentage"
+        assert p.threshold_percentage == 130.0
+        assert p.amplitude is None
         assert p.dt == 1.0
         assert p.section == "soma[0]"
         assert p.segment == 0.5
@@ -238,14 +238,14 @@ class TestStepProtocol:
 
     def test_custom_parameters(self):
         p = StepProtocol(
-            amplitude=200.0,
+            threshold_percentage=200.0,
             dt=0.5,
             section="axon[0]",
             segment=0.1,
             add_hypamp=False,
         )
-        assert p.amplitude == 200.0
-        assert p.amplitude_mode == "threshold_percentage"
+        assert p.threshold_percentage == 200.0
+        assert p.amplitude is None
         assert p.dt == 0.5
         assert p.section == "axon[0]"
         assert p.segment == 0.1
@@ -261,7 +261,7 @@ class TestStepProtocol:
         mock_recording = MagicMock()
         mock_run.return_value = mock_recording
 
-        p = StepProtocol(amplitude=150.0)
+        p = StepProtocol(threshold_percentage=150.0)
         result = p.execute("template_params", 0.5)
 
         mock_factory_cls.assert_called_once_with(dt=1.0)
@@ -273,22 +273,17 @@ class TestStepProtocol:
         )
         assert result == mock_recording
 
-    def test_amplitude_mode_defaults_to_threshold_percentage(self):
-        assert StepProtocol().amplitude_mode == "threshold_percentage"
+    def test_amplitude_defaults_to_none(self):
+        assert StepProtocol().amplitude is None
 
     def test_custom_amplitude(self):
-        p = StepProtocol(amplitude=0.42, amplitude_mode="amplitude")
+        p = StepProtocol(amplitude=0.42)
         assert p.amplitude == 0.42
-        assert p.amplitude_mode == "amplitude"
 
     @pytest.mark.parametrize("amplitude", [float("nan"), float("inf")])
     def test_rejects_invalid_amplitude(self, amplitude):
         with pytest.raises(ValueError):
             StepProtocol(amplitude=amplitude)
-
-    def test_rejects_invalid_amplitude_mode(self):
-        with pytest.raises(ValueError):
-            StepProtocol(amplitude_mode="bogus")
 
     @patch("bluecellulab.validation.protocol.run_stimulus")
     @patch("bluecellulab.validation.protocol.StimulusFactory")
@@ -300,11 +295,11 @@ class TestStepProtocol:
         mock_recording = MagicMock()
         mock_run.return_value = mock_recording
 
-        p = StepProtocol(amplitude=0.3, amplitude_mode="amplitude")
+        p = StepProtocol(amplitude=0.3)
         result = p.execute("template_params", 0.5)
 
         mock_factory_cls.assert_called_once_with(dt=1.0)
-        # amplitude_mode="amplitude" injects the raw current directly
+        # amplitude set -> raw current injected, threshold_percentage ignored
         mock_factory.idrest.assert_called_once_with(amplitude=0.3)
         mock_run.assert_called_once_with(
             "template_params", mock_stimulus, "soma[0]", 0.5, add_hypamp=True

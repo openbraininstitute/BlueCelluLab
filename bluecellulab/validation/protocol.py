@@ -13,6 +13,7 @@
 # limitations under the License.
 """Protocols define how to stimulate a cell and obtain a recording."""
 
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from math import ceil, isfinite
@@ -21,6 +22,8 @@ from typing import Literal
 
 from bluecellulab.analysis.inject_sequence import Recording, run_stimulus
 from bluecellulab.stimulus.factory import IDRestTimings, StimulusFactory
+
+logger = logging.getLogger(__name__)
 
 
 def _validate_real(name: str, value: object) -> float:
@@ -89,43 +92,39 @@ class Protocol(ABC):
 class StepProtocol(Protocol):
     """IDRest-style step current injection.
 
-    The ``amplitude`` field is interpreted according to ``amplitude_mode``: as a
-    percentage of rheobase (default) or as a raw current in nA.
+    The injected current follows the same convention as
+    :meth:`StimulusFactory.idrest`: ``amplitude`` is a raw current in nA and
+    takes precedence when set, otherwise ``threshold_percentage`` is applied as
+    a percentage of rheobase.
 
     Timing windows are aligned to the stimulus sample grid, so they match the
     generated waveform even when the fixed IDRest timings are not exact
     multiples of ``dt``.
 
     Attributes:
-        amplitude: The injected current. Its meaning depends on ``amplitude_mode``:
-            a percentage of rheobase (e.g. 130 = 130%) or a raw current in nA.
-        amplitude_mode: How to interpret ``amplitude``. ``"threshold_percentage"``
-            (default) treats it as a percentage of rheobase; ``"amplitude"`` treats
-            it as a raw current in nA.
+        threshold_percentage: Percentage of rheobase to inject (e.g. 130 = 130%).
+            Used when ``amplitude`` is not set.
+        amplitude: Raw current to inject in nA. When set, it takes precedence and
+            ``threshold_percentage`` is ignored.
         dt: Time step for the stimulus waveform in ms.
         section: Section to inject into.
         segment: Segment position along the section (0.0 to 1.0).
         add_hypamp: Whether to add the holding current.
     """
 
-    amplitude: float = 130.0
-    amplitude_mode: Literal["threshold_percentage", "amplitude"] = (
-        "threshold_percentage"
-    )
+    threshold_percentage: float = 130.0
+    amplitude: float | None = None
     dt: float = 1.0
     section: str = "soma[0]"
     segment: float = 0.5
     add_hypamp: bool = True
 
     def __post_init__(self) -> None:
-        """Validate the amplitude, mode, and waveform time step before
-        simulating."""
+        """Validate the amplitude and waveform time step before simulating."""
         _validate_time_value("dt", self.dt, strictly_positive=True)
-        _validate_real("amplitude", self.amplitude)
-        if self.amplitude_mode not in ("threshold_percentage", "amplitude"):
-            raise ValueError(
-                "amplitude_mode must be 'threshold_percentage' or 'amplitude'."
-            )
+        _validate_real("threshold_percentage", self.threshold_percentage)
+        if self.amplitude is not None:
+            _validate_real("amplitude", self.amplitude)
 
     @property
     def stim_start(self) -> float:
@@ -141,12 +140,17 @@ class StepProtocol(Protocol):
     def execute(self, template_params, rheobase: float) -> Recording:
         """Inject a step current and record the response."""
         stim_factory = StimulusFactory(dt=self.dt)
-        if self.amplitude_mode == "amplitude":
+        if self.amplitude is not None:
+            logger.info(
+                "StepProtocol uses explicit amplitude (%s nA); "
+                "threshold_percentage is ignored.",
+                self.amplitude,
+            )
             stimulus = stim_factory.idrest(amplitude=self.amplitude)
         else:
             stimulus = stim_factory.idrest(
                 threshold_current=rheobase,
-                threshold_percentage=self.amplitude,
+                threshold_percentage=self.threshold_percentage,
             )
         return run_stimulus(
             template_params,
