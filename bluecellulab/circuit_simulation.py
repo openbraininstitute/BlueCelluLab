@@ -1019,6 +1019,15 @@ class CircuitSimulation:
             return
         if not beta:
             return
+        # Neurodamus gates user corrections behind
+        # beta_features["gapjunction_target_population"] matching the
+        # GapJunctionManager's node population. Here a single call covers
+        # all instantiated cells, so require the key to name a node
+        # population that is actually instantiated.
+        target_pop = beta.get("gapjunction_target_population")
+        instantiated_pops = {cid.population_name for cid in self.cells}
+        if target_pop is None or target_pop not in instantiated_pops:
+            return
         self.holding_ic_per_gid, self.seclamp_per_gid = load_user_modifications(self)
         if self.seclamp_per_gid:
             # Record seclamp currents for saving to a file at the end
@@ -1078,7 +1087,11 @@ class CircuitSimulation:
 
         for cell_id in cell_ids:
             cell = self.create_cell_from_circuit(cell_id)
-            cell.post_gid = self.global_gid(cell_id.population_name, cell_id.id)
+            # The gid namespace is only built when something needs global gids
+            # (synapses, replay, MPI, ...); post_gid is only read when creating
+            # synapses, so leave it as None for plain single-cell instantiation.
+            if self.gids is not None:
+                cell.post_gid = self.global_gid(cell_id.population_name, cell_id.id)
             self.cells[cell_id] = cell
             if self.circuit_access.node_properties_available:
                 cell.connect_to_circuit(SonataProxy(cell_id, self.circuit_access))

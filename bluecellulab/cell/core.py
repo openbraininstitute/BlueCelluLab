@@ -528,7 +528,16 @@ class Cell(InjectableMixin, PlottableMixin):
         netcon.threshold = threshold
         return netcon
 
-    def start_recording_spikes(self, target: HocObjectType, location: str, threshold: float = -30) -> None:
+    @staticmethod
+    def _spike_detector_key(location: str, threshold: float) -> str:
+        """Recordings key of a spike detector.
+
+        The threshold is normalised to float so that e.g. -30 and -30.0
+        refer to the same detector.
+        """
+        return f"spike_detector_{location}_{float(threshold)}"
+
+    def start_recording_spikes(self, target: HocObjectType, location: str, threshold: float = -30.0) -> None:
         """Start recording spikes in the current cell.
 
         Args:
@@ -539,13 +548,12 @@ class Cell(InjectableMixin, PlottableMixin):
         nc = self.create_netcon_spikedetector(target, location, threshold)
         spike_vec = neuron.h.Vector()
         nc.record(spike_vec)
-        self.recordings[f"spike_detector_{location}_{threshold}"] = spike_vec
+        self.recordings[self._spike_detector_key(location, threshold)] = spike_vec
 
     def is_recording_spikes(self, location: str, threshold: float) -> bool:
-        key = f"spike_detector_{location}_{threshold}"
-        return key in self.recordings
+        return self._spike_detector_key(location, threshold) in self.recordings
 
-    def get_recorded_spikes(self, location: str, threshold: float = -30) -> list[float]:
+    def get_recorded_spikes(self, location: str, threshold: float = -30.0) -> list[float]:
         """Get recorded spikes in the current cell.
 
         Args:
@@ -553,9 +561,19 @@ class Cell(InjectableMixin, PlottableMixin):
             threshold: spike detection threshold
 
         Returns: recorded spikes
+
+        Raises:
+            KeyError: If no spike detector was started at this location and
+                threshold.
         """
-        result = self.recordings[f"spike_detector_{location}_{threshold}"]
-        return result.to_python()
+        key = self._spike_detector_key(location, threshold)
+        if key not in self.recordings:
+            available = sorted(k for k in self.recordings if k.startswith("spike_detector_"))
+            raise KeyError(
+                f"No spike detector at location={location!r}, threshold={threshold!r}; "
+                f"call start_recording_spikes first. Available: {available}"
+            )
+        return self.recordings[key].to_python()
 
     def add_replay_minis(self,
                          synapse_id: SynapseID,

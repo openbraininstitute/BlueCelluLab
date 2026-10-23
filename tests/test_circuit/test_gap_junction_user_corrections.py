@@ -197,3 +197,33 @@ def test_unknown_remove_channels_warns(caplog):
     with caplog.at_level(logging.WARNING):
         load_user_modifications(sim)
     assert "Unknown GJ remove_channels" in caplog.text
+
+
+def test_corrections_gated_on_gapjunction_target_population():
+    """As neurodamus, user corrections only run when
+    ``beta_features["gapjunction_target_population"]`` names an instantiated
+    node population."""
+    from bluecellulab.circuit_simulation import CircuitSimulation
+
+    gj = SimpleNamespace(g=1.0)
+    cell = SimpleNamespace(gap_junctions=[gj])
+    cells = {CellId("pop", 0): cell}
+    beta = {"gjc": 0.2, "procedure_type": "validation_sim"}
+
+    # Key absent -> no corrections (neurodamus gate).
+    CircuitSimulation._apply_gap_junction_user_corrections(
+        _fake_sim(beta, cells)
+    )
+    assert gj.g == 1.0
+
+    # Names another population -> no corrections.
+    CircuitSimulation._apply_gap_junction_user_corrections(
+        _fake_sim({**beta, "gapjunction_target_population": "other"}, cells)
+    )
+    assert gj.g == 1.0
+
+    # Names the instantiated population -> corrections applied.
+    CircuitSimulation._apply_gap_junction_user_corrections(
+        _fake_sim({**beta, "gapjunction_target_population": "pop"}, cells)
+    )
+    assert gj.g == pytest.approx(0.2)

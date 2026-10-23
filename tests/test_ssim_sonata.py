@@ -120,6 +120,15 @@ class TestCircuitSim:
         assert len([x.synapses for x in sim2.cells.values()][1]) == 0
 
     @pytest.mark.v6
+    def test_instantiate_without_gid_namespace(self):
+        """Cells can be instantiated when nothing needs global gids."""
+        sim = CircuitSimulation(self.sonata_sim_path)
+        sim.instantiate_gids(self.cell_ids, add_synapses=False, interconnect_cells=False)
+        assert sim.gids is None
+        assert all(cell.post_gid is None for cell in sim.cells.values())
+        sim.run(1.0)
+
+    @pytest.mark.v6
     def test_run_with_v_init(self):
         """Test run with v_init."""
         sim = CircuitSimulation(self.sonata_sim_path)
