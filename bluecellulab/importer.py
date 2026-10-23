@@ -44,11 +44,13 @@ def import_mod_lib(neuron: ModuleType) -> str:
     ``BLUECELLULAB_MOD_LIBRARY_PATH`` if set, otherwise NEURON has already
     loaded the ``<arch>`` folder in the working directory on import.
     """
+    arch_dir = Path(platform.machine())
     if 'BLUECELLULAB_MOD_LIBRARY_PATH' in os.environ:
-        # Check if the current directory contains 'x86_64'.
-        if os.path.isdir('x86_64'):
+        # NEURON has already auto-loaded ./<arch>; loading a second library
+        # would abort with "The user defined name already exists".
+        if arch_dir.is_dir():
             raise BluecellulabError("BLUECELLULAB_MOD_LIBRARY_PATH is set"
-                                    " and current directory contains the x86_64 folder."
+                                    f" and current directory contains the {arch_dir} folder."
                                     " Please remove one of them.")
 
         mod_lib_path = os.environ["BLUECELLULAB_MOD_LIBRARY_PATH"]
@@ -59,7 +61,6 @@ def import_mod_lib(neuron: ModuleType) -> str:
         return mod_lib_path
 
     _warn_if_mod_files_changed()
-    arch_dir = Path(platform.machine())
     if arch_dir.is_dir():
         # NEURON loads this folder automatically on import.
         return str(arch_dir.absolute())
@@ -86,8 +87,15 @@ def check_circuit_mechanisms(mechanisms_dirs: Optional[list[Path]]) -> None:
         return
     registered = registered_mechanisms()
     missing: set[str] = set()
-    for directory in mechanisms_dirs:
-        for path in Path(directory).glob("*.mod"):
+    for directory in map(Path, mechanisms_dirs):
+        if not directory.is_dir():
+            logger.warning(
+                "The circuit's mechanisms_dir %s does not exist, its mechanisms"
+                " cannot be checked.",
+                directory,
+            )
+            continue
+        for path in directory.glob("*.mod"):
             missing |= declared_mechanisms(path) - registered
     if missing:
         logger.warning(

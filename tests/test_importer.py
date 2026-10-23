@@ -51,33 +51,34 @@ def test_import_mod_lib_warns_on_changed_mod_files(tmp_path, monkeypatch, caplog
     assert "a.mod" in caplog.text
 
 
-def test_import_mod_lib_env_var_set_folder_exists():
+@pytest.mark.parametrize("arch", ["x86_64", "arm64"])
+def test_import_mod_lib_env_var_set_folder_exists(arch, tmp_path, monkeypatch):
     mock_neuron = MagicMock()
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / arch).mkdir()
     with patch.dict(os.environ, {"BLUECELLULAB_MOD_LIBRARY_PATH": "/fake/path"}):
-        with patch(
-            "os.path.isdir", return_value=True
-        ):  # when x86_64 isdir returns True and env var is set
+        with patch("platform.machine", return_value=arch):
             with pytest.raises(
                 BluecellulabError,
-                match="BLUECELLULAB_MOD_LIBRARY_PATH is set and current directory contains the x86_64 folder. Please remove one of them.",
+                match=f"BLUECELLULAB_MOD_LIBRARY_PATH is set and current directory contains the {arch} folder. Please remove one of them.",
             ):
                 importer.import_mod_lib(mock_neuron)
 
 
-def test_import_mod_lib_env_var_set():
+def test_import_mod_lib_env_var_set(tmp_path, monkeypatch):
     mock_neuron = MagicMock()
+    monkeypatch.chdir(tmp_path)
     with patch.dict(os.environ, {"BLUECELLULAB_MOD_LIBRARY_PATH": "/fake/path"}):
-        with patch("os.path.isdir", return_value=False):
-            assert importer.import_mod_lib(mock_neuron) == "/fake/path"
+        assert importer.import_mod_lib(mock_neuron) == "/fake/path"
 
 
-def test_import_mod_lib_so_file():
+def test_import_mod_lib_so_file(tmp_path, monkeypatch):
     mock_neuron = MagicMock()
+    monkeypatch.chdir(tmp_path)
     fake_so_path = "/fake/path/to/library.so"
     with patch.dict(os.environ, {"BLUECELLULAB_MOD_LIBRARY_PATH": fake_so_path}):
-        with patch("os.path.isdir", return_value=False):
-            importer.import_mod_lib(mock_neuron)
-            mock_neuron.h.nrn_load_dll.assert_called_with(fake_so_path)
+        importer.import_mod_lib(mock_neuron)
+        mock_neuron.h.nrn_load_dll.assert_called_with(fake_so_path)
 
 
 class TestCheckCircuitMechanisms:
@@ -101,6 +102,13 @@ class TestCheckCircuitMechanisms:
             with caplog.at_level(logging.WARNING):
                 importer.check_circuit_mechanisms([d])
         assert caplog.text == ""
+
+    def test_warns_on_missing_dir(self, tmp_path, caplog):
+        with patch("bluecellulab.importer.registered_mechanisms", return_value=set()):
+            with caplog.at_level(logging.WARNING):
+                importer.check_circuit_mechanisms([tmp_path / "gone"])
+        assert "does not exist" in caplog.text
+        assert "gone" in caplog.text
 
     @pytest.mark.parametrize("dirs", [None, []])
     def test_no_dirs_is_noop(self, dirs):

@@ -15,6 +15,7 @@
 
 import json
 import logging
+import os
 import platform
 import subprocess
 import sys
@@ -85,7 +86,7 @@ def test_declared_mechanisms_on_bundled_files():
     from the mechanism names, which is exactly why resolution cannot be done
     on filenames alone.
     """
-    internal = mc._internal_mods_path()
+    internal = mc.internal_mods_path()
     declared = {
         f.name: mc.declared_mechanisms(f) for f in internal.glob("*.mod")
     }
@@ -135,7 +136,7 @@ def test_select_mod_files_filename_last_wins(tmp_path, caplog):
     write(d1 / "y.mod", mod("y", "Y", "SUFFIX"))
 
     with caplog.at_level(logging.WARNING):
-        res = mc.select_mod_files([d1, d2], already_registered=set())
+        res = mc.select_mod_files([d1, d2])
 
     assert {p.name for p in res} == {"x.mod", "y.mod"}
     assert next(p for p in res if p.name == "x.mod").parent == d2.absolute()
@@ -150,7 +151,7 @@ def test_select_mod_files_same_mechanism_different_filenames(tmp_path, caplog):
 
     with caplog.at_level(logging.WARNING):
         res = mc.select_mod_files(
-            [circuit, internal], internal_dir=internal, already_registered=set()
+            [circuit, internal], internal_dir=internal
         )
 
     # Exactly one provider of VecStim survives.
@@ -169,7 +170,7 @@ def test_select_mod_files_circuit_precedence(tmp_path, caplog):
     # Caller orders the dirs; internal first means the circuit copy wins.
     with caplog.at_level(logging.WARNING):
         res = mc.select_mod_files(
-            [internal, circuit], internal_dir=internal, already_registered=set()
+            [internal, circuit], internal_dir=internal
         )
 
     assert {p.name for p in res} == {"VecStim.mod"}
@@ -190,7 +191,7 @@ def test_select_mod_files_same_filename_gets_helpful_warning(tmp_path, caplog):
 
     with caplog.at_level(logging.WARNING):
         res = mc.select_mod_files(
-            [circuit, internal], internal_dir=internal, already_registered=set()
+            [circuit, internal], internal_dir=internal
         )
 
     assert {p.name for p in res} == {"TTXDynamicsSwitch.mod"}
@@ -206,40 +207,65 @@ def test_select_mod_files_two_circuit_files_clashing(tmp_path, caplog):
     write(d2 / "two.mod", mod("two", "Dup", "SUFFIX"))
 
     with caplog.at_level(logging.WARNING):
-        res = mc.select_mod_files([d1, d2], internal_dir=None, already_registered=set())
+        res = mc.select_mod_files([d1, d2], internal_dir=None)
 
     assert {p.name for p in res} == {"two.mod"}
     assert "both provide mechanism 'Dup'" in caplog.text
     assert "should be removed from circuit" not in caplog.text
 
 
-def test_select_mod_files_skips_already_registered(tmp_path):
-    """Mechanisms NEURON already has cannot be registered again."""
-    d = tmp_path / "mods"
-    write(d / "a.mod", mod("a", "Have", "SUFFIX"))
-    write(d / "b.mod", mod("b", "Missing", "SUFFIX"))
+def _multi_mod(*mechanisms):
+    """A MOD file declaring several mechanisms (one SUFFIX per NEURON block)."""
+    return "\n".join(f"NEURON {{\n\tSUFFIX {m}\n}}" for m in mechanisms).encode()
 
-    res = mc.select_mod_files([d], already_registered={"Have"})
-    assert {p.name for p in res} == {"b.mod"}
+
+def test_select_mod_files_multi_mechanism_loser_does_not_evict(tmp_path, caplog):
+    """X declares A and B; Y (low) declares A; Z (high) declares B.
+
+    X loses B to Z and is skipped, so it must not take A away from Y.
+    """
+    low, mid, high = tmp_path / "low", tmp_path / "mid", tmp_path / "high"
+    write(low / "y.mod", _multi_mod("A"))
+    write(mid / "x.mod", _multi_mod("A", "B"))
+    write(high / "z.mod", _multi_mod("B"))
+
+    with caplog.at_level(logging.WARNING):
+        res = mc.select_mod_files([low, mid, high])
+
+    assert {p.name for p in res} == {"y.mod", "z.mod"}
+    assert "will not be available" not in caplog.text
+
+
+def test_select_mod_files_multi_mechanism_warns_when_mechanism_lost(tmp_path, caplog):
+    """If the skipped file was the only provider of A, say so."""
+    mid, high = tmp_path / "mid", tmp_path / "high"
+    write(mid / "x.mod", _multi_mod("A", "B"))
+    write(high / "z.mod", _multi_mod("B"))
+
+    with caplog.at_level(logging.WARNING):
+        res = mc.select_mod_files([mid, high])
+
+    assert {p.name for p in res} == {"z.mod"}
+    assert "Mechanism 'A' is only provided by 'x.mod'" in caplog.text
+
+
+def test_select_mod_files_multi_mechanism_winner_evicts_all(tmp_path):
+    """A higher-priority file declaring A and B replaces both lower ones."""
+    low, high = tmp_path / "low", tmp_path / "high"
+    write(low / "a.mod", _multi_mod("A"))
+    write(low / "b.mod", _multi_mod("B"))
+    write(high / "ab.mod", _multi_mod("A", "B"))
+
+    res = mc.select_mod_files([low, high])
+    assert {p.name for p in res} == {"ab.mod"}
 
 
 def test_select_mod_files_keeps_unparseable_files(tmp_path):
     """A file we cannot parse is compiled rather than silently dropped."""
     d = tmp_path / "mods"
     write(d / "weird.mod", b"no declaration at all")
-    res = mc.select_mod_files([d], already_registered=set())
+    res = mc.select_mod_files([d])
     assert {p.name for p in res} == {"weird.mod"}
-
-
-def test_select_mod_files_missing_dir(tmp_path, caplog):
-    """A declared directory that is not there is skipped, but not silently.
-
-    A circuit whose `mechanisms_dir` does not exist would otherwise contribute
-    nothing and only fail much later with "... is not a MECHANISM".
-    """
-    with caplog.at_level(logging.WARNING):
-        assert mc.select_mod_files([tmp_path / "nope"], already_registered=set()) == {}
-    assert "does not exist" in caplog.text
 
 
 def test_default_incflags_disables_reportinglib():
@@ -256,7 +282,7 @@ def test_default_incflags_disables_reportinglib():
 def test_select_mod_files_returns_md5sums(tmp_path):
     d = tmp_path / "mods"
     path = write(d / "a.mod", b"hello")
-    res = mc.select_mod_files([d], already_registered=set())
+    res = mc.select_mod_files([d])
     assert res[path.absolute()] == "5d41402abc4b2a76b9719d911017c592"
 
 
@@ -302,7 +328,7 @@ def test__generate_mod_metadata(tmp_path):
     options = Options(incflags="-DFOO", loadflags="")
 
     meta = mc._generate_mod_metadata(mod_files, options)
-    assert meta["version"] == 1
+    assert meta["version"] == 2
     assert meta["hashes"] == [["a.mod", "abc123"]]
     assert meta["incflags"] == "-DFOO"
 
@@ -323,12 +349,31 @@ def test__write_cache_and_check_cache(tmp_path):
     # metadata matches but compiled lib is still missing -> not a hit
     assert not mc._check_cache(mod_files, tmp_path, options0)
 
-    write(mc._get_dynamic_file(tmp_path, "libnrnmech"), b"")
+    lib = write(mc._get_dynamic_file(tmp_path, "libnrnmech"), b"")
+    meta_mtime = mc._metadata_path(tmp_path).stat().st_mtime
+    os.utime(lib, (meta_mtime - 10, meta_mtime - 10))
     assert mc._check_cache(mod_files, tmp_path, options0)
 
     # different options -> no hit even with same mod files
     options1 = Options(incflags="-DX", loadflags="-different")
     assert not mc._check_cache(mod_files, tmp_path, options1)
+
+    # library rebuilt afterwards (e.g. plain nrnivmodl) -> no hit
+    os.utime(lib, (meta_mtime + 10, meta_mtime + 10))
+    assert not mc._check_cache(mod_files, tmp_path, options0)
+
+
+def test__check_cache_corrupt_metadata_is_a_miss(tmp_path):
+    """A truncated modules.json (killed build) means rebuild, not crash."""
+    mc._metadata_path(tmp_path).write_text('{"version": ')
+    assert not mc._check_cache({}, tmp_path, Options())
+
+
+def test__write_cache_is_atomic(tmp_path):
+    """No temp file is left behind and the result is valid JSON."""
+    mc._write_cache({}, tmp_path, Options())
+    assert [p.name for p in tmp_path.iterdir()] == ["modules.json"]
+    assert json.loads(mc._metadata_path(tmp_path).read_text())["version"] == mc.VERSION
 
 
 def test__output_dynamic_file(tmp_path):
@@ -370,7 +415,8 @@ def test__build_mod_files_compiles_and_caches(tmp_path):
         assert result == mc._get_dynamic_file(tmp_path, "libnrnmech")
 
         # Second call should be a cache hit: nrnivmodl not invoked again.
-        result2 = mc._build_mod_files(mod_files, tmp_path, "echo", options)
+        assert mc._check_cache(mod_files, tmp_path, options)
+        result2 = mc._build_mod_files(mod_files, tmp_path, "echo", options, up_to_date=True)
         assert mock_run.call_count == 1
         assert result2 == result
 
@@ -562,6 +608,35 @@ def _compiled_names(output_dir):
     return sorted(p.name for p in (output_dir / mc.MOD_FILES_PATH).glob("*.mod"))
 
 
+def test_neuron_version_does_not_import_neuron(monkeypatch):
+    """Importing NEURON would auto-load the ./<arch> build about to be replaced."""
+    monkeypatch.delitem(sys.modules, "neuron", raising=False)
+    with patch.object(mc.importlib.metadata, "version", return_value="9.0.1") as version:
+        assert mc.neuron_version() == "9.0.1"
+    version.assert_called_once_with("neuron")
+    assert "neuron" not in sys.modules
+
+
+def test_neuron_version_falls_back_to_nightly():
+    def version(name):
+        if name == "neuron":
+            raise mc.importlib.metadata.PackageNotFoundError(name)
+        return "9.1.dev0"
+
+    with patch.object(mc.importlib.metadata, "version", side_effect=version):
+        assert mc.neuron_version() == "9.1.dev0"
+
+
+def test_neuron_version_raises_without_neuron():
+    with patch.object(
+        mc.importlib.metadata,
+        "version",
+        side_effect=mc.importlib.metadata.PackageNotFoundError,
+    ):
+        with pytest.raises(mc.ModCompilationError, match="NEURON package is required"):
+            mc.neuron_version()
+
+
 def test_metadata_includes_neuron_version(monkeypatch, tmp_path):
     path = write(tmp_path / "a.mod", mod("a", "A"))
     monkeypatch.setattr(mc, "neuron_version", lambda: "8.2.4")
@@ -640,6 +715,27 @@ def test_compile_mods_missing_dir_raises(tmp_path):
         _compile([tmp_path / "missing"], output_dir=tmp_path / "out")
 
 
+def test_compile_mods_refuses_staging_dir_as_input(tmp_path, monkeypatch):
+    """`bcl-compile-mods mod_files` in the cwd must not delete the sources."""
+    monkeypatch.chdir(tmp_path)
+    src = write(tmp_path / mc.MOD_FILES_PATH / "Chan.mod", mod("Chan", "Chan", "SUFFIX"))
+    with pytest.raises(mc.ModCompilationError, match="staged"):
+        _compile([mc.MOD_FILES_PATH])
+    assert src.exists()
+
+
+def test_compile_mods_rebuilds_after_plain_nrnivmodl(tmp_path):
+    """A library newer than modules.json was not built from what it records."""
+    circuit = tmp_path / "circuit"
+    write(circuit / "Chan.mod", mod("Chan", "Chan", keyword="SUFFIX"))
+    out = tmp_path / "out"
+    lib, _ = _compile([circuit], output_dir=out)
+    meta_mtime = mc._metadata_path(out).stat().st_mtime
+    os.utime(lib, (meta_mtime + 10, meta_mtime + 10))
+    _, run = _compile([circuit], output_dir=out)
+    run.assert_called_once()
+
+
 class TestLoadIntoRunningNeuron:
     def _lib(self, tmp_path):
         path = write(tmp_path / "Chan.mod", mod("Chan", "Chan", keyword="SUFFIX"))
@@ -680,6 +776,28 @@ def test_changed_mod_files(tmp_path):
     assert mc.changed_mod_files(out) == [chan.absolute()]
     chan.unlink()
     assert mc.changed_mod_files(out) == [chan.absolute()]
+
+
+def test_changed_mod_files_reports_added_files(tmp_path):
+    circuit = tmp_path / "circuit"
+    write(circuit / "Chan.mod", mod("Chan", "Chan", keyword="SUFFIX"))
+    out = tmp_path / "out"
+    _compile([circuit], output_dir=out, with_internal_mods=False)
+    new = write(circuit / "New.mod", mod("New", "New", keyword="SUFFIX"))
+    assert mc.changed_mod_files(out) == [new.absolute()]
+
+
+def test_changed_mod_files_silent_after_plain_nrnivmodl(tmp_path):
+    """Rebuilt later with plain nrnivmodl: modules.json is stale, don't trust
+    it."""
+    circuit = tmp_path / "circuit"
+    chan = write(circuit / "Chan.mod", mod("Chan", "Chan", keyword="SUFFIX"))
+    out = tmp_path / "out"
+    lib, _ = _compile([circuit], output_dir=out, with_internal_mods=False)
+    write(chan, mod("Chan", "Chan", keyword="SUFFIX", extra=": edited\n"))
+    meta_mtime = mc._metadata_path(out).stat().st_mtime
+    os.utime(lib, (meta_mtime + 10, meta_mtime + 10))
+    assert mc.changed_mod_files(out) == []
 
 
 def test_changed_mod_files_ignores_corrupt_metadata(tmp_path):

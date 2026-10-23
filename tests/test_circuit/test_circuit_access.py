@@ -128,6 +128,20 @@ class TestSonataCircuitAccess:
             parent_dir / "examples" / "ringtest_allen_v1" / "simulation_config.json")
         assert str(expected) not in other.helper_dirs
 
+    def test_mechanisms_dirs_shared_with_helper_dirs(self, tmp_path):
+        """Every mechanisms_dir that is compiled and checked (edge
+        populations included) is also searched for helper HOCs."""
+        edge_mods = tmp_path / "edge_mods"
+        edge_mods.mkdir()
+        with patch(
+            "bluecellulab.circuit.circuit_access.sonata_circuit_access.extract_mechanisms_dir",
+            return_value=[edge_mods],
+        ) as extract:
+            access = SonataCircuitAccess(hipp_circuit_with_projections)
+        extract.assert_called_once_with(access.circuit_config_path)
+        assert access.mechanisms_dirs == [edge_mods]
+        assert access.helper_dirs[0] == str(edge_mods)
+
     def test_connection_parameters_carry_helper_dirs(self):
         entry = SimpleNamespace(
             source="Mosaic", target="Mosaic", delay=None, weight=None,

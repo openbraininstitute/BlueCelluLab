@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.metadata
 import json
 import logging
 import os
@@ -56,7 +57,7 @@ import libsonata
 
 logger = logging.getLogger(__name__)
 
-VERSION = 1
+VERSION = 2
 
 # Path within the output/cache dir where gathered mod files are placed.
 MOD_FILES_PATH = "mod_files"
@@ -235,7 +236,6 @@ def _warn_conflict(
 def select_mod_files(
     input_dirs: list[Path],
     internal_dir: Path | None = None,
-    already_registered: Iterable[str] | None = None,
 ) -> dict[Path, str]:
     """Choose which MOD files to compile, with their md5sums.
 
@@ -245,26 +245,13 @@ def select_mod_files(
     each file declares, so that differently named files defining the same
     mechanism cannot both be compiled.
 
-    Files whose mechanism appears in `already_registered` are dropped, since
-    NEURON cannot register a mechanism twice in one process.
-
     `internal_dir` identifies BlueCelluLab's own bundled directory, and is
     used only to phrase conflict warnings usefully.
     """
     priority: dict[Path, int] = {}
     by_name: dict[str, Path] = {}
     for index, directory in enumerate(input_dirs):
-        directory = Path(directory)
-        if not directory.is_dir():
-            # A circuit that declares a mechanisms_dir which is not there would
-            # otherwise silently contribute nothing, and only fail much later
-            # with "... is not a MECHANISM".
-            logger.warning(
-                "Mod file directory %s does not exist, no mod files taken from it.",
-                directory,
-            )
-            continue
-        for path in sorted(directory.glob("*.mod")):
+        for path in sorted(Path(directory).glob("*.mod")):
             path = path.absolute()
             priority[path] = index
             previous = by_name.get(path.name)
@@ -274,67 +261,78 @@ def select_mod_files(
             by_name[path.name] = path
 
     # Resolve files that declare the same mechanism under different names.
-    by_mechanism: dict[str, Path] = {}
-    selected: dict[Path, set[str]] = {}
-    for path in by_name.values():
+    # Files are taken from the highest priority down (within a directory the
+    # alphabetically last wins), and a file is kept only if none of its
+    # mechanisms is already provided. A skipped file never evicts another
+    # one, so a mechanism it shared with a lower-priority file stays provided.
+    claimed: dict[str, Path] = {}
+    selected: list[Path] = []
+    skipped: dict[str, Path] = {}
+    for path in sorted(by_name.values(), key=lambda p: (priority[p], p.name), reverse=True):
         mechanisms = declared_mechanisms(path)
+        clashes = {m: claimed[m] for m in mechanisms if m in claimed}
+        if clashes:
+            for mechanism, winner in sorted(clashes.items()):
+                _warn_conflict(winner, path, internal_dir, mechanism)
+            for mechanism in mechanisms - clashes.keys():
+                skipped.setdefault(mechanism, path)
+            continue
         if not mechanisms:
             logger.debug("No mechanism declaration found in %s, compiling it anyway", path)
-            selected[path] = set()
-            continue
-
-        superseded = False
-        for mechanism in sorted(mechanisms):
-            incumbent = by_mechanism.get(mechanism)
-            if incumbent is None or incumbent == path:
-                continue
-            if priority[path] >= priority[incumbent]:
-                _warn_conflict(path, incumbent, internal_dir, mechanism)
-                selected.pop(incumbent, None)
-                for m in list(by_mechanism):
-                    if by_mechanism[m] == incumbent:
-                        del by_mechanism[m]
-            else:
-                _warn_conflict(incumbent, path, internal_dir, mechanism)
-                superseded = True
-        if superseded:
-            continue
         for mechanism in mechanisms:
-            by_mechanism[mechanism] = path
-        selected[path] = mechanisms
+            claimed[mechanism] = path
+        selected.append(path)
 
-    # Drop anything NEURON already has; it cannot be registered again.
-    already = set(already_registered or ())
-    result: dict[Path, str] = {}
-    for path, mechanisms in selected.items():
-        clash = mechanisms & already
-        if clash:
-            logger.debug(
-                "Skipping %s: mechanism(s) %s already registered in NEURON",
-                path,
-                ", ".join(sorted(clash)),
+    for mechanism, path in sorted(skipped.items()):
+        if mechanism not in claimed:
+            logger.warning(
+                "Mechanism '%s' is only provided by '%s' (%s), which was skipped"
+                " because another of its mechanisms is provided by a"
+                " higher-priority file. '%s' will not be available.",
+                mechanism,
+                path.name,
+                path.parent,
+                mechanism,
             )
-            continue
-        result[path] = _md5sum(path)
-    return result
+    return {path: _md5sum(path) for path in sorted(selected)}
 
 
-def _generate_mod_metadata(mod_files: dict[Path, str], options: Options) -> dict:
-    """Create metadata about the compiled mod files, to track cache hits."""
+def _list_input_dirs(input_dirs: Iterable[Path]) -> dict[str, list[str]]:
+    """Return every MOD filename in each input directory."""
+    return {str(d): sorted(p.name for p in Path(d).glob("*.mod")) for d in input_dirs}
+
+
+def _generate_mod_metadata(
+    mod_files: dict[Path, str], options: Options, input_dirs: Iterable[Path] = ()
+) -> dict:
+    """Create metadata about the compiled mod files, to track cache hits.
+
+    The full listing of `input_dirs` is recorded too, so that MOD files added
+    to a source directory after the build can be reported.
+    """
     return {
         "version": VERSION,
         "neuron_version": neuron_version(),
         "hashes": sorted([p.name, hash_] for p, hash_ in mod_files.items()),
         "sources": sorted(str(p) for p in mod_files),
+        "inputs": _list_input_dirs(input_dirs),
         **asdict(options),
     }
 
 
 def neuron_version() -> str:
-    """Return the version of the NEURON installation in use."""
-    import neuron
+    """Return the installed NEURON version from package metadata.
 
-    return str(neuron.__version__)
+    NEURON is deliberately not imported: that would auto-load the existing
+    ``./<arch>`` build from the working directory, i.e. the very library
+    about to be rebuilt.
+    """
+    for distribution in ("neuron", "neuron-nightly"):
+        try:
+            return importlib.metadata.version(distribution)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+    raise ModCompilationError("The NEURON package is required to compile mod files")
 
 
 def _get_dynamic_file(output_dir: Path, name: str) -> Path:
@@ -344,26 +342,55 @@ def _get_dynamic_file(output_dir: Path, name: str) -> Path:
     return base / f"{name}{ext}"
 
 
-def _check_cache(mod_files: dict[Path, str], output_dir: Path, options: Options) -> bool:
+def _rebuilt_outside(output_dir: Path) -> bool:
+    """Whether the library in `output_dir` is newer than our metadata.
+
+    That means it was rebuilt afterwards by something else, typically a plain
+    ``nrnivmodl``, so ``modules.json`` no longer describes it.
+    """
+    libnrnmech = _get_dynamic_file(output_dir, "libnrnmech")
+    metadata = _metadata_path(output_dir)
+    try:
+        return libnrnmech.stat().st_mtime > metadata.stat().st_mtime
+    except OSError:
+        return False
+
+
+def _check_cache(
+    mod_files: dict[Path, str],
+    output_dir: Path,
+    options: Options,
+    input_dirs: Iterable[Path] = (),
+) -> bool:
     """See if we have a cache hit."""
     metadata = _metadata_path(output_dir)
-    if not metadata.exists():
+    try:
+        old = json.loads(metadata.read_text())
+    except (OSError, json.JSONDecodeError):
+        # Missing, or truncated by a killed build: rebuild.
         return False
 
-    with metadata.open() as fd:
-        old = json.load(fd)
-
-    new = _generate_mod_metadata(mod_files, options)
-    if old != new:
+    if old != _generate_mod_metadata(mod_files, options, input_dirs):
         return False
 
-    return _get_dynamic_file(output_dir, "libnrnmech").exists()
+    return (
+        _get_dynamic_file(output_dir, "libnrnmech").exists()
+        and not _rebuilt_outside(output_dir)
+    )
 
 
-def _write_cache(mod_files: dict[Path, str], output_dir: Path, options: Options) -> None:
-    """Write the cache metadata."""
-    with _metadata_path(output_dir).open("w") as fd:
-        json.dump(_generate_mod_metadata(mod_files, options), fd)
+def _write_cache(
+    mod_files: dict[Path, str],
+    output_dir: Path,
+    options: Options,
+    input_dirs: Iterable[Path] = (),
+) -> None:
+    """Write the cache metadata atomically, so readers never see a partial
+    file."""
+    metadata = _metadata_path(output_dir)
+    tmp = metadata.with_name(f".{metadata.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(_generate_mod_metadata(mod_files, options, input_dirs)))
+    os.replace(tmp, metadata)
 
 
 def _place_mod_files(output_dir: Path, mod_files: Iterable[Path]) -> Path:
@@ -385,8 +412,10 @@ def _build_mod_files(
     output_dir: Path,
     nrnivmodl_path: str | None,
     options: Options,
+    up_to_date: bool = False,
+    input_dirs: Iterable[Path] = (),
 ) -> Path:
-    """Compile `mod_files`, reusing a cached build if they are unchanged.
+    """Compile `mod_files` unless `up_to_date` (see `_check_cache`).
 
     Returns the path to the compiled shared library (``libnrnmech``).
     """
@@ -395,7 +424,7 @@ def _build_mod_files(
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    if _check_cache(mod_files, output_dir, options):
+    if up_to_date:
         logger.info("Mechanisms in %s are up to date, nothing to compile", output_dir)
         return _get_dynamic_file(output_dir, "libnrnmech")
 
@@ -432,7 +461,7 @@ def _build_mod_files(
         )
     logger.debug("nrnivmodl output:\n%s", res.stdout)
 
-    _write_cache(mod_files, output_dir, options)
+    _write_cache(mod_files, output_dir, options, input_dirs)
 
     libnrnmech = _get_dynamic_file(output_dir, "libnrnmech")
     if not libnrnmech.exists():
@@ -443,18 +472,10 @@ def _build_mod_files(
 
 
 def internal_mods_path() -> Path:
-    """Public accessor for BlueCelluLab's bundled technical MOD directory.
-
-    Useful to a caller that runs ``nrnivmodl`` itself and wants to include
-    these files in that invocation.
-    """
-    return _internal_mods_path()
-
-
-def _internal_mods_path() -> Path:
     """Get the path to BlueCelluLab's own bundled "technical" mod files.
 
-    These are mechanisms that a circuit's own ``mechanisms_dir`` should not
+    A caller that runs ``nrnivmodl`` itself should include these files in
+    that invocation. These are mechanisms that a circuit's own ``mechanisms_dir`` should not
     have to provide (e.g. ``vecevent.mod``), because they are infrastructure
     shared between simulators rather than part of any particular circuit's
     biophysical model. This mirrors neurodamus's
@@ -503,7 +524,7 @@ def _ordered_input_dirs(
         raise ModCompilationError(
             "Mod file directory does not exist: " + ", ".join(str(d) for d in missing)
         )
-    internal_dir = _internal_mods_path().absolute() if with_internal_mods else None
+    internal_dir = internal_mods_path().absolute() if with_internal_mods else None
     # Later directories win. neurodamus appends its internal mods last, so
     # the simulator's copy overrides the circuit's; inverted on request.
     if internal_dir is None:
@@ -541,11 +562,23 @@ def compile_mods(
     if circuit_config is not None:
         dirs.extend(extract_mechanisms_dir(circuit_config))
     ordered, internal_dir = _ordered_input_dirs(dirs, with_internal_mods)
-    mod_files = select_mod_files(ordered, internal_dir)
     output_dir = Path(output_dir).absolute()
+    # The staging directory is emptied on every build, which would delete
+    # the sources if it were also an input.
+    staging = (output_dir / MOD_FILES_PATH).resolve()
+    for directory in ordered:
+        if directory.resolve() == staging:
+            raise ModCompilationError(
+                f"Mod file directory {directory} is where compiled MOD files are"
+                " staged, and is emptied on every build. Use another output"
+                " directory or rename the source directory."
+            )
+    mod_files = select_mod_files(ordered, internal_dir)
     options = options or Options()
-    up_to_date = _check_cache(mod_files, output_dir, options)
-    libnrnmech = _build_mod_files(mod_files, output_dir, nrnivmodl_path, options)
+    up_to_date = _check_cache(mod_files, output_dir, options, ordered)
+    libnrnmech = _build_mod_files(
+        mod_files, output_dir, nrnivmodl_path, options, up_to_date, ordered
+    )
     if load:
         _load_into_running_neuron(libnrnmech, mod_files, rebuilt=not up_to_date)
     return libnrnmech
@@ -579,21 +612,26 @@ def _load_into_running_neuron(
 def changed_mod_files(output_dir: str | Path = ".") -> list[Path]:
     """Return the source MOD files changed since `output_dir` was compiled.
 
-    Empty if there is no BlueCelluLab build in `output_dir`. A recorded
-    source that was deleted counts as changed.
+    Empty if there is no BlueCelluLab build in `output_dir`, or if the
+    library was rebuilt after it by something else (e.g. plain
+    ``nrnivmodl``). A recorded source that was deleted counts as changed, and
+    a MOD file added to a source directory since the build is reported too.
     """
-    metadata = _metadata_path(Path(output_dir))
-    if not metadata.exists():
-        return []
+    output_dir = Path(output_dir)
     try:
-        recorded = json.loads(metadata.read_text())
+        recorded = json.loads(_metadata_path(output_dir).read_text())
     except (OSError, json.JSONDecodeError):
+        return []
+    if _rebuilt_outside(output_dir):
         return []
     hashes = dict(recorded.get("hashes", []))
     changed = []
     for source in map(Path, recorded.get("sources", [])):
         if not source.exists() or _md5sum(source) != hashes.get(source.name):
             changed.append(source)
+    for directory, names in recorded.get("inputs", {}).items():
+        added = set(_list_input_dirs([Path(directory)])[directory]) - set(names)
+        changed.extend(Path(directory) / name for name in sorted(added))
     return changed
 
 

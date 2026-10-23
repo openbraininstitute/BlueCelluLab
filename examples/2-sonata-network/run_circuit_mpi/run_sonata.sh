@@ -8,6 +8,12 @@
 
 source ../../../.venv/bin/activate
 
+# Run NEURON without its GUI (fails with "can't open DISPLAY" if DISPLAY is set, e.g. XQuartz)
+export NEURON_MODULE_OPTIONS=-nogui
+# With num_cores > 1, NEURON must find the MPI library, otherwise every process
+# runs alone as rank 0. Needed on macOS with Homebrew MPI; adjust the path to your install.
+# export MPI_LIB_NRN_PATH=/opt/homebrew/lib/libmpi.dylib
+
 # Remove old compiled mod files
 rm -r arm64/ # for mac-based systems
 rm -r x86_64/ # for linux-based systems
@@ -29,5 +35,5 @@ bcl-compile-mods $circuit_folder/mod  # Replace with the actual path to your mod
 
 echo "Running circuit simulation"
 # NB: num_cores should be less than or equal to number of cells to be simulated
-num_cores=1
+num_cores=4
 mpiexec -n $num_cores python run_bluecellulab_simulation.py --simulation_config $simulation_config --save-nwb

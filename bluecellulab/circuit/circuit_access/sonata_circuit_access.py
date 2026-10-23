@@ -33,6 +33,7 @@ from bluecellulab.circuit.config import SimulationConfig
 from bluecellulab.circuit.synapse_properties import SynapseProperties
 from bluecellulab.circuit.config import SonataSimulationConfig
 from bluecellulab.exceptions import BluecellulabError
+from bluecellulab.mod_compilation import extract_mechanisms_dir
 from bluecellulab.circuit.synapse_properties import (
     properties_from_snap,
     properties_to_snap,
@@ -63,6 +64,7 @@ class SonataCircuitAccess(CircuitAccess):
             self.config = SonataSimulationConfig(simulation_config)
         self.circuit_config_path = self.config.impl.config["network"]
         self._circuit = SnapCircuit(self.circuit_config_path)
+        self.mechanisms_dirs: list[Path] = extract_mechanisms_dir(self.circuit_config_path)
         self.helper_dirs: tuple[str, ...] = self._circuit_helper_dirs()
         self._warned_edge_populations: set[str] = set()
         self._helper_fields_cache: dict[tuple[str, tuple[str, ...]], list[str]] = {}
@@ -78,19 +80,24 @@ class SonataCircuitAccess(CircuitAccess):
         sonata_simplify filter helpers) place them under ``mechanisms_dir``
         and/or ``biophysical_neuron_models_dir``. These existing directories
         are searched for this circuit only (after ``HOC_LIBRARY_PATH``,
-        before the bundled helpers).
+        before the bundled helpers). The ``mechanisms_dir`` folders are the
+        same ones compiled and checked (`mechanisms_dirs`), edge populations
+        included.
         """
-        dirs: list[str] = []
         components = self._circuit.config.get("components", {}) or {}
         configs = [components] + [
             self._circuit.nodes[pop_name].config or {}
             for pop_name in self._circuit.nodes
         ]
-        for cfg in configs:
-            for key in ("mechanisms_dir", "biophysical_neuron_models_dir"):
-                path = cfg.get(key)
-                if path and Path(path).is_dir() and str(path) not in dirs:
-                    dirs.append(str(path))
+        candidates = [str(d) for d in self.mechanisms_dirs] + [
+            str(cfg["biophysical_neuron_models_dir"])
+            for cfg in configs
+            if cfg.get("biophysical_neuron_models_dir")
+        ]
+        dirs: list[str] = []
+        for path in candidates:
+            if Path(path).is_dir() and path not in dirs:
+                dirs.append(path)
         return tuple(dirs)
 
     @property

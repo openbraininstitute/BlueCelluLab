@@ -24,7 +24,11 @@ This builds into ``./<arch>`` (``arm64`` or ``x86_64``), the folder NEURON loads
 it is imported. The MOD files used are copied to ``./mod_files`` and recorded in
 ``./modules.json``. Running the command again with unchanged files does nothing; after you edit a
 MOD file it rebuilds. Use ``--output-dir`` to build elsewhere, and
-``--no-with-internal-mods`` to leave out the bundled files.
+``--no-with-internal-mods`` to leave out the bundled files. ``./mod_files`` is emptied on every
+build, so it cannot also be one of the source directories; this is refused with an error.
+
+Compile once, before starting the simulation. Under MPI, run ``bcl-compile-mods`` before
+``mpiexec`` rather than from every rank, since concurrent builds into the same directory collide.
 
 From a notebook or script, call the function instead:
 
@@ -38,9 +42,11 @@ Because NEURON can only load mechanisms once per process, ``compile_mods`` loads
 into the running process only if its mechanisms are not loaded yet. If an older build was already
 loaded (for example auto-loaded at import), it logs a warning asking you to restart the kernel.
 
-BlueCelluLab also warns, when it first loads mechanisms, if any MOD file changed since the build in
-the working directory was compiled, and when a SONATA circuit declares mechanisms that are not
-loaded.
+BlueCelluLab also warns, when it first loads mechanisms, if any MOD file changed (or was added to a
+source directory) since the build in the working directory was compiled, and when a SONATA circuit
+declares mechanisms that are not loaded or a ``mechanisms_dir`` that does not exist. If the library
+was rebuilt afterwards with plain ``nrnivmodl``, ``modules.json`` no longer describes it: the
+warning is skipped and the next ``bcl-compile-mods`` rebuilds.
 
 Technical MOD files supplied by BlueCelluLab
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -144,8 +150,13 @@ the bundled technical files into a single library:
    }
 
 A relative ``mechanisms_dir`` is resolved against the directory holding the circuit config. A
-``mechanisms_dir`` set on an individual node or edge population is picked up too. A declared
-directory that does not exist is an error.
+``mechanisms_dir`` set on an individual node or edge population is picked up too, and the same
+directories are searched for synapse helper HOCs. A declared directory that does not exist is an
+error when compiling.
+
+A MOD file that declares several mechanisms is kept only if none of them is provided by a
+higher-priority file; it never displaces a lower-priority file it loses to. If that leaves one of
+its mechanisms without any provider, a warning names it.
 
 Pre-compiling for a service
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
