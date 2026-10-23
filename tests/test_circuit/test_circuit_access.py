@@ -140,7 +140,7 @@ class TestSonataCircuitAccess:
             access = SonataCircuitAccess(hipp_circuit_with_projections)
         extract.assert_called_once_with(access.circuit_config_path)
         assert access.mechanisms_dirs == [edge_mods]
-        assert access.helper_dirs[0] == str(edge_mods)
+        assert str(edge_mods) in access.helper_dirs
 
     def test_connection_parameters_carry_helper_dirs(self):
         entry = SimpleNamespace(

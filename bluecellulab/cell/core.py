@@ -297,14 +297,14 @@ class Cell(InjectableMixin, PlottableMixin):
     def _default_enable_ttx(self) -> None:
         """Default enable_ttx implementation."""
         for section in self.sections.values():
-            if not neuron.h.ismembrane("TTXDynamicsSwitch"):
+            if not neuron.h.ismembrane("TTXDynamicsSwitch", sec=section):
                 section.insert('TTXDynamicsSwitch')
             section.ttxo_level_TTXDynamicsSwitch = 1.0
 
     def _default_disable_ttx(self) -> None:
         """Default disable_ttx implementation."""
         for section in self.sections.values():
-            if not neuron.h.ismembrane("TTXDynamicsSwitch"):
+            if not neuron.h.ismembrane("TTXDynamicsSwitch", sec=section):
                 section.insert('TTXDynamicsSwitch')
             section.ttxo_level_TTXDynamicsSwitch = 1e-14
 

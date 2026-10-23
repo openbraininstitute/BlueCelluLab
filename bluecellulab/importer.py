@@ -58,6 +58,7 @@ def import_mod_lib(neuron: ModuleType) -> str:
             neuron.h.nrn_load_dll(mod_lib_path)
         else:
             neuron.load_mechanisms(mod_lib_path)
+        _warn_if_mod_files_changed(_mod_lib_output_dir(mod_lib_path))
         return mod_lib_path
 
     _warn_if_mod_files_changed()
@@ -67,16 +68,31 @@ def import_mod_lib(neuron: ModuleType) -> str:
     return "No mechanisms are loaded."
 
 
-def _warn_if_mod_files_changed() -> None:
-    """Warn when the build in the working directory is older than its
-    sources."""
-    changed = changed_mod_files(".")
+def _mod_lib_output_dir(mod_lib_path: str) -> Path:
+    """Guess the `bcl-compile-mods` output dir behind a library path.
+
+    The library lives at ``<output_dir>/<arch>/libnrnmech.{so,dylib}``, so a
+    file path maps to its grandparent, an ``<arch>`` directory to its parent,
+    and anything else is used as is. Without a ``modules.json`` there this is
+    simply a no-op.
+    """
+    path = Path(mod_lib_path)
+    if path.suffix in (".so", ".dylib"):
+        return path.parent.parent
+    if path.name == platform.machine():
+        return path.parent
+    return path
+
+
+def _warn_if_mod_files_changed(output_dir: str | Path = ".") -> None:
+    """Warn when the build in `output_dir` is older than its sources."""
+    changed = changed_mod_files(output_dir)
     if changed:
         logger.warning(
             "MOD files changed since the mechanisms in %s were compiled: %s."
             " Re-run bcl-compile-mods and restart the process to use"
             " the changes.",
-            Path.cwd(),
+            Path(output_dir).resolve(),
             ", ".join(p.name for p in changed),
         )
 

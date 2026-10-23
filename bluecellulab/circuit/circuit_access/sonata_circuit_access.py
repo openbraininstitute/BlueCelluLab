@@ -80,25 +80,31 @@ class SonataCircuitAccess(CircuitAccess):
         sonata_simplify filter helpers) place them under ``mechanisms_dir``
         and/or ``biophysical_neuron_models_dir``. These existing directories
         are searched for this circuit only (after ``HOC_LIBRARY_PATH``,
-        before the bundled helpers). The ``mechanisms_dir`` folders are the
-        same ones compiled and checked (`mechanisms_dirs`), edge populations
-        included.
+        before the bundled helpers). Every ``mechanisms_dir`` that is compiled
+        and checked (`mechanisms_dirs`), edge populations included, is searched.
+
+        Search order: ``components``, then each node population — each config's
+        ``mechanisms_dir`` before its ``biophysical_neuron_models_dir`` — and
+        finally any ``mechanisms_dir`` only declared on edge populations.
         """
         components = self._circuit.config.get("components", {}) or {}
         configs = [components] + [
             self._circuit.nodes[pop_name].config or {}
             for pop_name in self._circuit.nodes
         ]
-        candidates = [str(d) for d in self.mechanisms_dirs] + [
-            str(cfg["biophysical_neuron_models_dir"])
-            for cfg in configs
-            if cfg.get("biophysical_neuron_models_dir")
-        ]
-        dirs: list[str] = []
+        candidates: list[str] = []
+        for cfg in configs:
+            for key in ("mechanisms_dir", "biophysical_neuron_models_dir"):
+                if path := cfg.get(key):
+                    candidates.append(str(path))
+        candidates.extend(str(d) for d in self.mechanisms_dirs)
+        # The same folder can come as differently spelled paths (SNAP config
+        # vs libsonata), so deduplicate on the resolved path.
+        dirs: dict[Path, str] = {}
         for path in candidates:
-            if Path(path).is_dir() and path not in dirs:
-                dirs.append(path)
-        return tuple(dirs)
+            if Path(path).is_dir():
+                dirs.setdefault(Path(path).resolve(), path)
+        return tuple(dirs.values())
 
     @property
     def available_cell_properties(self) -> set:

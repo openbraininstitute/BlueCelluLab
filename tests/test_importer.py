@@ -72,6 +72,36 @@ def test_import_mod_lib_env_var_set(tmp_path, monkeypatch):
         assert importer.import_mod_lib(mock_neuron) == "/fake/path"
 
 
+@pytest.mark.parametrize(
+    "lib_path,expected",
+    [
+        ("/opt/mech/arm64/libnrnmech.so", Path("/opt/mech")),
+        ("/opt/mech/x86_64", Path("/opt/mech")),
+        ("/opt/mech", Path("/opt/mech")),
+    ],
+)
+def test_mod_lib_output_dir(lib_path, expected, monkeypatch):
+    monkeypatch.setattr(platform, "machine", lambda: "x86_64")
+    assert importer._mod_lib_output_dir(lib_path) == expected
+
+
+def test_import_mod_lib_env_var_warns_on_changed_sources(tmp_path, monkeypatch):
+    """A library loaded via the env var is checked against its own build dir."""
+    mock_neuron = MagicMock()
+    monkeypatch.chdir(tmp_path)
+    lib_dir = tmp_path / "opt" / "mech" / "x86_64"
+    lib_dir.mkdir(parents=True)
+    so = lib_dir / "libnrnmech.so"
+    so.write_text("")
+    with patch.dict(os.environ, {"BLUECELLULAB_MOD_LIBRARY_PATH": str(so)}):
+        with patch("platform.machine", return_value="x86_64"):
+            with patch(
+                "bluecellulab.importer.changed_mod_files", return_value=[]
+            ) as changed:
+                importer.import_mod_lib(mock_neuron)
+    changed.assert_called_once_with(tmp_path / "opt" / "mech")
+
+
 def test_import_mod_lib_so_file(tmp_path, monkeypatch):
     mock_neuron = MagicMock()
     monkeypatch.chdir(tmp_path)

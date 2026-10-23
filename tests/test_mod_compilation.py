@@ -78,6 +78,22 @@ def test_declared_mechanisms_unreadable_file(tmp_path):
     assert mc.declared_mechanisms(tmp_path / "missing.mod") == set()
 
 
+def test_declared_mechanisms_ignores_suffix_nothing(tmp_path):
+    """`SUFFIX nothing` is a placeholder for function-only files, not a
+    mechanism."""
+    helper = write(tmp_path / "utils.mod", mod("utils", "nothing", "SUFFIX"))
+    assert mc.declared_mechanisms(helper) == set()
+
+
+def test_select_mod_files_keeps_multiple_nothing_files(tmp_path):
+    """Two function-only files both declaring `SUFFIX nothing` are no
+    duplicates."""
+    d = tmp_path / "mods"
+    write(d / "a.mod", mod("a", "nothing", "SUFFIX"))
+    write(d / "b.mod", mod("b", "nothing", "SUFFIX"))
+    assert {p.name for p in mc.select_mod_files([d])} == {"a.mod", "b.mod"}
+
+
 def test_declared_mechanisms_on_bundled_files():
     """The bundled technical mod files declare the mechanisms we expect.
 
@@ -400,7 +416,7 @@ def test__build_mod_files_no_mods(tmp_path):
 
 
 def test__build_mod_files_compiles_and_caches(tmp_path):
-    options = Options(incflags="", loadflags="")
+    options = Options(incflags="", loadflags="", neuron_version="9.0.0")
     path = write(tmp_path / "inputs" / "a.mod", b"mod file")
     mod_files = {path: mc._md5sum(path)}
 
@@ -462,7 +478,7 @@ def test__build_mod_files_captures_output_not_inherited_streams(tmp_path):
     usable file descriptor, so handing one to a subprocess raises and any
     notebook that triggers a compilation dies.
     """
-    options = Options(incflags="", loadflags="")
+    options = Options(incflags="", loadflags="", neuron_version="9.0.0")
     path = write(tmp_path / "inputs" / "a.mod", b"mod file")
 
     def fake_run(cmd, **kwargs):
@@ -493,7 +509,7 @@ def test__build_mod_files_failure_includes_compiler_output(tmp_path):
 
 
 def test__build_mod_files_passes_flags(tmp_path):
-    options = Options(incflags="-DFOO", loadflags="-lbar")
+    options = Options(incflags="-DFOO", loadflags="-lbar", neuron_version="9.0.0")
     path = write(tmp_path / "inputs" / "a.mod", b"mod file")
 
     def fake_run(cmd, **kwargs):
@@ -589,7 +605,9 @@ def test_registered_mechanisms_reports_builtins():
 # --------------------------------------------------------------------------
 
 
-def _fake_nrnivmodl(cmd, cwd, **_):
+def _fake_nrnivmodl(cmd, cwd=None, **_):
+    if "--version" in cmd:  # the nrniv probe in neuron_version()
+        return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="")
     lib = Path(cwd) / platform.machine() / f"libnrnmech{'.dylib' if sys.platform == 'darwin' else '.so'}"
     lib.parent.mkdir(parents=True, exist_ok=True)
     lib.write_text("lib")
@@ -604,37 +622,90 @@ def _compile(*args, **kwargs):
     return result, run
 
 
+def _nrnivmodl_calls(run):
+    """Calls to nrnivmodl itself, not the `nrniv -version` probe."""
+    return [c for c in run.call_args_list if "nrnivmodl" in str(c.args[0][0])]
+
+
 def _compiled_names(output_dir):
     return sorted(p.name for p in (output_dir / mc.MOD_FILES_PATH).glob("*.mod"))
+
+
+def _no_nrniv(cmd, **kwargs):
+    """nrniv -version failing, e.g. no binary next to nrnivmodl."""
+    return subprocess.CompletedProcess(args=cmd, returncode=1, stdout="", stderr="")
+
+
+def test_neuron_version_from_nrniv(tmp_path):
+    """The nrniv binary beside nrnivmodl is authoritative."""
+    nrnivmodl = write(tmp_path / "nrnivmodl", b"")
+    write(tmp_path / "nrniv", b"")
+    out = "NEURON -- VERSION 9.0.2 unknown (a1b2c3d) 2024-01-01"
+    with patch.object(mc.shutil, "which", return_value=None), patch.object(
+        mc.subprocess,
+        "run",
+        return_value=subprocess.CompletedProcess(args=[], returncode=0, stdout=out),
+    ) as run:
+        assert mc.neuron_version(str(nrnivmodl)) == "9.0.2"
+    assert run.call_args.args[0] == [str(tmp_path / "nrniv"), "--version"]
+
+
+def test_neuron_version_skips_missing_or_broken_nrniv(tmp_path):
+    """A missing or failing nrniv must fall through, not crash compilation."""
+    nrnivmodl = write(tmp_path / "nrnivmodl", b"")  # no nrniv next to it
+    with patch.object(mc.shutil, "which", return_value=str(tmp_path / "x" / "nrniv")):
+        with patch.object(mc.importlib.metadata, "version", return_value="9.0.1"):
+            assert mc.neuron_version(str(nrnivmodl)) == "9.0.1"
+    write(tmp_path / "nrniv", b"")
+    with patch.object(mc.shutil, "which", return_value=None), patch.object(
+        mc.subprocess, "run", side_effect=OSError("exec format error")
+    ), patch.object(mc.importlib.metadata, "version", return_value="9.0.1"):
+        assert mc.neuron_version(str(nrnivmodl)) == "9.0.1"
+
+
+def test_compile_mods_does_not_mutate_caller_options(tmp_path):
+    circuit = tmp_path / "circuit"
+    write(circuit / "Chan.mod", mod("Chan", "Chan", keyword="SUFFIX"))
+    options = Options()
+    _compile([circuit], output_dir=tmp_path / "out", options=options)
+    assert options.neuron_version == ""
 
 
 def test_neuron_version_does_not_import_neuron(monkeypatch):
     """Importing NEURON would auto-load the ./<arch> build about to be replaced."""
     monkeypatch.delitem(sys.modules, "neuron", raising=False)
-    with patch.object(mc.importlib.metadata, "version", return_value="9.0.1") as version:
-        assert mc.neuron_version() == "9.0.1"
+    with patch.object(mc.subprocess, "run", side_effect=_no_nrniv):
+        with patch.object(
+            mc.importlib.metadata, "version", return_value="9.0.1"
+        ) as version:
+            assert mc.neuron_version() == "9.0.1"
     version.assert_called_once_with("neuron")
     assert "neuron" not in sys.modules
 
 
-def test_neuron_version_falls_back_to_nightly():
-    def version(name):
-        if name == "neuron":
-            raise mc.importlib.metadata.PackageNotFoundError(name)
-        return "9.1.dev0"
+def test_neuron_version_falls_back_to_nightly_and_gpu():
+    for distribution, expected in (("neuron-nightly", "9.1.dev0"), ("neuron-gpu", "9.0")):
+        def version(name, expected=expected):
+            if name != distribution:
+                raise mc.importlib.metadata.PackageNotFoundError(name)
+            return expected
 
-    with patch.object(mc.importlib.metadata, "version", side_effect=version):
-        assert mc.neuron_version() == "9.1.dev0"
+        with patch.object(mc.subprocess, "run", side_effect=_no_nrniv):
+            with patch.object(mc.importlib.metadata, "version", side_effect=version):
+                assert mc.neuron_version() == expected
 
 
-def test_neuron_version_raises_without_neuron():
-    with patch.object(
-        mc.importlib.metadata,
-        "version",
-        side_effect=mc.importlib.metadata.PackageNotFoundError,
-    ):
-        with pytest.raises(mc.ModCompilationError, match="NEURON package is required"):
-            mc.neuron_version()
+def test_neuron_version_unknown_is_not_fatal(caplog):
+    """bb5 / source builds may have no package metadata; still compile."""
+    with patch.object(mc.subprocess, "run", side_effect=_no_nrniv):
+        with patch.object(
+            mc.importlib.metadata,
+            "version",
+            side_effect=mc.importlib.metadata.PackageNotFoundError,
+        ):
+            with caplog.at_level(logging.WARNING):
+                assert mc.neuron_version() == "unknown"
+    assert "NEURON version" in caplog.text
 
 
 def test_metadata_includes_neuron_version(monkeypatch, tmp_path):
@@ -677,10 +748,10 @@ def test_compile_mods_skips_unchanged_and_rebuilds_on_change(tmp_path):
     out = tmp_path / "out"
     _compile([circuit], output_dir=out)
     _, run = _compile([circuit], output_dir=out)
-    run.assert_not_called()
+    assert _nrnivmodl_calls(run) == []
     write(chan, mod("Chan", "Chan", keyword="SUFFIX", extra=": edited\n"))
     _, run = _compile([circuit], output_dir=out)
-    run.assert_called_once()
+    assert len(_nrnivmodl_calls(run)) == 1
 
 
 def test_compile_mods_dedups_legacy_vecstim(tmp_path, caplog):
@@ -733,7 +804,7 @@ def test_compile_mods_rebuilds_after_plain_nrnivmodl(tmp_path):
     meta_mtime = mc._metadata_path(out).stat().st_mtime
     os.utime(lib, (meta_mtime + 10, meta_mtime + 10))
     _, run = _compile([circuit], output_dir=out)
-    run.assert_called_once()
+    assert len(_nrnivmodl_calls(run)) == 1
 
 
 class TestLoadIntoRunningNeuron:
@@ -763,6 +834,18 @@ class TestLoadIntoRunningNeuron:
                 mc._load_into_running_neuron(lib, files, rebuilt=False)
         h.nrn_load_dll.assert_not_called()
         assert caplog.text == ""
+
+    def test_warns_when_build_only_partially_loaded(self, tmp_path, caplog):
+        """A cached build superset of what NEURON has must not look complete."""
+        chan = write(tmp_path / "Chan.mod", mod("Chan", "Chan", keyword="SUFFIX"))
+        ttx = write(tmp_path / "TTX.mod", mod("TTX", "TTXSwitch", keyword="SUFFIX"))
+        files = {chan: "h1", ttx: "h2"}
+        with patch.object(mc, "registered_mechanisms", return_value={"Chan"}):
+            with patch("neuron.h") as h, caplog.at_level(logging.WARNING):
+                mc._load_into_running_neuron(tmp_path / "lib.so", files, rebuilt=False)
+        h.nrn_load_dll.assert_not_called()
+        assert "TTXSwitch" in caplog.text
+        assert "Restart" in caplog.text
 
 
 def test_changed_mod_files(tmp_path):
@@ -805,7 +888,33 @@ def test_changed_mod_files_ignores_corrupt_metadata(tmp_path):
     assert mc.changed_mod_files(tmp_path) == []
 
 
+def test_cli_module_does_not_import_bluecellulab_or_neuron():
+    """`bcl-compile-mods` must not auto-load an existing ./<arch> build."""
+    code = (
+        "import bcl_compile_mods, sys;"
+        "assert 'neuron' not in sys.modules;"
+        "assert 'bluecellulab' not in sys.modules"
+    )
+    res = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
+    assert res.returncode == 0, res.stderr
+
+
 class TestMain:
+    def test_broken_circuit_config_returns_error(self, tmp_path, capsys):
+        """An invalid --circuit-config is an error, not a traceback."""
+        bad = write(tmp_path / "circuit_config.json", "{not json")
+        assert mc.main(["--circuit-config", str(bad)]) == 1
+        assert "ERROR" in capsys.readouterr().err
+
+    def test_restores_logger_state(self, tmp_path):
+        """In-process callers must keep their logging configuration."""
+        before = (mc.logger.handlers[:], mc.logger.level, mc.logger.propagate)
+        bad = write(tmp_path / "circuit_config.json", "{not json")
+        mc.main(["--circuit-config", str(bad)])
+        assert (mc.logger.handlers, mc.logger.level, mc.logger.propagate) == before
+
     def test_compiles_and_prints_library(self, tmp_path, capsys):
         circuit = tmp_path / "circuit"
         write(circuit / "Chan.mod", mod("Chan", "Chan", keyword="SUFFIX"))

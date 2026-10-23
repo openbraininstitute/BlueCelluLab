@@ -14,7 +14,8 @@
 """Unit tests for TTX in mod files"""
 
 import os
-from unittest.mock import patch
+import types
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -146,3 +147,21 @@ class TestTtxAvailabilityIsChecked:
         after = cell.get_soma_voltage()[-1]
 
         assert before != after
+
+
+def test_default_ttx_checks_the_right_section():
+    """`ismembrane` must get `sec=section`, or it tests the currently accessed
+    section for every loop iteration."""
+    sections = {"soma": MagicMock(), "dend": MagicMock()}
+
+    cell = types.SimpleNamespace(sections=sections)
+    with patch(
+        "bluecellulab.cell.core.neuron"
+    ) as mock_neuron:
+        mock_neuron.h.ismembrane.return_value = False
+        bluecellulab.Cell._default_enable_ttx(cell)
+
+    calls = mock_neuron.h.ismembrane.call_args_list
+    assert len(calls) == 2
+    assert calls[0].kwargs["sec"] is sections["soma"]
+    assert calls[1].kwargs["sec"] is sections["dend"]

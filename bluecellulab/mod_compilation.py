@@ -38,6 +38,7 @@ controlled by ``BLUECELLULAB_MOD_PRECEDENCE`` (see `circuit_mods_take_precedence
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import importlib.metadata
 import json
@@ -49,7 +50,7 @@ import shutil
 import subprocess  # noqa: S404
 import sys
 from collections.abc import Iterable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from importlib.util import find_spec
 from pathlib import Path
 
@@ -78,6 +79,11 @@ _COMMENT_BLOCK_RE = re.compile(
     r"^[ \t]*COMMENT\b.*?^[ \t]*ENDCOMMENT\b", re.MULTILINE | re.DOTALL
 )
 
+# Function-only MOD files conventionally declare ``SUFFIX nothing``; it is a
+# placeholder, not a mechanism, so several such files must not clash and
+# `check_circuit_mechanisms` must not expect a mechanism named "nothing".
+NON_MECHANISM_NAMES = frozenset({"nothing"})
+
 
 class ModCompilationError(Exception):
     """Raised when gathering or compiling MOD files fails."""
@@ -100,6 +106,9 @@ class Options:
 
     incflags: str = DEFAULT_INCFLAGS
     loadflags: str = ""
+    # Filled by `compile_mods` once the nrnivmodl (and thus the NEURON build)
+    # is resolved; influences the cache key.
+    neuron_version: str = ""
 
 
 def circuit_mods_take_precedence() -> bool:
@@ -135,7 +144,7 @@ def declared_mechanisms(path: str | Path) -> set[str]:
     except OSError as e:
         logger.warning("Could not read mod file %s: %s", path, e)
         return set()
-    return set(_MECH_DECL_RE.findall(_COMMENT_BLOCK_RE.sub("", text)))
+    return set(_MECH_DECL_RE.findall(_COMMENT_BLOCK_RE.sub("", text))) - NON_MECHANISM_NAMES
 
 
 def registered_mechanisms() -> set[str]:
@@ -312,27 +321,58 @@ def _generate_mod_metadata(
     """
     return {
         "version": VERSION,
-        "neuron_version": neuron_version(),
         "hashes": sorted([p.name, hash_] for p, hash_ in mod_files.items()),
         "sources": sorted(str(p) for p in mod_files),
         "inputs": _list_input_dirs(input_dirs),
         **asdict(options),
+        "neuron_version": options.neuron_version or neuron_version(),
     }
 
 
-def neuron_version() -> str:
-    """Return the installed NEURON version from package metadata.
+def neuron_version(nrnivmodl_path: str | None = None) -> str:
+    """Return the version of the NEURON that would compile the MOD files.
 
     NEURON is deliberately not imported: that would auto-load the existing
     ``./<arch>`` build from the working directory, i.e. the very library
-    about to be rebuilt.
+    about to be rebuilt. The compiler's own ``nrniv`` (found next to the
+    resolved `nrnivmodl`, then in PATH) is asked first, since on bb5 or with
+    a source build a pip-installed ``neuron`` can shadow the binary that
+    actually does the compiling, or no package metadata exists at all.
     """
-    for distribution in ("neuron", "neuron-nightly"):
+    candidates = []
+    if nrnivmodl_path:
+        candidates.append(Path(nrnivmodl_path).resolve().parent / "nrniv")
+    nrniv = shutil.which("nrniv")
+    if nrniv:
+        candidates.append(Path(nrniv))
+    for binary in candidates:
+        if not binary.is_file():
+            continue
+        try:
+            # ``--version`` prints and exits without starting NEURON, so it
+            # neither loads ./<arch> nor needs a DISPLAY.
+            res = subprocess.run(  # noqa: S603
+                [str(binary), "--version"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if res.returncode == 0 and (match := re.search(r"VERSION\s+(\S+)", res.stdout or "")):
+            return match.group(1)
+
+    for distribution in ("neuron", "neuron-nightly", "neuron-gpu"):
         try:
             return importlib.metadata.version(distribution)
         except importlib.metadata.PackageNotFoundError:
             continue
-    raise ModCompilationError("The NEURON package is required to compile mod files")
+    logger.warning(
+        "Could not determine the NEURON version; the build cache will not"
+        " invalidate on NEURON upgrades."
+    )
+    return "unknown"
 
 
 def _get_dynamic_file(output_dir: Path, name: str) -> Path:
@@ -428,9 +468,9 @@ def _build_mod_files(
         logger.info("Mechanisms in %s are up to date, nothing to compile", output_dir)
         return _get_dynamic_file(output_dir, "libnrnmech")
 
-    nrnivmodl = nrnivmodl_path or shutil.which("nrnivmodl")
-    if not nrnivmodl:
+    if not nrnivmodl_path:
         raise ModCompilationError("nrnivmodl not found in PATH")
+    nrnivmodl = nrnivmodl_path
 
     cmd = [nrnivmodl]
     if options.incflags:
@@ -575,9 +615,15 @@ def compile_mods(
             )
     mod_files = select_mod_files(ordered, internal_dir)
     options = options or Options()
+    # Resolved early: the nrnivmodl binary decides the NEURON version in the
+    # cache key. A missing binary is only fatal if a build is needed.
+    nrnivmodl = nrnivmodl_path or shutil.which("nrnivmodl")
+    if not options.neuron_version:
+        # A copy: the caller's Options may be reused with another nrnivmodl.
+        options = replace(options, neuron_version=neuron_version(nrnivmodl))
     up_to_date = _check_cache(mod_files, output_dir, options, ordered)
     libnrnmech = _build_mod_files(
-        mod_files, output_dir, nrnivmodl_path, options, up_to_date, ordered
+        mod_files, output_dir, nrnivmodl, options, up_to_date, ordered
     )
     if load:
         _load_into_running_neuron(libnrnmech, mod_files, rebuilt=not up_to_date)
@@ -594,19 +640,27 @@ def _load_into_running_neuron(
     mechanisms: set[str] = set()
     for path in mod_files:
         mechanisms |= declared_mechanisms(path)
-    registered = registered_mechanisms() & mechanisms
-    if not registered:
+    overlap = registered_mechanisms() & mechanisms
+    if not overlap:
         sys.modules["neuron"].h.nrn_load_dll(str(libnrnmech))
         logger.info("Loaded %s", libnrnmech)
-    elif rebuilt:
-        # Loaded before this rebuild, e.g. auto-loaded from the working
-        # directory at import: the process runs the old build.
-        logger.warning(
-            "NEURON already has mechanisms from the previous build loaded and"
-            " cannot replace them in a running process. Restart the Python"
-            " process or kernel to use the new build in %s.",
-            libnrnmech,
-        )
+        return
+
+    missing = mechanisms - overlap
+    if not missing and not rebuilt:
+        # Loaded before this process, e.g. auto-loaded from the working
+        # directory at import, and already covering the whole build.
+        return
+    details = (
+        f"; missing: {', '.join(sorted(missing))}" if missing else ""
+    )
+    logger.warning(
+        "NEURON already has mechanisms from another build loaded%s and"
+        " cannot replace or complete them in a running process. Restart the"
+        " Python process or kernel to use the build in %s.",
+        details,
+        libnrnmech,
+    )
 
 
 def changed_mod_files(output_dir: str | Path = ".") -> list[Path]:
@@ -659,10 +713,34 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+@contextlib.contextmanager
+def _cli_logging():
+    """Isolated stderr logging for the CLI, restored afterwards.
+
+    The ``bluecellulab`` logger may already be at ERROR/CRITICAL from
+    ``set_verbose_from_env`` (e.g. ``BLUECELLULAB_VERBOSE_LEVEL=0`` in batch
+    jobs), which would hide both progress and errors here.
+    """
+    saved = (logger.handlers[:], logger.level, logger.propagate)
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    logger.handlers[:] = [handler]
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
+    try:
+        yield
+    finally:
+        logger.handlers[:], logger.level, logger.propagate = saved
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point of ``bcl-compile-mods``."""
+    with _cli_logging():
+        return _main(argv)
+
+
+def _main(argv: list[str] | None) -> int:
     args = build_parser().parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
     input_dirs = [*args.dirs, *args.input_dir]
     if not input_dirs and not args.circuit_config and not args.with_internal_mods:
         build_parser().error("nothing to compile")
@@ -676,7 +754,7 @@ def main(argv: list[str] | None = None) -> int:
             options=Options(incflags=args.incflags, loadflags=args.loadflags),
             load=False,
         )
-    except ModCompilationError as e:
+    except (ModCompilationError, libsonata.SonataError, OSError, RuntimeError) as e:
         logger.error("%s", e)
         return 1
     print(libnrnmech)  # noqa: T201

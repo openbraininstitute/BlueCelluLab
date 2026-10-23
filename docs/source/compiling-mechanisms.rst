@@ -27,6 +27,10 @@ MOD file it rebuilds. Use ``--output-dir`` to build elsewhere, and
 ``--no-with-internal-mods`` to leave out the bundled files. ``./mod_files`` is emptied on every
 build, so it cannot also be one of the source directories; this is refused with an error.
 
+The command does not import NEURON or the ``bluecellulab`` package, so it neither loads the GUI
+nor auto-loads an existing ``./<arch>`` build. It asks the compiler's ``nrniv`` for the NEURON
+version that goes into the cache key (falling back to pip metadata, then a warning).
+
 Compile once, before starting the simulation. Under MPI, run ``bcl-compile-mods`` before
 ``mpiexec`` rather than from every rank, since concurrent builds into the same directory collide.
 
@@ -156,7 +160,8 @@ error when compiling.
 
 A MOD file that declares several mechanisms is kept only if none of them is provided by a
 higher-priority file; it never displaces a lower-priority file it loses to. If that leaves one of
-its mechanisms without any provider, a warning names it.
+its mechanisms without any provider, a warning names it. ``SUFFIX nothing``, the placeholder that
+function-only MOD files conventionally declare, is not treated as a mechanism.
 
 Pre-compiling for a service
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^

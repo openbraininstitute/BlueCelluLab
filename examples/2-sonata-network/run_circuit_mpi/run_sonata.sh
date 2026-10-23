@@ -35,5 +35,5 @@ bcl-compile-mods $circuit_folder/mod  # Replace with the actual path to your mod
 
 echo "Running circuit simulation"
 # NB: num_cores should be less than or equal to number of cells to be simulated
-num_cores=4
+num_cores=1
 mpiexec -n $num_cores python run_bluecellulab_simulation.py --simulation_config $simulation_config --save-nwb
