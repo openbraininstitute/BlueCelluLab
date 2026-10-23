@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from bluecellulab.validation.base import TestResult
-from bluecellulab.validation.criterion import GreaterThan
+from bluecellulab.validation.criterion import EqualTo, GreaterThan, IsFalse
 from bluecellulab.validation.measurement import EfelMeasurement
 from bluecellulab.validation.parametric_validation import ParametricValidation
 from bluecellulab.validation.plotting import plot_trace
@@ -67,6 +67,46 @@ class TestGreaterThan:
         c = GreaterThan(threshold=10)
         desc = c.describe(3)
         assert "not greater than" in desc
+
+    def test_describe_summarizes_array_values(self):
+        c = GreaterThan(threshold=0)
+        desc = c.describe(np.array([1.0, 2.0, 3.0]))
+        assert "min=1" in desc
+        assert "mean=2" in desc
+        assert "max=3" in desc
+
+
+class TestEqualTo:
+    def test_passes_when_equal(self):
+        assert EqualTo(expected=0).evaluate(0) is True
+
+    def test_fails_when_not_equal(self):
+        assert EqualTo(expected=0).evaluate(2) is False
+
+    def test_describe_pass(self):
+        desc = EqualTo(expected=0).describe(0)
+        assert "equals" in desc
+        assert "as expected" in desc
+
+    def test_describe_fail(self):
+        desc = EqualTo(expected=0).describe(3)
+        assert "does not equal" in desc
+
+
+class TestIsFalse:
+    def test_passes_when_falsy(self):
+        assert IsFalse().evaluate(0) is True
+
+    def test_fails_when_truthy(self):
+        assert IsFalse().evaluate(1) is False
+
+    def test_describe_pass(self):
+        desc = IsFalse().describe(0)
+        assert "falsy as expected" in desc
+
+    def test_describe_fail(self):
+        desc = IsFalse().describe(1)
+        assert "truthy" in desc
 
 
 class TestEfelMeasurement:
@@ -335,6 +375,40 @@ class TestSequenceProtocol:
         stimulus = mock_run.call_args.args[1]
         np.testing.assert_allclose(stimulus.current, [0.0, 1.0, 2.0, 2.0, 0.0])
         assert stimulus.stimulus_time == 50.0
+
+    @patch("bluecellulab.validation.protocol.run_stimulus")
+    def test_execute_single_phase_appends_zero_post_delay(self, mock_run):
+        mock_run.return_value = MagicMock()
+        protocol = SequenceProtocol(
+            phases=[(10.0, 2.0)],
+            pre_delay=10.0,
+            post_delay=10.0,
+            dt=10.0,
+            amplitude_mode="amplitude",
+        )
+
+        protocol.execute("template_params", 0.5)
+
+        stimulus = mock_run.call_args.args[1]
+        # pre_delay (0) -> single phase (2.0) -> post_delay appended as 0.0
+        np.testing.assert_allclose(stimulus.current, [0.0, 2.0, 0.0])
+
+    @patch("bluecellulab.validation.protocol.run_stimulus")
+    def test_execute_threshold_percentage_scales_by_rheobase(self, mock_run):
+        mock_run.return_value = MagicMock()
+        protocol = SequenceProtocol(
+            phases=[(10.0, 200.0)],
+            pre_delay=0.0,
+            post_delay=10.0,
+            dt=10.0,
+            amplitude_mode="threshold_percentage",
+        )
+
+        protocol.execute("template_params", 0.5)
+
+        stimulus = mock_run.call_args.args[1]
+        # 200% of rheobase 0.5 nA = 1.0 nA during the phase, then 0 for post_delay
+        np.testing.assert_allclose(stimulus.current, [1.0, 0.0])
 
 
 class TestParametricValidation:
