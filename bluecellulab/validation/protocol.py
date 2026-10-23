@@ -109,7 +109,9 @@ class StepProtocol(Protocol):
     """
 
     amplitude: float = 130.0
-    amplitude_mode: Literal["threshold_percentage", "amplitude"] = "threshold_percentage"
+    amplitude_mode: Literal["threshold_percentage", "amplitude"] = (
+        "threshold_percentage"
+    )
     dt: float = 1.0
     section: str = "soma[0]"
     segment: float = 0.5
@@ -206,7 +208,9 @@ class SequenceProtocol(Protocol):
     section: str = "soma[0]"
     segment: float = 0.5
     add_hypamp: bool = True
-    amplitude_mode: Literal["threshold_percentage", "amplitude"] = "threshold_percentage"
+    amplitude_mode: Literal["threshold_percentage", "amplitude"] = (
+        "threshold_percentage"
+    )
     measurement_phase: int | None = None
 
     def __post_init__(self) -> None:
