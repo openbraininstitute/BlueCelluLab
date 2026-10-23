@@ -87,36 +87,42 @@ class Protocol(ABC):
 
 @dataclass
 class StepProtocol(Protocol):
-    """IDRest-style step current injection at a percentage of rheobase.
+    """IDRest-style step current injection.
+
+    The ``amplitude`` field is interpreted according to ``amplitude_mode``: as a
+    percentage of rheobase (default) or as a raw current in nA.
 
     Timing windows are aligned to the stimulus sample grid, so they match the
     generated waveform even when the fixed IDRest timings are not exact
     multiples of ``dt``.
 
     Attributes:
-        threshold_percentage: Percentage of rheobase to inject (e.g. 130 = 130%).
-            Used when ``amplitude`` is not set.
-        amplitude: Raw current to inject in nA. When set, it is used directly
-            and ``threshold_percentage`` and the rheobase are ignored.
+        amplitude: The injected current. Its meaning depends on ``amplitude_mode``:
+            a percentage of rheobase (e.g. 130 = 130%) or a raw current in nA.
+        amplitude_mode: How to interpret ``amplitude``. ``"threshold_percentage"``
+            (default) treats it as a percentage of rheobase; ``"amplitude"`` treats
+            it as a raw current in nA.
         dt: Time step for the stimulus waveform in ms.
         section: Section to inject into.
         segment: Segment position along the section (0.0 to 1.0).
         add_hypamp: Whether to add the holding current.
     """
 
-    threshold_percentage: float = 130.0
-    amplitude: float | None = None
+    amplitude: float = 130.0
+    amplitude_mode: Literal["threshold_percentage", "amplitude"] = "threshold_percentage"
     dt: float = 1.0
     section: str = "soma[0]"
     segment: float = 0.5
     add_hypamp: bool = True
 
     def __post_init__(self) -> None:
-        """Validate the waveform time step before simulating."""
+        """Validate the amplitude, mode, and waveform time step before simulating."""
         _validate_time_value("dt", self.dt, strictly_positive=True)
-        _validate_real("threshold_percentage", self.threshold_percentage)
-        if self.amplitude is not None:
-            _validate_real("amplitude", self.amplitude)
+        _validate_real("amplitude", self.amplitude)
+        if self.amplitude_mode not in ("threshold_percentage", "amplitude"):
+            raise ValueError(
+                "amplitude_mode must be 'threshold_percentage' or 'amplitude'."
+            )
 
     @property
     def stim_start(self) -> float:
@@ -132,12 +138,12 @@ class StepProtocol(Protocol):
     def execute(self, template_params, rheobase: float) -> Recording:
         """Inject a step current and record the response."""
         stim_factory = StimulusFactory(dt=self.dt)
-        if self.amplitude is not None:
+        if self.amplitude_mode == "amplitude":
             stimulus = stim_factory.idrest(amplitude=self.amplitude)
         else:
             stimulus = stim_factory.idrest(
                 threshold_current=rheobase,
-                threshold_percentage=self.threshold_percentage,
+                threshold_percentage=self.amplitude,
             )
         return run_stimulus(
             template_params,
