@@ -20,6 +20,19 @@ from bluecellulab.synapse.synapse_types import (
 )
 from bluecellulab.synapse.synapse_helpers import build_helper_params
 
+
+@pytest.fixture(autouse=True)
+def real_mods_loaded():
+    """Load the real mod files before tests swap ``neuron.h`` for a stub.
+
+    The first ``RNGSettings`` access compiles and loads mechanisms through
+    ``neuron.h``, which a stubbed ``h`` cannot do.
+    """
+    from bluecellulab.rngsettings import RNGSettings
+
+    RNGSettings.get_instance()
+
+
 _PLASTICITY: dict[Any, float] = {
     "volume_CR": 0.1, "rho0_GB": 0.0, "Use_d_TM": 0.3, "Use_p_TM": 0.6,
     "gmax_d_AMPA": 1.0, "gmax_p_AMPA": 2.0, "theta_d": 0.006, "theta_p": 0.001,

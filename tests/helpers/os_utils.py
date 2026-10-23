@@ -17,8 +17,10 @@ import os
 
 @contextmanager
 def cwd(path):
-    """Cwd function that can be used in a context manager."""
+    """Temporarily change the working directory and always restore it."""
     old_dir = os.getcwd()
     os.chdir(path)
-    yield
-    os.chdir(old_dir)
+    try:
+        yield
+    finally:
+        os.chdir(old_dir)

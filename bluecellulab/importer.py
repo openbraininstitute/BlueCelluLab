@@ -16,11 +16,19 @@
 import importlib_resources as resources
 import logging
 import os
+import platform
+from pathlib import Path
 from types import ModuleType
+from typing import Optional
 
 import neuron
 
 from bluecellulab.exceptions import BluecellulabError
+from bluecellulab.mod_compilation import (
+    changed_mod_files,
+    declared_mechanisms,
+    registered_mechanisms,
+)
 from bluecellulab.utils import CaptureOutput, run_once
 
 
@@ -28,13 +36,21 @@ logger = logging.getLogger(__name__)
 
 
 def import_mod_lib(neuron: ModuleType) -> str:
-    """Import mod files."""
-    res = ""
+    """Import mod files.
+
+    BlueCelluLab does not compile anything here; mechanisms are compiled
+    beforehand with ``bcl-compile-mods`` (see
+    `bluecellulab.mod_compilation`), as with neurodamus. They are loaded from
+    ``BLUECELLULAB_MOD_LIBRARY_PATH`` if set, otherwise NEURON has already
+    loaded the ``<arch>`` folder in the working directory on import.
+    """
+    arch_dir = Path(platform.machine())
     if 'BLUECELLULAB_MOD_LIBRARY_PATH' in os.environ:
-        # Check if the current directory contains 'x86_64'.
-        if os.path.isdir('x86_64'):
+        # NEURON has already auto-loaded ./<arch>; loading a second library
+        # would abort with "The user defined name already exists".
+        if arch_dir.is_dir():
             raise BluecellulabError("BLUECELLULAB_MOD_LIBRARY_PATH is set"
-                                    " and current directory contains the x86_64 folder."
+                                    f" and current directory contains the {arch_dir} folder."
                                     " Please remove one of them.")
 
         mod_lib_path = os.environ["BLUECELLULAB_MOD_LIBRARY_PATH"]
@@ -42,14 +58,69 @@ def import_mod_lib(neuron: ModuleType) -> str:
             neuron.h.nrn_load_dll(mod_lib_path)
         else:
             neuron.load_mechanisms(mod_lib_path)
-        res = mod_lib_path
-    elif os.path.isdir('x86_64'):
-        # NEURON 8.* automatically load these mechamisms
-        res = os.path.abspath('x86_64')
-    else:
-        res = "No mechanisms are loaded."
+        _warn_if_mod_files_changed(_mod_lib_output_dir(mod_lib_path))
+        return mod_lib_path
 
-    return res
+    _warn_if_mod_files_changed()
+    if arch_dir.is_dir():
+        # NEURON loads this folder automatically on import.
+        return str(arch_dir.absolute())
+    return "No mechanisms are loaded."
+
+
+def _mod_lib_output_dir(mod_lib_path: str) -> Path:
+    """Guess the `bcl-compile-mods` output dir behind a library path.
+
+    The library lives at ``<output_dir>/<arch>/libnrnmech.{so,dylib}``, so a
+    file path maps to its grandparent, an ``<arch>`` directory to its parent,
+    and anything else is used as is. Without a ``modules.json`` there this is
+    simply a no-op.
+    """
+    path = Path(mod_lib_path)
+    if path.suffix in (".so", ".dylib"):
+        return path.parent.parent
+    if path.name == platform.machine():
+        return path.parent
+    return path
+
+
+def _warn_if_mod_files_changed(output_dir: str | Path = ".") -> None:
+    """Warn when the build in `output_dir` is older than its sources."""
+    changed = changed_mod_files(output_dir)
+    if changed:
+        logger.warning(
+            "MOD files changed since the mechanisms in %s were compiled: %s."
+            " Re-run bcl-compile-mods and restart the process to use"
+            " the changes.",
+            Path(output_dir).resolve(),
+            ", ".join(p.name for p in changed),
+        )
+
+
+def check_circuit_mechanisms(mechanisms_dirs: Optional[list[Path]]) -> None:
+    """Warn if mechanisms a circuit declares are not loaded in NEURON."""
+    if not mechanisms_dirs:
+        return
+    registered = registered_mechanisms()
+    missing: set[str] = set()
+    for directory in map(Path, mechanisms_dirs):
+        if not directory.is_dir():
+            logger.warning(
+                "The circuit's mechanisms_dir %s does not exist, its mechanisms"
+                " cannot be checked.",
+                directory,
+            )
+            continue
+        for path in directory.glob("*.mod"):
+            missing |= declared_mechanisms(path) - registered
+    if missing:
+        logger.warning(
+            "Mechanisms from the circuit's mechanisms_dir are not loaded: %s."
+            " Compile them first, e.g. with"
+            " `bcl-compile-mods --circuit-config <circuit_config.json>`"
+            " in the working directory.",
+            ", ".join(sorted(missing)),
+        )
 
 
 def _register_legacy_morphio_wrapper_alias() -> None:
@@ -103,10 +174,21 @@ def print_header(neuron: ModuleType, mod_lib_path: str) -> None:
 
 @run_once
 def _load_mod_files() -> None:
-    """Import hoc and mod files."""
+    """Import hoc and mod files.
+
+    NEURON only allows mechanisms to be loaded once per process, so this is
+    guarded with `run_once`: only the first call actually loads anything.
+    """
     logger.debug("Loading the mod files.")
     mod_lib_paths = import_mod_lib(neuron)
     print_header(neuron, mod_lib_paths)
+
+
+def load_mod_files_for_circuit(mechanisms_dirs: Optional[list[Path]]) -> None:
+    """Load mod files, then check a circuit's declared mechanisms are
+    present."""
+    _load_mod_files()
+    check_circuit_mechanisms(mechanisms_dirs)
 
 
 def load_mod_files(func):
