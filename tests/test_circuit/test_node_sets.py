@@ -128,6 +128,14 @@ def test_get_simulation_cell_ids(tmp_path, node_set, expected):
     assert access.get_simulation_cell_ids() == expected
 
 
+def test_get_simulation_cell_ids_without_node_set_warns(tmp_path, caplog):
+    access = _circuit_access(tmp_path)
+
+    with caplog.at_level(logging.WARNING):
+        assert access.get_simulation_cell_ids() == ALL_BIOPHYSICAL
+    assert "No node_set in simulation config" in caplog.text
+
+
 def test_get_simulation_cell_ids_unknown_node_set(tmp_path):
     access = _circuit_access(tmp_path, "Missing")
     with pytest.raises(KeyError, match="Missing"):

@@ -19,7 +19,7 @@ from functools import lru_cache
 import json
 import logging
 from pathlib import Path
-from typing import Iterable, Mapping, Optional
+from typing import Iterable, Optional
 
 from bluepysnap.bbp import Cell as SnapCell
 from bluepysnap.circuit_ids import CircuitNodeId, CircuitEdgeIds
@@ -525,6 +525,7 @@ class SonataCircuitAccess(CircuitAccess):
         """
         node_set = self.config.node_set
         if node_set is None:
+            logger.warning("No node_set in simulation config: simulating all nodes.")
             cell_ids = {
                 CellId(str(pop_name), int(node_id))
                 for pop_name, node_pop in self._circuit.nodes.items()
