@@ -1,6 +1,50 @@
 Changelog
 ==========
 
+Unreleased
+----------
+* Generic ``modoverride`` (Neurodamus-compatible synapse helpers, see
+  ``docs/source/synapse-helpers.rst``):
+
+  * The value is a helper prefix, always resolved to ``<modoverride>Helper``;
+    no aliases. ``ProbAMPANMDA_EMS`` is the default path and needs no override;
+    ``AMPANMDA``/``GABAAB`` select the bundled helpers.
+  * The config no longer checks the value against loaded NEURON mechanisms
+    (it rejected ``AMPANMDA``/``GABAAB``); only a non-empty string is required.
+  * Helper resolution order: cwd, user ``HOC_LIBRARY_PATH``, registered circuit
+    dirs, bundled helpers. Loaded by absolute path, once per prefix.
+  * ``<Helper>_NeededAttributes`` are mandatory: building an overridden synapse
+    with missing attributes raises ``BluecellulabError``. Helper fields survive
+    the Allen edge-property fallback.
+  * Helper parameters follow Neurodamus: standard fields under Neurodamus
+    names (``weight``, ``U``, ``nrrp``, ...), extra fields under their raw
+    SONATA name, ``maskValue = -1`` and ``location = 0.5`` reserved (never
+    read from edges). ``<Helper>_UHillScaleVariables`` is supported.
+  * Overridden synapses set ``conductance = weight`` when the mechanism
+    exposes ``conductance``; ``conductance_scale_factor`` is not applied.
+  * Native ``ProbAMPANMDA_EMS``, ``ProbGABAAB_EMS`` and ``GluSynapse``
+    synapses also set ``conductance = weight``, as neurodamus does for every
+    synapse. The mod uses it only for its own delayed-connection weights.
+  * ``GluSynapse`` and ``Exp2Syn`` overrides force the native
+    ``GluSynapse``/``Exp2Syn`` classes whatever the ``syn_type_id`` and raise
+    if the needed edge fields are missing. Without an override, selection
+    stays data-driven (backward compatible).
+  * Helper search directories are per circuit (``SonataCircuitAccess.helper_dirs``);
+    ``HOC_LIBRARY_PATH`` is no longer modified permanently.
+  * Helpers always use Random123 seeding; a warning is logged once in other
+    RNG modes.
+* Fix: spontaneous minis pick the excitatory/inhibitory node rate by
+  ``syn_type_id`` (``< 100`` inhibitory), so override synapses get the right
+  rate. Native synapses are unchanged.
+* Fix: ``Cell.info_dict`` works with override synapses.
+* Fix: changing ``RNGSettings.synapse_seed`` after ``set_seeds`` now reaches
+  helper synapses (HOC ``synapseSeed`` kept in sync).
+* Fix: a ``connection_overrides`` block with ``delay: 0`` is applied
+  immediately (only ``delay > 0`` is delayed), as in Neurodamus.
+* Results change: native ``GluSynapse`` now seeds its RNG with ``post_gid + 1``
+  (was ``post_gid``), matching neurodamus ``GluSynapseHelper``. Stochastic
+  release of plastic synapses differs from previous BlueCelluLab versions.
+
 2.5.0
 -----
 

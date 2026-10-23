@@ -22,13 +22,14 @@
 
 rngMode = 0  // corresponds to COMPATIBILITY defined below
 globalSeed = 0
+synapseSeed = 0
 
 begintemplate RNGSettings
 
-public init, interpret, getRNGMode, getGlobalSeed
+public init, interpret, getRNGMode, getGlobalSeed, getSynapseSeed
 public COMPATIBILITY, RANDOM123, UPMCELLRAN4
 
-external rngMode, globalSeed, terminate
+external rngMode, globalSeed, synapseSeed, terminate
 
 proc init() {
     // consts for random number handling
@@ -39,6 +40,10 @@ proc init() {
 
 func getRNGMode() {
     return rngMode
+}
+
+func getSynapseSeed() {
+    return synapseSeed
 }
 
 endtemplate RNGSettings

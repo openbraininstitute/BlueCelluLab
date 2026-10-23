@@ -40,6 +40,7 @@ class FakePC:
         self.broadcast_result = broadcast_result
         self.set_gid2node_calls = []
         self.cell_calls = []
+        self.gid_clear_calls = 0
         self.broadcasted = None
         self.gathered = None
 
@@ -53,6 +54,9 @@ class FakePC:
     def py_broadcast(self, value, root):
         self.broadcasted = (value, root)
         return self.broadcast_result if self.broadcast_result is not None else value
+
+    def gid_clear(self):
+        self.gid_clear_calls += 1
 
     def set_gid2node(self, gid, node):
         self.set_gid2node_calls.append((gid, node))
@@ -74,6 +78,9 @@ class DummyCell:
     def __init__(self, synapses=None):
         self.synapses = synapses or {}
         self.connections = {}
+
+    def delete(self):
+        pass
 
     def add_replay_delayed_weight(self, *args, **kwargs):
         return None
@@ -364,3 +371,16 @@ def test_add_connections_mpi_non_instantiated_precell_uses_replay(monkeypatch):
     assert created[0].pre_cell is None
     assert created[0].pre_spiketrain.tolist() == [1.0, 2.0, 3.0]
     assert post_cell.connections["syn1"] is created[0]
+
+
+def test_delete_clears_owned_parallel_context_gids():
+    pc = FakePC()
+    sim = make_sim(pc=pc)
+    sim._owns_pc = True
+    sim._gids_registered_mpi = True
+
+    sim.delete()
+    sim.delete()
+
+    assert pc.gid_clear_calls == 1
+    assert sim.pc is None

@@ -19,6 +19,8 @@ from unittest.mock import patch
 
 import pandas as pd
 import pytest
+
+from bluecellulab.exceptions import BluecellulabError
 from bluepysnap.exceptions import BluepySnapError
 
 from bluecellulab.circuit import CellId, SonataCircuitAccess
@@ -53,6 +55,55 @@ def test_get_synapse_connection_parameters():
     assert syn_configure[1] == "%s.mg = 1.0"
 
 
+def test_helper_fields_survive_allen_fallback():
+    """The Allen fallback replaces the requested properties; helper fields
+    are added afterwards and must still be extracted."""
+    from bluecellulab.circuit.synapse_properties import SynapseProperties
+
+    allen_config = parent_dir / "examples" / "ringtest_allen_v1" / "simulation_config.json"
+    circuit_access = SonataCircuitAccess(allen_config)
+    # Drop "erev" from the Allen list so only the helper can request it.
+    allen_without_erev = tuple(
+        p for p in SynapseProperties.allen_chemical if p != "erev")
+    with patch.object(
+        SynapseProperties, "allen_chemical", allen_without_erev
+    ), patch.object(
+        circuit_access, "_mod_override_suffixes", return_value=("Fake",),
+    ), patch.object(
+        circuit_access, "_collect_helper_needed_attributes",
+        return_value={"erev": "Fake"},
+    ):
+        res = circuit_access.extract_synapses(CellId("RingA", 0), None)
+
+    assert SynapseProperty.U_SYN not in res.columns  # Allen fallback taken
+    assert "erev" in res.columns
+    assert res["erev"].notna().any()
+
+
+def test_mod_override_suffixes_without_connection_entries():
+    """A config that cannot list connection entries has no overrides."""
+    allen_config = parent_dir / "examples" / "ringtest_allen_v1" / "simulation_config.json"
+    circuit_access = SonataCircuitAccess(allen_config)
+    with patch.object(
+        circuit_access.config, "connection_entries", side_effect=NotImplementedError,
+    ):
+        assert circuit_access._mod_override_suffixes(CellId("hippocampus_neurons", 1)) == ()
+
+
+def test_collect_helper_needed_attributes_first_declarer_wins():
+    """Fields declared by several helpers map to the first prefix."""
+    allen_config = parent_dir / "examples" / "ringtest_allen_v1" / "simulation_config.json"
+    circuit_access = SonataCircuitAccess(allen_config)
+    declared = {"A": ["w_corr", "tau_corr"], "B": ["tau_corr", "erev"]}
+    with patch(
+        "bluecellulab.synapse.synapse_helpers.get_helper_needed_attributes",
+        side_effect=lambda suffix, dirs=(): declared[suffix],
+    ):
+        fields = circuit_access._collect_helper_needed_attributes(["A", "B"])
+
+    assert fields == {"w_corr": "A", "tau_corr": "A", "erev": "B"}
+
+
 def test_sonata_circuit_access_file_not_found():
     with pytest.raises(FileNotFoundError):
         SonataCircuitAccess("non_existing_file")
@@ -61,6 +112,196 @@ def test_sonata_circuit_access_file_not_found():
 class TestSonataCircuitAccess:
     def setup_method(self):
         self.circuit_access = SonataCircuitAccess(hipp_circuit_with_projections)
+
+    def test_circuit_helper_dirs_per_circuit(self):
+        """The circuit's biophysical_neuron_models_dir is searched for
+        helper HOCs by this circuit only (no global registry)."""
+        expected = (
+            parent_dir
+            / "examples"
+            / "circuit_hipp_mooc_most_central_10_SP_PC"
+            / "components"
+            / "hoc"
+        )
+        assert str(expected) in self.circuit_access.helper_dirs
+        other = SonataCircuitAccess(
+            parent_dir / "examples" / "ringtest_allen_v1" / "simulation_config.json")
+        assert str(expected) not in other.helper_dirs
+
+    def test_connection_parameters_carry_helper_dirs(self):
+        entry = SimpleNamespace(
+            source="Mosaic", target="Mosaic", delay=None, weight=None,
+            spont_minis=None, synapse_configure=None, mod_override="AMPANMDA")
+        with patch.object(
+            self.circuit_access.config, "connection_entries", return_value=[entry],
+        ), patch.object(self.circuit_access, "target_contains_cell", return_value=True):
+            params = get_synapse_connection_parameters(
+                self.circuit_access, CellId("a", 0), CellId("a", 1))
+
+        assert params["ModOverride"] == "AMPANMDA"
+        assert params["HelperDirs"] == self.circuit_access.helper_dirs
+
+    @pytest.mark.parametrize("delay, delayed", [(0.0, False), (5.0, True)])
+    def test_delay_zero_block_applies_immediately(self, delay, delayed):
+        """Only delay > 0 makes a delayed block, as neurodamus; delay 0
+        applies modoverride and weight (delay-zero, F10)."""
+        entry = SimpleNamespace(
+            source="Mosaic", target="Mosaic", delay=delay, weight=2.0,
+            spont_minis=None, synapse_configure=None, mod_override="AMPANMDA")
+        with patch.object(
+            self.circuit_access.config, "connection_entries", return_value=[entry],
+        ), patch.object(self.circuit_access, "target_contains_cell", return_value=True):
+            params = get_synapse_connection_parameters(
+                self.circuit_access, CellId("a", 0), CellId("a", 1))
+
+        assert ("ModOverride" in params) is not delayed
+        assert ("Weight" in params) is not delayed
+        assert (params["DelayWeights"] == [(delay, 2.0)]) is delayed
+
+    def test_helper_fields_extracted_only_if_present(self, caplog):
+        """Declared helper fields the population has are extracted; absent
+        ones are skipped without warning (checked per synapse at build)."""
+        import logging
+
+        cell_id = CellId("hippocampus_neurons", 1)
+        with patch.object(
+            self.circuit_access, "_mod_override_suffixes", return_value=("Fake",),
+        ), patch.object(
+            self.circuit_access,
+            "_collect_helper_needed_attributes",
+            return_value={"afferent_center_x": "Fake", "spine_length": "Fake"},
+        ), caplog.at_level(logging.WARNING):
+            res = self.circuit_access.extract_synapses(cell_id, True)
+
+        assert "afferent_center_x" in res.columns
+        assert "spine_length" not in res.columns
+        assert caplog.text == ""
+
+    def test_helper_standard_name_field_kept_raw_and_mask_value_skipped(self):
+        """A helper field equal to a standard column (``conductance``) is
+        also exposed under its raw name; reserved ``maskValue`` is never
+        extracted, as in neurodamus."""
+        cell_id = CellId("hippocampus_neurons", 1)
+        with patch.object(
+            self.circuit_access, "_mod_override_suffixes", return_value=("Fake",),
+        ), patch.object(
+            self.circuit_access,
+            "_collect_helper_needed_attributes",
+            return_value={"conductance": "Fake", "maskValue": "Fake"},
+        ):
+            fields = self.circuit_access._helper_fields_for_population(
+                "any_population", {"conductance", "maskValue"}, cell_id)
+            res = self.circuit_access.extract_synapses(cell_id, True)
+
+        assert fields == ["conductance"]
+        assert "maskValue" not in res.columns
+        assert "conductance" in res.columns
+        assert (res["conductance"] == res[SynapseProperty.G_SYNX]).all()
+
+    def test_native_mod_overrides_skip_helper_discovery(self):
+        """``GluSynapse``/``Exp2Syn`` use native classes: no helper is
+        loaded for field discovery."""
+        entries = [SimpleNamespace(mod_override=v, delay=None, target="Mosaic")
+                   for v in ("GluSynapse", "Exp2Syn", "AMPANMDA", None)]
+        with patch.object(
+            self.circuit_access.config, "connection_entries", return_value=entries,
+        ), patch.object(self.circuit_access, "target_contains_cell", return_value=True):
+            assert self.circuit_access._mod_override_suffixes(
+                CellId("hippocampus_neurons", 1)) == ("AMPANMDA",)
+
+    def test_unhandled_edge_type_is_skipped_with_one_warning(self, caplog):
+        """Like neurodamus, edge populations of a type it has no connection
+        manager for (e.g. electrical) are skipped with a warning."""
+        import logging
+        from unittest.mock import PropertyMock
+
+        edge_cls = type(next(iter(self.circuit_access._circuit.edges.values())))
+        with patch.object(
+            edge_cls, "type", new_callable=PropertyMock, return_value="electrical",
+        ), caplog.at_level(logging.WARNING):
+            res = self.circuit_access.extract_synapses(CellId("hippocampus_neurons", 1), True)
+            self.circuit_access.extract_synapses(CellId("hippocampus_neurons", 2), True)
+
+        assert res.empty
+        assert "unhandled type 'electrical'" in caplog.text
+        names = list(self.circuit_access._circuit.edges)
+        assert caplog.text.count("is skipped") == len(names)
+
+    def test_edge_properties_follow_declared_type(self):
+        from bluecellulab.circuit.synapse_properties import SynapseProperties
+
+        pop = SimpleNamespace(property_names={"u_syn"})
+        access = type(self.circuit_access)
+        assert access._edge_properties_for("Exp2Syn_synapse", pop, "p") == list(
+            SynapseProperties.allen_chemical)
+        assert access._edge_properties_for("point_process", pop, "p") == list(
+            SynapseProperties.allen_point)
+
+    def test_chemical_edges_without_tsodyks_markram_fields_raise(self):
+        """No guessing the Allen schema from the fields: a chemical
+        population must provide the standard fields."""
+        pop = SimpleNamespace(property_names={"tau1", "tau2", "erev", "conductance"})
+        with pytest.raises(BluecellulabError, match="lacks the Tsodyks-Markram field"):
+            type(self.circuit_access)._edge_properties_for("chemical", pop, "my_pop")
+
+    def test_mod_override_suffixes_only_from_applicable_blocks(self):
+        """Delayed blocks and blocks not targeting the cell never set the
+        mechanism, so their helpers are not loaded (a bad helper there
+        stays harmless)."""
+        entries = [
+            SimpleNamespace(mod_override="AMPANMDA", delay=None, target="Here"),
+            SimpleNamespace(mod_override="ZeroDelay", delay=0.0, target="Here"),
+            SimpleNamespace(mod_override="Delayed", delay=5.0, target="Here"),
+            SimpleNamespace(mod_override="Elsewhere", delay=None, target="There"),
+        ]
+        with patch.object(
+            self.circuit_access.config, "connection_entries", return_value=entries,
+        ), patch.object(
+            self.circuit_access, "target_contains_cell",
+            side_effect=lambda target, _cell: target == "Here",
+        ):
+            assert self.circuit_access._mod_override_suffixes(
+                CellId("hippocampus_neurons", 1)) == ("AMPANMDA", "ZeroDelay")
+
+    def test_unloadable_applicable_helper_raises(self):
+        with patch.object(
+            self.circuit_access, "_mod_override_suffixes", return_value=("NoSuch",),
+        ):
+            with pytest.raises(BluecellulabError, match="modoverride='NoSuch'"):
+                self.circuit_access.extract_synapses(CellId("hippocampus_neurons", 1), True)
+
+    def test_helper_fields_cached_per_population_and_override_set(self):
+        with patch.object(
+            self.circuit_access, "_mod_override_suffixes", return_value=("Fake",),
+        ), patch.object(
+            self.circuit_access,
+            "_collect_helper_needed_attributes",
+            return_value={"afferent_center_x": "Fake"},
+        ) as collect:
+            cells = [CellId("hippocampus_neurons", 1), CellId("hippocampus_neurons", 2)]
+            for cell_id in cells:
+                self.circuit_access.extract_synapses(cell_id, True)
+            n_calls = collect.call_count
+            for cell_id in cells:
+                self.circuit_access.extract_synapses(cell_id, True)
+
+        # At most one collection per edge population; none for repeated cells.
+        assert 1 <= n_calls <= len(list(self.circuit_access._circuit.edges.keys()))
+        assert collect.call_count == n_calls
+        assert all(call.args == (("Fake",),) for call in collect.call_args_list)
+
+    def test_no_override_extracts_without_helper_fields(self, caplog):
+        """Without modoverride nothing extra is extracted and nothing is
+        logged."""
+        import logging
+
+        assert self.circuit_access._mod_override_suffixes(CellId("hippocampus_neurons", 1)) == ()
+        with caplog.at_level(logging.WARNING):
+            res = self.circuit_access.extract_synapses(CellId("hippocampus_neurons", 1), True)
+
+        assert res.shape == (1742, 16)
+        assert "maskValue" not in res.columns
+        assert caplog.text == ""
 
     def test_available_cell_properties(self):
         assert self.circuit_access.available_cell_properties == {
