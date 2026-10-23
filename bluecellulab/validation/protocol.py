@@ -118,7 +118,8 @@ class StepProtocol(Protocol):
     add_hypamp: bool = True
 
     def __post_init__(self) -> None:
-        """Validate the amplitude, mode, and waveform time step before simulating."""
+        """Validate the amplitude, mode, and waveform time step before
+        simulating."""
         _validate_time_value("dt", self.dt, strictly_positive=True)
         _validate_real("amplitude", self.amplitude)
         if self.amplitude_mode not in ("threshold_percentage", "amplitude"):
