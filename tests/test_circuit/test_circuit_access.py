@@ -211,19 +211,23 @@ class TestSonataCircuitAccess:
 
     def test_unhandled_edge_type_is_skipped_with_one_warning(self, caplog):
         """Like neurodamus, edge populations of a type it has no connection
-        manager for (e.g. electrical) are skipped with a warning."""
+        manager for (e.g. neuromodulatory) are skipped with a warning.
+
+        ('electrical' would now be a *handled* type: it is routed to the
+        gap-junction machinery and excluded from the synapse path upstream.)
+        """
         import logging
         from unittest.mock import PropertyMock
 
         edge_cls = type(next(iter(self.circuit_access._circuit.edges.values())))
         with patch.object(
-            edge_cls, "type", new_callable=PropertyMock, return_value="electrical",
+            edge_cls, "type", new_callable=PropertyMock, return_value="neuromodulatory",
         ), caplog.at_level(logging.WARNING):
             res = self.circuit_access.extract_synapses(CellId("hippocampus_neurons", 1), True)
             self.circuit_access.extract_synapses(CellId("hippocampus_neurons", 2), True)
 
         assert res.empty
-        assert "unhandled type 'electrical'" in caplog.text
+        assert "unhandled type 'neuromodulatory'" in caplog.text
         names = list(self.circuit_access._circuit.edges)
         assert caplog.text.count("is skipped") == len(names)
 

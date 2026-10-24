@@ -65,6 +65,14 @@ from bluecellulab.simulation import (
 )
 from bluecellulab.simulation.modifications import apply_modifications
 from bluecellulab.synapse.synapse_types import SynapseID
+from bluecellulab.circuit.config.gap_junctions import GapJunctionConfig
+from bluecellulab.circuit.gap_junction_manager import (
+    ContinuousConnectionManager,
+    GapJunctionManager,
+)
+from bluecellulab.circuit.gap_junction_user_corrections import (
+    load_user_modifications,
+)
 
 from bluecellulab.cell.point_process import BasePointProcessCell, HocPointProcessCell, mechanism_name_from_model_template
 
@@ -136,11 +144,15 @@ class CircuitSimulation:
             else neuron.h.ParallelContext()
         )
         self._owns_pc = parallel_context is None
+        self._pc_obj = pc
         self.pc = pc if int(pc.nhost()) > 1 or print_cellstate else None
         self._gids_registered_mpi = False
         self._deleted = False
         self.print_cellstate = print_cellstate
         self.save_time = save_time
+        self.holding_ic_per_gid: dict[int, Any] = {}
+        self.seclamp_per_gid: dict[int, Any] = {}
+        self.seclamp_current_per_gid_recorder: dict[int, Any] = {}
 
         self.rng_settings = RNGSettings.get_instance()
         self.rng_settings.set_seeds(
@@ -323,6 +335,16 @@ class CircuitSimulation:
         else:
             self.projections = add_projections
 
+        has_pointer_conns = bool(
+            self._gap_junction_populations()
+            or self.circuit_access.config.continuous_connections()
+        )
+        if has_pointer_conns and self.pc is None:
+            # Pointer connections (gap junctions, continuous connections)
+            # transfer voltages through pc.source_var/target_var — as
+            # neurodamus, they need a ParallelContext at any rank count,
+            # including serial runs.
+            self.pc = self._pc_obj
         need_gids = (
             add_synapses
             or (self.pc is not None)
@@ -330,6 +352,7 @@ class CircuitSimulation:
             or interconnect_cells
             or pre_spike_trains is not None
             or self.print_cellstate
+            or has_pointer_conns
         )
 
         if need_gids:
@@ -343,23 +366,43 @@ class CircuitSimulation:
                 pre_gids=pre_gids,
                 add_minis=add_minis,
             )
+        need_mpi_init = (
+            add_replay or interconnect_cells or normalized_pre_spike_trains
+            or has_pointer_conns
+        )
+        if need_mpi_init and self.pc is not None:
+            self._init_instantiated_cells_mpi()
+            if add_replay or interconnect_cells or normalized_pre_spike_trains:
+                # gid/spikedetector registration is only for spike
+                # delivery; source_var/target_var transfers don't use it.
+                self._gids_registered_mpi = True
+                self._register_gids_for_mpi()
+            self.pc.barrier()
+
         if add_replay or interconnect_cells or normalized_pre_spike_trains:
             if add_replay and not add_synapses:
                 raise BluecellulabError(
                     "add_replay option can not be used if add_synapses is False"
                 )
-            if self.pc is not None:
-                self._init_instantiated_cells_mpi()
-                self._gids_registered_mpi = True
-                self._register_gids_for_mpi()
-                self.pc.barrier()
-                self.pc.setup_transfer()
-                self.pc.set_maxstep(1.0)
             self._add_connections(
                 add_replay=add_replay,
                 interconnect_cells=interconnect_cells,
                 user_pre_spike_trains=normalized_pre_spike_trains,
             )
+
+        # Gap junctions and continuous (graded) connections use
+        # pc.source_var / pc.target_var rather than NetCon. They must be
+        # registered BEFORE pc.setup_transfer().
+        if has_pointer_conns:
+            self._add_gap_junctions()
+            self._add_continuous_connections()
+
+        # setup_transfer must come AFTER all source_var/target_var
+        # registrations; set_maxstep follows it, as neurodamus
+        # (node.py: setup_transfer -> set_maxstep(4) -> stdinit).
+        if need_mpi_init and self.pc is not None:
+            self.pc.setup_transfer()
+            self.pc.set_maxstep(4)
         if add_stimuli:
             add_noise_stimuli = True
             add_hyperpolarizing_stimuli = True
@@ -931,6 +974,125 @@ class CircuitSimulation:
             )
         return real_cell_ids
 
+    def _gap_junction_populations(self) -> list[str]:
+        """Edge populations to wire as gap junctions: every ``"type":
+        "electrical"`` population (neurodamus convention), plus any
+        population explicitly named by a ``gap_junctions`` config block.
+        """
+        electrical = getattr(
+            self.circuit_access, "electrical_edge_populations", None)
+        pops = set(electrical() if electrical is not None else [])
+        try:
+            pops.update(
+                cfg.edge_population
+                for cfg in self.circuit_access.config.gap_junctions()
+            )
+        except AttributeError:
+            pass  # backend (e.g. bluepy) doesn't expose gap_junctions
+        return sorted(pops)
+
+    def _add_gap_junctions(self) -> None:
+        """Wire all gap-junction edge populations (auto-detected electrical
+        populations plus ``gap_junctions`` config overrides)."""
+        pop_names = self._gap_junction_populations()
+        if not pop_names:
+            return
+        try:
+            overrides = {cfg.edge_population: cfg
+                         for cfg in self.circuit_access.config.gap_junctions()}
+        except AttributeError:
+            overrides = {}
+        manager = GapJunctionManager(self)
+        for pop_name in pop_names:
+            cfg = overrides.get(
+                pop_name, GapJunctionConfig(edge_population=pop_name))
+            try:
+                manager.add_block(cfg)
+            except Exception as exc:
+                logger.error(
+                    "Failed to add gap-junction population (edges='%s'): %s",
+                    cfg.edge_population, exc,
+                )
+                raise
+        self._apply_gap_junction_user_corrections()
+
+    def _apply_gap_junction_user_corrections(self) -> None:
+        """Apply ``beta_features`` user corrections (neurodamus
+        ``load_user_modifications`` port): ``gjc`` conductance overwrite,
+        channel removal, per-cell ``g_pas``, holding IClamps and find- holding-
+        current SEClamps.
+
+        SEClamp currents are recorded so they can be persisted by
+        :meth:`_save_seclamp_currents` at the end of :meth:`run`.
+        """
+        try:
+            beta = self.circuit_access.config.beta_features()
+        except (AttributeError, NotImplementedError):
+            return
+        if not beta:
+            return
+        # Neurodamus gates user corrections behind
+        # beta_features["gapjunction_target_population"] matching the
+        # GapJunctionManager's node population. Here a single call covers
+        # all instantiated cells, so require the key to name a node
+        # population that is actually instantiated.
+        target_pop = beta.get("gapjunction_target_population")
+        instantiated_pops = {cid.population_name for cid in self.cells}
+        if target_pop is None or target_pop not in instantiated_pops:
+            return
+        self.holding_ic_per_gid, self.seclamp_per_gid = load_user_modifications(self)
+        if self.seclamp_per_gid:
+            # Record seclamp currents for saving to a file at the end
+            self.seclamp_current_per_gid_recorder = {}
+            for gid, seclamp in self.seclamp_per_gid.items():
+                self.seclamp_current_per_gid_recorder[gid] = neuron.h.Vector()
+                self.seclamp_current_per_gid_recorder[gid].record(seclamp._ref_i)
+
+    def _save_seclamp_currents(self) -> None:
+        """Save recorded SEClamp currents for gap junction user corrections.
+
+        Mirrors neurodamus' ``save_seclamp``: one pickle per rank under
+        ``<output>/gap_junction_seclamps/data_for_host_<rank>.p``.
+        """
+        if not self.seclamp_current_per_gid_recorder:
+            return
+        import pickle
+
+        logger.info("Save SEClamp currents for gap junction user corrections")
+        vals = {
+            gid: hoc_vec.as_numpy()
+            for gid, hoc_vec in self.seclamp_current_per_gid_recorder.items()
+        }
+        output_dir = (
+            Path(self.circuit_access.config.output_root_path)
+            / "gap_junction_seclamps"
+        )
+        output_dir.mkdir(parents=True, exist_ok=True)
+        rank = int(self.pc.id()) if self.pc is not None else 0
+        with open(output_dir / f"data_for_host_{rank}.p", "wb") as f:
+            pickle.dump(vals, f)
+
+    def _add_continuous_connections(self) -> None:
+        """Instantiate continuous (graded) connection blocks from sim
+        config."""
+        try:
+            blocks = self.circuit_access.config.continuous_connections()
+        except AttributeError:
+            return
+        if not blocks:
+            return
+        manager = ContinuousConnectionManager(self)
+        for cfg in blocks:
+            try:
+                manager.add_block(cfg)
+            except Exception as exc:
+                logger.error(
+                    "Failed to add continuous-connection block '%s' "
+                    "(edges='%s'): %s",
+                    cfg.name, cfg.edge_population, exc,
+                )
+                raise
+
     def _add_cells(self, cell_ids: list[CellId]) -> None:
         """Instantiate cells from a gid list."""
         self.cells = CellDict()
@@ -1117,6 +1279,7 @@ class CircuitSimulation:
             forward_skip_value=effective_skip_value,
             show_progress=show_progress,
         )
+        self._save_seclamp_currents()
 
     def get_mainsim_voltage_trace(
         self, cell_id: int | tuple[str, int], t_start=None, t_stop=None, t_step=None
