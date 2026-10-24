@@ -144,6 +144,7 @@ class CircuitSimulation:
             else neuron.h.ParallelContext()
         )
         self._owns_pc = parallel_context is None
+        self._pc_obj = pc
         self.pc = pc if int(pc.nhost()) > 1 or print_cellstate else None
         self._gids_registered_mpi = False
         self._deleted = False
@@ -338,6 +339,12 @@ class CircuitSimulation:
             self._gap_junction_populations()
             or self.circuit_access.config.continuous_connections()
         )
+        if has_pointer_conns and self.pc is None:
+            # Pointer connections (gap junctions, continuous connections)
+            # transfer voltages through pc.source_var/target_var — as
+            # neurodamus, they need a ParallelContext at any rank count,
+            # including serial runs.
+            self.pc = self._pc_obj
         need_gids = (
             add_synapses
             or (self.pc is not None)
@@ -365,10 +372,12 @@ class CircuitSimulation:
         )
         if need_mpi_init and self.pc is not None:
             self._init_instantiated_cells_mpi()
-            self._gids_registered_mpi = True
-            self._register_gids_for_mpi()
+            if add_replay or interconnect_cells or normalized_pre_spike_trains:
+                # gid/spikedetector registration is only for spike
+                # delivery; source_var/target_var transfers don't use it.
+                self._gids_registered_mpi = True
+                self._register_gids_for_mpi()
             self.pc.barrier()
-            self.pc.set_maxstep(1.0)
 
         if add_replay or interconnect_cells or normalized_pre_spike_trains:
             if add_replay and not add_synapses:
@@ -388,9 +397,12 @@ class CircuitSimulation:
             self._add_gap_junctions()
             self._add_continuous_connections()
 
-        # setup_transfer must come AFTER all source_var/target_var registrations.
+        # setup_transfer must come AFTER all source_var/target_var
+        # registrations; set_maxstep follows it, as neurodamus
+        # (node.py: setup_transfer -> set_maxstep(4) -> stdinit).
         if need_mpi_init and self.pc is not None:
             self.pc.setup_transfer()
+            self.pc.set_maxstep(4)
         if add_stimuli:
             add_noise_stimuli = True
             add_hyperpolarizing_stimuli = True

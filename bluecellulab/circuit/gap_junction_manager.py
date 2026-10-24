@@ -54,6 +54,7 @@ from bluecellulab.circuit.config.gap_junctions import (
     ContinuousConnectionConfig,
     GapJunctionConfig,
 )
+from bluecellulab.exceptions import BluecellulabError
 
 if TYPE_CHECKING:
     from bluecellulab.cell import Cell
@@ -188,37 +189,39 @@ class _PointerConnectionManager:
         )
         return local_node_ids, all_node_ids
 
-    def _target_var(self, pp, pointer_name: str, src_id: int):
-        """Subscribe ``pp``'s peer-voltage variable to broadcast ``src_id``.
+    @staticmethod
+    def _transfer_var_name(pp, pointer_name: str) -> str | None:
+        """Return the RANGE variable usable as a transfer target, or None.
 
-        NEURON transfers can only write into ``RANGE`` variables — a
+        ``pc.target_var`` can only write into ``RANGE`` variables — a
         ``POINTER`` member can never be a transfer target, and probing it
-        would abort the MPI run (``hoc_execerror`` is fatal under MPI,
-        not a catchable Python exception). The decision is therefore
-        convention-based:
+        under MPI is fatal (``hoc_execerror`` aborts MPI, not a catchable
+        exception). The decision is convention-based:
 
-        - if the mech exposes ``RANGE vgap`` (neurodamus ``Gap``
-          convention — also the dual-mode transfer var), transfer into it
-          and set the ``use_vgap`` selector when present;
-        - otherwise ``pointer_name`` must name a RANGE variable
-          (neurodamus style).
+        - ``vgap`` when the mech exposes it (neurodamus ``Gap``
+          convention — also the dual-mode transfer var);
+        - else ``pointer_name`` itself when it names a RANGE variable
+          (reading an unbound POINTER raises ``ValueError``, so
+          ``hasattr`` distinguishes the two);
+        - else ``None`` — the mech's peer-voltage input is POINTER-only.
         """
         if hasattr(pp, "vgap"):
-            self._pc.target_var(pp, pp._ref_vgap, src_id)
-            if hasattr(pp, "use_vgap"):
-                pp.use_vgap = 1
-            return
-        ref = getattr(pp, f"_ref_{pointer_name}", None)
+            return "vgap"
+        if hasattr(pp, pointer_name):
+            return pointer_name
+        return None
+
+    def _target_var(self, pp, var_name: str, src_id: int):
+        """Subscribe ``pp``'s RANGE ``var_name`` to broadcast ``src_id``."""
+        ref = getattr(pp, f"_ref_{var_name}", None)
         if ref is None:
             raise AttributeError(
                 f"Mechanism '{type(pp).__name__}' has no variable named "
-                f"'{pointer_name}' and no RANGE 'vgap'. Under MPI the "
-                "peer-voltage variable must be a RANGE variable (e.g. "
-                "'vgap'); POINTER members cannot be transfer targets. For "
-                "serial-only mechs provide 'RANGE vgap' + a 'use_vgap' "
-                "selector (dual-mode)."
+                f"'{var_name}'."
             )
         self._pc.target_var(pp, ref, src_id)
+        if hasattr(pp, "use_vgap"):
+            pp.use_vgap = 1
 
 
 class GapJunctionManager(_PointerConnectionManager):
@@ -316,6 +319,19 @@ class GapJunctionManager(_PointerConnectionManager):
             src_section=src_section, src_x=src_x,
         )
 
+        if (
+            self._pc is not None
+            and src == tgt
+            and src_section is not None
+            and self._transfer_var_name(gj, cfg.pointer_name) is not None
+        ):
+            # Self-junction: a single directed edge exists, so no
+            # reciprocal edge ever exports under eff_id. The partner
+            # side is this same cell — export its efferent-location
+            # voltage ourselves.
+            with _section_in_stack(src_section):
+                self._pc.source_var(src_section(src_x)._ref_v, eff_id)
+
         tgt_cell.gap_junctions = getattr(tgt_cell, "gap_junctions", [])
         tgt_cell.gap_junctions.append(gj)
         return 1
@@ -341,27 +357,26 @@ class GapJunctionManager(_PointerConnectionManager):
                       eff_id: int, aff_id: int, src_section, src_x) -> None:
         """Bind gj's peer-voltage input to the source (neurodamus conventions).
 
-        MPI: ``target_var`` subscribes the RANGE peer-voltage variable
-        (``vgap`` — see ``_target_var``) to the source broadcast under
-        ``eff_id``; ``source_var`` exports the target's voltage under
-        ``aff_id`` (consumed by the reciprocal edge's junction). On
-        dual-mode mechs the serial ``POINTER`` is additionally bound to a
-        local voltage so it never dangles.
+        RANGE-capable mechs (``_transfer_var_name`` — neurodamus ``Gap``
+        or dual-mode ``vgap``/``use_vgap`` mechs) always use variable
+        transfers, serial or MPI alike: ``target_var`` subscribes the
+        RANGE var to the source broadcast under ``eff_id`` and
+        ``source_var`` exports the target's voltage under ``aff_id``
+        (consumed by the reciprocal edge's junction). Dual-mode mechs
+        additionally get their ``POINTER`` bound to a local voltage so
+        it never dangles.
 
-        Serial: direct ``setpointer`` from the source section to the
-        junction's POINTER.
+        POINTER-only mechs fall back to a direct serial ``setpointer``;
+        under MPI they are rejected — NEURON cannot transfer into a
+        POINTER.
         """
-        ptr_attr = f"_ref_{pointer_name}"
-        if not hasattr(gj, ptr_attr):
-            raise AttributeError(
-                f"Mechanism '{type(gj).__name__}' has no POINTER named "
-                f"'{pointer_name}'."
-            )
-        if self._pc is not None:
+        has_pointer = hasattr(gj, f"_ref_{pointer_name}")
+        transfer_var = self._transfer_var_name(gj, pointer_name)
+        if self._pc is not None and transfer_var is not None:
             if hasattr(gj, "use_vgap"):
                 # Dual-mode mech: bind the serial POINTER to a local
-                # voltage so it is never dangling (the RANGE transfer var
-                # drives the current under MPI anyway).
+                # voltage so it is never dangling (the RANGE transfer
+                # var drives the current anyway).
                 bind_sec, bind_x = (
                     (src_section, src_x)
                     if src_section is not None
@@ -371,16 +386,30 @@ class GapJunctionManager(_PointerConnectionManager):
                     bind_sec(bind_x)._ref_v, pointer_name, gj
                 )
             with _section_in_stack(tgt_section):
-                self._target_var(gj, pointer_name, eff_id)
+                self._target_var(gj, transfer_var, eff_id)
                 self._pc.source_var(tgt_section(tgt_x)._ref_v, aff_id)
             # Seed the transfer var with the resting voltage so a
             # mechanism INITIAL that reads it before the first transfer
             # sees a sane value.
             if getattr(gj, "use_vgap", 0):
                 gj.vgap = self._sim.circuit_access.config.v_init
-        else:
+        elif has_pointer:
+            if self._pc is not None and int(self._pc.nhost()) > 1:
+                raise BluecellulabError(
+                    f"Gap-junction mechanism '{type(gj).__name__}' only "
+                    f"exposes POINTER '{pointer_name}': NEURON transfers "
+                    "can only write into RANGE variables under MPI. "
+                    "Provide a RANGE transfer variable (e.g. 'vgap') — "
+                    "see the dual-mode convention."
+                )
             assert src_section is not None
             neuron.h.setpointer(src_section(src_x)._ref_v, pointer_name, gj)
+        else:
+            raise AttributeError(
+                f"Mechanism '{type(gj).__name__}' has neither a POINTER "
+                f"named '{pointer_name}' nor a RANGE transfer variable "
+                "('vgap' or a RANGE named by pointer_name)."
+            )
 
 
 class ContinuousConnectionManager(_PointerConnectionManager):
@@ -419,13 +448,9 @@ class ContinuousConnectionManager(_PointerConnectionManager):
             section, x = self._resolve_target_section(cell, props)
             syn = self._build_pointer_mech(cfg, section, x, cond)
 
-            ptr_attr = f"_ref_{cfg.pointer_name}"
-            if not hasattr(syn, ptr_attr):
-                raise AttributeError(
-                    f"Mechanism '{cfg.mod}' has no POINTER named "
-                    f"'{cfg.pointer_name}'."
-                )
-            if self._pc is not None:
+            has_pointer = hasattr(syn, f"_ref_{cfg.pointer_name}")
+            transfer_var = self._transfer_var_name(syn, cfg.pointer_name)
+            if self._pc is not None and transfer_var is not None:
                 if hasattr(syn, "use_vgap"):
                     # Dual-mode mech: keep the serial POINTER bound (to
                     # the source v when local, else the target's own v)
@@ -440,13 +465,24 @@ class ContinuousConnectionManager(_PointerConnectionManager):
                     )
                 with _section_in_stack(section):
                     self._target_var(
-                        syn, cfg.pointer_name, self._broadcast_id(src, cfg)
+                        syn, transfer_var, self._broadcast_id(src, cfg)
                     )
                 if getattr(syn, "use_vgap", 0):
                     syn.vgap = self._sim.circuit_access.config.v_init
-            else:
+            elif has_pointer:
+                if self._pc is not None and int(self._pc.nhost()) > 1:
+                    raise BluecellulabError(
+                        f"Mechanism '{cfg.mod}' only exposes POINTER "
+                        f"'{cfg.pointer_name}': NEURON transfers can only "
+                        "write into RANGE variables under MPI."
+                    )
                 src_section = local_node_ids[src].soma
                 neuron.h.setpointer(src_section(0.5)._ref_v, cfg.pointer_name, syn)
+            else:
+                raise AttributeError(
+                    f"Mechanism '{cfg.mod}' has neither a POINTER named "
+                    f"'{cfg.pointer_name}' nor a RANGE transfer variable."
+                )
 
             cell.continuous_synapses = getattr(cell, "continuous_synapses", [])
             cell.continuous_synapses.append(syn)
