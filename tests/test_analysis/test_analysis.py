@@ -228,6 +228,17 @@ def test_bpap_init_and_properties():
     assert bpap.end_index == int((1000 + 5) / 0.025)
 
 
+@pytest.mark.parametrize("stim_duration", [0.0, -1.0, float("nan"), float("inf")])
+def test_bpap_rejects_invalid_stim_duration(stim_duration):
+    with pytest.raises(ValueError):
+        BPAP(DummyCell(), stim_duration=stim_duration)
+
+
+def test_bpap_rejects_non_numeric_stim_duration():
+    with pytest.raises(TypeError):
+        BPAP(DummyCell(), stim_duration="5")
+
+
 def test_bpap_get_recordings():
     """Test the get_recordings method of the BPAP class."""
     cell = DummyCell()
@@ -238,6 +249,36 @@ def test_bpap_get_recordings():
     assert "apic[0]" in apic and apic["apic[0]"] == [-65, -65, -65, -65, -65, -20, -10, -20, -70, -65, -65]
     assert "dend[1]" in dend and dend["dend[1]"] == [-65, -65, -65, -65, -65, -65, -20, -15, -20, -70, -65]
     assert "apic[1]" in apic and apic["apic[1]"] == [-65, -65, -65, -65, -65, -65, -20, -15, -20, -70, -65]
+
+
+def test_bpap_run_replays_holding_current_before_pulse():
+    """The holding replay must cover the 1000 ms pre-stimulus interval."""
+    cell = MagicMock()
+    simulation = MagicMock()
+    holding_stimulus = MagicMock()
+    bpap = BPAP(cell, stim_duration=2.0)
+
+    with (
+        patch("bluecellulab.analysis.analysis.Simulation", return_value=simulation),
+        patch(
+            "bluecellulab.analysis.analysis.Hyperpolarizing",
+            return_value=holding_stimulus,
+        ) as hyperpolarizing,
+    ):
+        bpap.run(duration=1500.0, amplitude=0.8)
+
+    cell.add_step.assert_called_once_with(
+        start_time=1000.0,
+        stop_time=1002.0,
+        level=0.8,
+    )
+    hyperpolarizing.assert_called_once_with(
+        "single-cell",
+        delay=0,
+        duration=1500.0,
+    )
+    cell.add_replay_hypamp.assert_called_once_with(holding_stimulus)
+    simulation.run.assert_called_once_with(1500.0, dt=0.025, cvode=False)
 
 
 def test_bpap_run(mock_cell):
@@ -351,10 +392,21 @@ def test_validate(mock_bpap_amplitude_distance):
         "relative to soma.\nApical validation passed: apical amplitude is decaying with distance "
         "relative to soma.\n"
     )
-    # empty data: validated is True, but we have some logging in notes
+    # empty data: nothing could be assessed, so this must not pass
     validated, notes = bpap.validate([100], None, None, None, None)
+    assert validated is False
+    assert notes == (
+        "No dendritic recordings found.\nNo apical recordings found.\n"
+        "Validation failed: no dendritic or apical recordings were available, "
+        "so back-propagation could not be assessed.\n"
+    )
+    # a single assessed branch is enough to reach a verdict
+    validated, notes = bpap.validate(
+        [100], mock_bpap_amplitude_distance[1], mock_bpap_amplitude_distance[2], None, None
+    )
     assert validated is True
-    assert notes == "No dendritic recordings found.\nNo apical recordings found.\n"
+    assert "No apical recordings found." in notes
+    assert "could not be assessed" not in notes
     # bad data: validated is False, and we have some logging in notes
     validated, notes = bpap.validate([100], [110, 120], [10, 20], [110, 120], [10, 20])
     assert validated is False
@@ -369,10 +421,14 @@ def test_validate(mock_bpap_amplitude_distance):
         "relative to soma.\nApical validation passed: apical amplitude is decaying with distance "
         "relative to soma.\n"
     )
-    # empty data: validated is True, but we have some logging in notes
+    # empty data: nothing could be assessed, so this must not pass
     validated, notes = bpap.validate([100], None, None, None, None, validate_with_fit=False)
-    assert validated is True
-    assert notes == "No dendritic recordings found.\nNo apical recordings found.\n"
+    assert validated is False
+    assert notes == (
+        "No dendritic recordings found.\nNo apical recordings found.\n"
+        "Validation failed: no dendritic or apical recordings were available, "
+        "so back-propagation could not be assessed.\n"
+    )
     # bad data: validated is False, and we have some logging in notes
     validated, notes = bpap.validate([100], [110, 120], [10, 20], [110, 120], [10, 20], validate_with_fit=False)
     assert validated is False
@@ -417,7 +473,7 @@ def test_plot_one_axis_recordings():
         dist=dummy_dend_dist,
         cmap=bpap.basal_cmap,
     )
-    assert ax.get_xlim() == (-0.1, 30.)
+    assert ax.get_xlim() == (-0.1, 30.0)
     assert ax.get_ylim() == (-72, -8)
     assert len(ax.collections) > 0
     assert ax.collections[-1].colorbar is not None

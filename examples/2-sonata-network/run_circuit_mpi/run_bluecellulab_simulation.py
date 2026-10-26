@@ -584,34 +584,21 @@ def run_bluecellulab(
     dt = simulation_config_data["run"]["dt"]
     v_init = simulation_config_data["conditions"]["v_init"]
 
-    # Get the directory of the simulation config
-    sim_config_base_dir = Path(simulation_config).parent
-    logger.info(f"sim_config_base_dir: {sim_config_base_dir}")
-
     # Get manifest path
     OUTPUT_DIR = simulation_config_data.get("manifest", {}).get("$OUTPUT_DIR", "./")
     logger.info(f"OUTPUT_DIR: {OUTPUT_DIR}")
 
-    # Get the node_set
-    node_set_name = simulation_config_data.get("node_set", "All")
+    # Create simulation
+    sim = CircuitSimulation(simulation_config)
 
-    node_sets_file = sim_config_base_dir / simulation_config_data["node_sets_file"]
-    logger.info(f"node_sets_file: {node_sets_file}")
-
-    with open(node_sets_file) as f:
-        node_set_data = json.load(f)
-
-    # Get population and node IDs
-    if node_set_name not in node_set_data:
-        raise KeyError(f"Node set '{node_set_name}' not found in node sets file")
-
-    population = node_set_data[node_set_name]["population"]
-    all_node_ids = node_set_data[node_set_name]["node_id"]
-    logger.info(f"Population: {population}")
-    logger.info(f"All node IDs: {all_node_ids}")
+    # Resolve the simulation node_set (or all nodes) into the non-virtual cells to simulate
+    all_cell_ids = sim.circuit_access.get_simulation_cell_ids()
+    if not all_cell_ids:
+        raise ValueError(f"Node set '{sim.circuit_access.config.node_set}' contains no cells")
+    logger.info(f"All cell IDs: {all_cell_ids}")
 
     # Distribute nodes across ranks
-    num_nodes = len(all_node_ids)
+    num_nodes = len(all_cell_ids)
     nodes_per_rank = num_nodes // size
     remainder = num_nodes % size
     logger.info(
@@ -625,29 +612,21 @@ def run_bluecellulab(
     end_idx = start_idx + nodes_per_rank
     logger.info(f"Rank {rank}: start_idx={start_idx}, end_idx={end_idx}")
 
-    # Get node IDs for this rank
-    rank_node_ids = all_node_ids[start_idx:end_idx]
-    logger.info(f"Rank {rank} node IDs: {rank_node_ids}")
-    # create cell_ids_for_this_rank
-    cell_ids_for_this_rank = [(population, i) for i in rank_node_ids]
-    logger.info(f"Rank {rank}: Handling {len(cell_ids_for_this_rank)} cells")
-
-    if not cell_ids_for_this_rank:
-        logger.warning(f"Rank {rank}: No cells to process")
+    # Get cell IDs for this rank
+    cell_ids_for_this_rank = all_cell_ids[start_idx:end_idx]
 
     if rank == 0:
         logger.info(f"Running BlueCelluLab simulation with {size} MPI processes")
         logger.info(f"Total cells: {num_nodes}, Cells per rank: ~{num_nodes // size}")
         logger.info(f"Starting simulation: t_stop={t_stop}ms, dt={dt}ms")
 
-    logger.info(
-        f"Rank {rank}: Processing {len(rank_node_ids)} cells "
-        f"(IDs: {rank_node_ids[0] if rank_node_ids else 'None'}..."
-        f"{rank_node_ids[-1] if rank_node_ids else 'None'})"
-    )
-
-    # Create simulation
-    sim = CircuitSimulation(simulation_config)
+    if cell_ids_for_this_rank:
+        logger.info(
+            f"Rank {rank}: Processing {len(cell_ids_for_this_rank)} cells "
+            f"(IDs: {cell_ids_for_this_rank[0]}...{cell_ids_for_this_rank[-1]})"
+        )
+    else:
+        logger.warning(f"Rank {rank}: No cells to process")
 
     # Get instantiate_gids arguments from config
     instantiate_params = get_instantiate_gids_params(simulation_config_data)
