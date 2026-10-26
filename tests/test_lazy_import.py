@@ -18,7 +18,6 @@ has already imported parts of the package, so in-process checks on
 ``sys.modules`` would prove nothing.
 """
 
-import pkgutil
 import subprocess
 import sys
 from pathlib import Path
@@ -226,10 +225,15 @@ def test_dir_lists_lazy_names():
     assert {"Cell", "Simulation", "CircuitSimulation", "neuron"} <= set(dir(bluecellulab))
 
 
-def test_lazy_modules_cover_package():
-    """New top-level submodules must be added to ``_LAZY_MODULES``, otherwise
-    ``bluecellulab.<name>`` only resolves after an explicit import."""
-    present = {
-        m.name for m in pkgutil.iter_modules(bluecellulab.__path__)
-    } - {"__main__"}
-    assert present <= set(bluecellulab._LAZY_MODULES)
+def test_all_submodules_resolve_lazily(tmp_path):
+    """Every top-level submodule resolves via ``bluecellulab.<name>`` and can
+    be found by ``pkgutil`` in any build flavour (wheel included)."""
+    res = run_python(
+        "import pkgutil, types, bluecellulab\n"
+        "for m in pkgutil.iter_modules(bluecellulab.__path__):\n"
+        "    if m.name == '__main__':\n"
+        "        continue\n"
+        "    assert isinstance(getattr(bluecellulab, m.name), types.ModuleType), m.name\n",
+        cwd=tmp_path,
+    )
+    assert res.returncode == 0, res.stderr

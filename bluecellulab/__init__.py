@@ -10,6 +10,8 @@ fail in headless environments).
 """
 
 import importlib
+import importlib.util
+import pkgutil
 from typing import TYPE_CHECKING
 
 try:
@@ -78,48 +80,37 @@ _LAZY_INIT = {
     "neuron": "neuron",
 }
 
-# Submodules resolved lazily WITHOUT initialising NEURON. Their own top-level
-# code may still import neuron (and auto-load ./<arch>), but `from bluecellulab
-# import <module>` — which the package itself uses internally, e.g.
-# `from bluecellulab import circuit` — must not run full initialisation in the
-# middle of another import.
-_LAZY_MODULES = {
-    name: f"bluecellulab.{name}"
-    for name in (
-        "analysis", "cell", "circuit", "circuit_simulation", "cli", "connection",
-        "dendrogram", "exceptions", "graph", "importer", "mod_compilation",
-        "neuron_interpreter", "plotwindow", "point", "psection", "psegment",
-        "reports", "rngsettings", "simulation", "stimulus", "synapse", "tools",
-        "type_aliases", "utils", "verbosity",
-    )
-}
-
-# Names that are themselves the module they map to ("neuron" -> neuron,
-# "cell" -> bluecellulab.cell), as opposed to an attribute of it.
-_LAZY_MODULE_SELF = frozenset(
-    name
-    for name, module in (*_LAZY_INIT.items(), *_LAZY_MODULES.items())
-    if module.rpartition(".")[2] == name
-)
-
 
 def __getattr__(name: str):
-    """Resolve a lazy public name, initialising NEURON when needed."""
+    """Resolve a lazy public name, initialising NEURON when needed.
+
+    Public names in ``_LAZY_INIT`` run `importer.initialize_neuron` first.
+    Any other name is tried as a submodule WITHOUT initialising NEURON:
+    a submodule's own top-level code may still import neuron (and auto-load
+    ./<arch>), but resolving it through `__getattr__` — which the package
+    itself uses internally, e.g. `from bluecellulab import circuit` — must
+    not run full initialisation in the middle of another import.
+    """
     if name in _LAZY_INIT:
         from bluecellulab.importer import initialize_neuron
         initialize_neuron()
-        module_name = _LAZY_INIT[name]
-    elif name in _LAZY_MODULES:
-        module_name = _LAZY_MODULES[name]
+        module = importlib.import_module(_LAZY_INIT[name])
+        if module.__name__.rpartition(".")[2] != name:
+            module = getattr(module, name)
     else:
-        raise AttributeError(
-            f"module {__name__!r} has no attribute {name!r}"
-        )
-    module = importlib.import_module(module_name)
-    value = module if name in _LAZY_MODULE_SELF else getattr(module, name)
-    globals()[name] = value
-    return value
+        try:
+            spec = importlib.util.find_spec(f"{__name__}.{name}")
+        except (ImportError, AttributeError, ValueError):
+            spec = None
+        if spec is None:
+            raise AttributeError(
+                f"module {__name__!r} has no attribute {name!r}"
+            )
+        module = importlib.import_module(f"{__name__}.{name}")
+    globals()[name] = module
+    return module
 
 
 def __dir__() -> list:
-    return sorted(set(__all__) | set(_LAZY_INIT) | set(_LAZY_MODULES) | set(globals()))
+    submodules = {m.name for m in pkgutil.iter_modules(__path__)}
+    return sorted(set(__all__) | set(_LAZY_INIT) | submodules | set(globals()))
