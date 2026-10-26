@@ -31,7 +31,7 @@ simulation_config="simulation_config_container.json"
 # Compile mod files
 # Adds BlueCelluLab's bundled mod files and passes -DDISABLE_REPORTINGLIB, which skips
 # SonataReportHelper.mod and SonataReport.mod.
-bcl-compile-mods $circuit_folder/mod  # Replace with the actual path to your mod files
+bluecellulab compile-mods $circuit_folder/mod  # Replace with the actual path to your mod files
 
 echo "Running circuit simulation"
 # NB: num_cores should be less than or equal to number of cells to be simulated

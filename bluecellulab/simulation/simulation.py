@@ -13,6 +13,8 @@
 # limitations under the License.
 """Simulation class of bluecellulab."""
 
+from __future__ import annotations
+
 import contextlib
 import sys
 from typing import Optional
@@ -21,6 +23,7 @@ import logging
 import neuron
 
 import bluecellulab
+from bluecellulab.importer import initialize_neuron
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +32,7 @@ class Simulation:
     """Class that represents a neuron simulation."""
 
     def __init__(self, parallel_context=None, custom_progress_function=None) -> None:
+        initialize_neuron()  # a run needs stdrun.hoc even with no cells yet
         self.cells: list[bluecellulab.Cell] = []
         self.fih_progress = None
         self.progress = None

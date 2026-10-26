@@ -23,4 +23,4 @@ cd ${INSTALL_DIR}
 
 echo "Building mod files"
 rm -rf "$(uname -m)"
-bcl-compile-mods ${MOD_DIR} >nrnivmodl.log 2>&1
+bluecellulab compile-mods ${MOD_DIR} >nrnivmodl.log 2>&1

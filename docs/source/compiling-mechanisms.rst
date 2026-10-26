@@ -5,7 +5,7 @@ Welcome to a brief tutorial on compiling mechanisms in BlueCelluLab!
 
 In order to facilitate smooth simulations with this tool, one must navigate through specific steps, especially given its dependency on the NEURON simulator. This guide aims to detail the necessary steps and considerations for compiling neuron mechanisms in BlueCelluLab.
 
-Compiling with bcl-compile-mods
+Compiling with bluecellulab compile-mods
 ----------------------------------------
 
 As with neurodamus (``neurodamus-compile-mods``), compiling MOD files is an explicit step run
@@ -15,10 +15,13 @@ the simulation from:
 .. code-block:: shell
 
    # A SONATA circuit: compiles its mechanisms_dir plus BlueCelluLab's bundled files
-   bcl-compile-mods --circuit-config /path/to/circuit_config.json
+   bluecellulab compile-mods --circuit-config /path/to/circuit_config.json
 
    # Or plain directories of MOD files
-   bcl-compile-mods /path/to/mod
+   bluecellulab compile-mods /path/to/mod
+
+   # The same via the module form, e.g. when the command is not on PATH
+   python -m bluecellulab compile-mods /path/to/mod
 
 This builds into ``./<arch>`` (``arm64`` or ``x86_64``), the folder NEURON loads automatically when
 it is imported. The MOD files used are copied to ``./mod_files`` and recorded in
@@ -27,11 +30,12 @@ MOD file it rebuilds. Use ``--output-dir`` to build elsewhere, and
 ``--no-with-internal-mods`` to leave out the bundled files. ``./mod_files`` is emptied on every
 build, so it cannot also be one of the source directories; this is refused with an error.
 
-The command does not import NEURON or the ``bluecellulab`` package, so it neither loads the GUI
-nor auto-loads an existing ``./<arch>`` build. It asks the compiler's ``nrniv`` for the NEURON
-version that goes into the cache key (falling back to pip metadata, then a warning).
+The command does not import NEURON (importing ``bluecellulab`` itself is lazy and does not import
+NEURON either), so it neither loads the GUI nor auto-loads an existing ``./<arch>`` build. It asks
+the compiler's ``nrniv`` for the NEURON version that goes into the cache key (falling back to pip
+metadata, then a warning).
 
-Compile once, before starting the simulation. Under MPI, run ``bcl-compile-mods`` before
+Compile once, before starting the simulation. Under MPI, run ``bluecellulab compile-mods`` before
 ``mpiexec`` rather than from every rank, since concurrent builds into the same directory collide.
 
 From a notebook or script, call the function instead:
@@ -50,7 +54,7 @@ BlueCelluLab also warns, when it first loads mechanisms, if any MOD file changed
 source directory) since the build in the working directory was compiled, and when a SONATA circuit
 declares mechanisms that are not loaded or a ``mechanisms_dir`` that does not exist. If the library
 was rebuilt afterwards with plain ``nrnivmodl``, ``modules.json`` no longer describes it: the
-warning is skipped and the next ``bcl-compile-mods`` rebuilds.
+warning is skipped and the next ``bluecellulab compile-mods`` rebuilds.
 
 Technical MOD files supplied by BlueCelluLab
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -90,7 +94,7 @@ NEURON's own ``IClamp``/``SEClamp``, which is why the two source mechanisms are 
 those.
 
 The first three are used by :class:`bluecellulab.Cell` itself, independently of any circuit, so
-``bcl-compile-mods`` includes them for single-cell workflows as well as for circuits.
+``bluecellulab compile-mods`` includes them for single-cell workflows as well as for circuits.
 
 Circuits often ship these same mechanisms under different filenames: ``VecStim.mod`` for
 ``VecStim`` and ``netstim_inhpoisson.mod`` for ``InhPoissonStim``. They are recognised by the
@@ -168,7 +172,7 @@ Pre-compiling for a service
 
 If you run ``nrnivmodl`` yourself, for example in a container image, copy every file from
 :func:`bluecellulab.mod_compilation.internal_mods_path` into the same directory first, or simply
-use ``bcl-compile-mods``, which does this for you.
+use ``bluecellulab compile-mods``, which does this for you.
 
 Duplicate mechanisms
 ^^^^^^^^^^^^^^^^^^^^
@@ -177,7 +181,7 @@ Two MOD files can define the same mechanism under different filenames. The clear
 legacy ``VecStim.mod`` and its successor ``vecevent.mod``, which both declare
 ``ARTIFICIAL_CELL VecStim``. ``nrnivmodl`` compiles such a pair without complaint, and NEURON then
 refuses to load the result with *"The user defined name already exists"*.
-``bcl-compile-mods`` therefore resolves duplicates by the mechanism name each file
+``bluecellulab compile-mods`` therefore resolves duplicates by the mechanism name each file
 declares, not just by filename, and compiles only one of them.
 
 By default BlueCelluLab's own copy wins, as in neurodamus, and a warning names the circuit file
@@ -200,16 +204,19 @@ have to include the bundled technical files and avoid duplicate mechanisms yours
 Importance of the Working Directory
 -----------------------------------
 
-It's vital to underscore that, unlike other Python packages, the working directory you are in when you import BlueCelluLab significantly influences the output. This peculiar behavior is attributed to its utilization of the NEURON simulator.
+NEURON automatically loads the mechanism library in the current working directory when it is imported. Plain ``import bluecellulab`` is lazy and does not import NEURON; first access to a NEURON-backed public name or construction of a simulation object does.
 
-When importing NEURON or when importing bluecellulab (that imports NEURON), ensure to:
+Choose the working directory before importing NEURON or using BlueCelluLab's simulation API:
 
-- Navigate (``cd``) into the appropriate directory that is contaning one of the architecture-specific folders ("i686", "x86_64", "powerpc", or "umac") containing your compiled mechanisms.
-- Confirm the potential impact on results that may stem from being in different directories when invoking NEURON.
+- Navigate (``cd``) into the directory containing your compiled ``arm64`` or ``x86_64`` folder.
+- Do not change directories to switch libraries after NEURON has been imported; start a new process instead.
 
 .. code-block:: python
 
-   import bluecellulab
+   import bluecellulab  # does not load NEURON
+   cell_class = bluecellulab.Cell  # initializes NEURON and hoc dependencies
+
+Direct ``NeuronGlobals.get_instance()`` access also initializes hoc dependencies before setting default globals. Initialization happens once; later accesses preserve configured globals. If initialization raises, fix the underlying problem and retry.
 
 Compile Mechanisms Using nrnivmodl
 ----------------------------------
@@ -248,6 +255,6 @@ Replace ``"YOUR/DIRECTORY/x86_64"`` with the path to your specific compiled mech
 Important Note on Path Specification
 ------------------------------------
 
-Be mindful to adhere to the condition that **either** the current working directory should contain the compiled mechanisms **or** the ``BLUECELLULAB_MOD_LIBRARY_PATH`` environment variable should be set—**not both**. Setting the environment variable and importing BlueCelluLab from a directory containing (e.g.) an "x86_64" folder results in an error.
+Use **either** a compiled mechanism directory in the working directory **or** ``BLUECELLULAB_MOD_LIBRARY_PATH``, not both. BlueCelluLab raises an error when it loads mechanisms if the environment variable is set and the working directory already contains a build for the current architecture.
 
 May your simulations run smoothly with BlueCelluLab!

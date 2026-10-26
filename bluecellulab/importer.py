@@ -39,7 +39,7 @@ def import_mod_lib(neuron: ModuleType) -> str:
     """Import mod files.
 
     BlueCelluLab does not compile anything here; mechanisms are compiled
-    beforehand with ``bcl-compile-mods`` (see
+    beforehand with ``bluecellulab compile-mods`` (see
     `bluecellulab.mod_compilation`), as with neurodamus. They are loaded from
     ``BLUECELLULAB_MOD_LIBRARY_PATH`` if set, otherwise NEURON has already
     loaded the ``<arch>`` folder in the working directory on import.
@@ -69,7 +69,7 @@ def import_mod_lib(neuron: ModuleType) -> str:
 
 
 def _mod_lib_output_dir(mod_lib_path: str) -> Path:
-    """Guess the `bcl-compile-mods` output dir behind a library path.
+    """Locate the compilation output directory behind a library path.
 
     The library lives at ``<output_dir>/<arch>/libnrnmech.{so,dylib}``, so a
     file path maps to its grandparent, an ``<arch>`` directory to its parent,
@@ -90,8 +90,8 @@ def _warn_if_mod_files_changed(output_dir: str | Path = ".") -> None:
     if changed:
         logger.warning(
             "MOD files changed since the mechanisms in %s were compiled: %s."
-            " Re-run bcl-compile-mods and restart the process to use"
-            " the changes.",
+            " Re-run `bluecellulab compile-mods` and restart the process to"
+            " use the changes.",
             Path(output_dir).resolve(),
             ", ".join(p.name for p in changed),
         )
@@ -117,7 +117,7 @@ def check_circuit_mechanisms(mechanisms_dirs: Optional[list[Path]]) -> None:
         logger.warning(
             "Mechanisms from the circuit's mechanisms_dir are not loaded: %s."
             " Compile them first, e.g. with"
-            " `bcl-compile-mods --circuit-config <circuit_config.json>`"
+            " `bluecellulab compile-mods --circuit-config <circuit_config.json>`"
             " in the working directory.",
             ", ".join(sorted(missing)),
         )
@@ -173,6 +173,21 @@ def print_header(neuron: ModuleType, mod_lib_path: str) -> None:
 
 
 @run_once
+def initialize_hoc() -> None:
+    """Load hoc dependencies once, shared by direct and lazy API access."""
+    logger.debug("Loading the hoc files.")
+    import_hoc(neuron)
+
+
+@run_once
+def initialize_neuron() -> None:
+    """Initialize hoc dependencies and globals on first simulation use."""
+    initialize_hoc()
+    from bluecellulab.simulation.neuron_globals import NeuronGlobals
+    NeuronGlobals.get_instance()  # initiate the singleton
+
+
+@run_once
 def _load_mod_files() -> None:
     """Import hoc and mod files.
 
@@ -180,6 +195,7 @@ def _load_mod_files() -> None:
     guarded with `run_once`: only the first call actually loads anything.
     """
     logger.debug("Loading the mod files.")
+    initialize_neuron()
     mod_lib_paths = import_mod_lib(neuron)
     print_header(neuron, mod_lib_paths)
 

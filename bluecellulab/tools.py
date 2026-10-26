@@ -539,7 +539,7 @@ def compute_memodel_properties(
     """Compute the threshold current and the input resistance of the cell.
 
     Args:
-        cell (Cell): The cell model to compute properties for.
+        cell (bluecellulab.cell.Cell): The cell model to compute properties for.
         spike_threshold_voltage (float, optional): Voltage threshold for spike detection. Default is -30 mV.
         v_init (float, optional): Initial membrane potential. Default is -80 mV.
         celsius (float, optional): Temperature in Celsius. Default is 34.0 C.

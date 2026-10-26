@@ -13,14 +13,18 @@
 # limitations under the License.
 """RNG settings of bluecellulab."""
 
+from __future__ import annotations
+
 import logging
 
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import neuron
-from bluecellulab.circuit.config.definition import SimulationConfig
 from bluecellulab.exceptions import UndefinedRNGException
 from bluecellulab.importer import load_mod_files
+
+if TYPE_CHECKING:
+    from bluecellulab.circuit.config.definition import SimulationConfig
 
 logger = logging.getLogger(__name__)
 

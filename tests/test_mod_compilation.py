@@ -115,6 +115,20 @@ def test_declared_mechanisms_on_bundled_files():
     }
 
 
+@pytest.mark.parametrize("with_internal", [False, True])
+def test_example_mods_preserve_manual_and_cli_helpers(with_internal):
+    examples = Path(__file__).resolve().parent.parent / "examples" / "mechanisms"
+    internal = mc.internal_mods_path()
+    directories = [examples, internal] if with_internal else [examples]
+    selected = mc.select_mod_files(directories, internal_dir=internal)
+    mechanisms = [name for path in selected for name in mc.declared_mechanisms(path)]
+    assert {"VecStim", "TTXDynamicsSwitch", "InhPoissonStim", "NaTg", "GluSynapse"} <= set(mechanisms)
+    assert len(mechanisms) == len(set(mechanisms))
+    if with_internal:
+        for name in ("vecevent.mod", "TTXDynamicsSwitch.mod", "InhPoissonStim.mod"):
+            assert internal / name in selected
+
+
 # --------------------------------------------------------------------------
 # precedence configuration
 # --------------------------------------------------------------------------
@@ -787,7 +801,7 @@ def test_compile_mods_missing_dir_raises(tmp_path):
 
 
 def test_compile_mods_refuses_staging_dir_as_input(tmp_path, monkeypatch):
-    """`bcl-compile-mods mod_files` in the cwd must not delete the sources."""
+    """`bluecellulab compile-mods mod_files` in the cwd must not delete the sources."""
     monkeypatch.chdir(tmp_path)
     src = write(tmp_path / mc.MOD_FILES_PATH / "Chan.mod", mod("Chan", "Chan", "SUFFIX"))
     with pytest.raises(mc.ModCompilationError, match="staged"):
@@ -889,57 +903,12 @@ def test_changed_mod_files_ignores_corrupt_metadata(tmp_path):
 
 
 def test_cli_module_does_not_import_bluecellulab_or_neuron():
-    """`bcl-compile-mods` must not auto-load an existing ./<arch> build."""
+    """``bluecellulab compile-mods`` must not auto-load an existing ./<arch> build."""
     code = (
-        "import bcl_compile_mods, sys;"
-        "assert 'neuron' not in sys.modules;"
-        "assert 'bluecellulab' not in sys.modules"
+        "import bluecellulab.cli, sys;"
+        "assert 'neuron' not in sys.modules"
     )
     res = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, check=False
     )
     assert res.returncode == 0, res.stderr
-
-
-class TestMain:
-    def test_broken_circuit_config_returns_error(self, tmp_path, capsys):
-        """An invalid --circuit-config is an error, not a traceback."""
-        bad = write(tmp_path / "circuit_config.json", "{not json")
-        assert mc.main(["--circuit-config", str(bad)]) == 1
-        assert "ERROR" in capsys.readouterr().err
-
-    def test_restores_logger_state(self, tmp_path):
-        """In-process callers must keep their logging configuration."""
-        before = (mc.logger.handlers[:], mc.logger.level, mc.logger.propagate)
-        bad = write(tmp_path / "circuit_config.json", "{not json")
-        mc.main(["--circuit-config", str(bad)])
-        assert (mc.logger.handlers, mc.logger.level, mc.logger.propagate) == before
-
-    def test_compiles_and_prints_library(self, tmp_path, capsys):
-        circuit = tmp_path / "circuit"
-        write(circuit / "Chan.mod", mod("Chan", "Chan", keyword="SUFFIX"))
-        with patch(
-            "bluecellulab.mod_compilation.subprocess.run", side_effect=_fake_nrnivmodl
-        ):
-            with patch("bluecellulab.mod_compilation.shutil.which", return_value="nrnivmodl"):
-                rc = mc.main(["--input-dir", str(circuit), "--output-dir", str(tmp_path / "out")])
-        assert rc == 0
-        assert platform.machine() in capsys.readouterr().out
-
-    def test_positional_dirs_like_nrnivmodl(self, tmp_path):
-        circuit = tmp_path / "circuit"
-        write(circuit / "Chan.mod", mod("Chan", "Chan", keyword="SUFFIX"))
-        out = tmp_path / "out"
-        with patch(
-            "bluecellulab.mod_compilation.subprocess.run", side_effect=_fake_nrnivmodl
-        ):
-            with patch("bluecellulab.mod_compilation.shutil.which", return_value="nrnivmodl"):
-                assert mc.main([str(circuit), "--output-dir", str(out)]) == 0
-        assert "Chan.mod" in _compiled_names(out)
-
-    def test_error_returns_nonzero(self, tmp_path):
-        assert mc.main(["--input-dir", str(tmp_path / "missing")]) == 1
-
-    def test_nothing_to_compile_is_usage_error(self):
-        with pytest.raises(SystemExit):
-            mc.main(["--no-with-internal-mods"])

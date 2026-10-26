@@ -21,7 +21,7 @@ fingerprinted, and compiled with ``nrnivmodl`` into ``<output_dir>/<arch>``.
 With the default output directory, the working directory, NEURON loads that
 folder automatically on import. Re-running with unchanged files does nothing.
 
-Use the ``bcl-compile-mods`` command or `compile_mods`.
+Use the ``bluecellulab compile-mods`` command or `compile_mods`.
 
 One behaviour is deliberately stricter than neurodamus: duplicate mechanisms
 are resolved by the mechanism name each MOD file *declares*, not just by
@@ -38,7 +38,6 @@ controlled by ``BLUECELLULAB_MOD_PRECEDENCE`` (see `circuit_mods_take_precedence
 from __future__ import annotations
 
 import argparse
-import contextlib
 import hashlib
 import importlib.metadata
 import json
@@ -689,12 +688,8 @@ def changed_mod_files(output_dir: str | Path = ".") -> list[Path]:
     return changed
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """Build the ``bcl-compile-mods`` argument parser."""
-    parser = argparse.ArgumentParser(
-        prog="bcl-compile-mods",
-        description="Compile MOD files for BlueCelluLab into <output-dir>/<arch>.",
-    )
+def add_compile_mods_arguments(parser: argparse.ArgumentParser) -> None:
+    """Add the ``bluecellulab compile-mods`` arguments to `parser`."""
     parser.add_argument("dirs", nargs="*", help="Directories with MOD files, as for nrnivmodl")
     parser.add_argument("--circuit-config", help="Circuit config for `mechanisms_dir` discovery")
     parser.add_argument(
@@ -710,56 +705,3 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--incflags", default=DEFAULT_INCFLAGS, help="`-incflags` for nrnivmodl")
     parser.add_argument("--loadflags", default="", help="`-loadflags` for nrnivmodl")
     parser.add_argument("--nrnivmodl", help="Optional path to nrnivmodl")
-    return parser
-
-
-@contextlib.contextmanager
-def _cli_logging():
-    """Isolated stderr logging for the CLI, restored afterwards.
-
-    The ``bluecellulab`` logger may already be at ERROR/CRITICAL from
-    ``set_verbose_from_env`` (e.g. ``BLUECELLULAB_VERBOSE_LEVEL=0`` in batch
-    jobs), which would hide both progress and errors here.
-    """
-    saved = (logger.handlers[:], logger.level, logger.propagate)
-    handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
-    logger.handlers[:] = [handler]
-    logger.setLevel(logging.INFO)
-    logger.propagate = False
-    try:
-        yield
-    finally:
-        logger.handlers[:], logger.level, logger.propagate = saved
-
-
-def main(argv: list[str] | None = None) -> int:
-    """Entry point of ``bcl-compile-mods``."""
-    with _cli_logging():
-        return _main(argv)
-
-
-def _main(argv: list[str] | None) -> int:
-    args = build_parser().parse_args(argv)
-    input_dirs = [*args.dirs, *args.input_dir]
-    if not input_dirs and not args.circuit_config and not args.with_internal_mods:
-        build_parser().error("nothing to compile")
-    try:
-        libnrnmech = compile_mods(
-            input_dirs,
-            circuit_config=args.circuit_config,
-            output_dir=args.output_dir,
-            with_internal_mods=args.with_internal_mods,
-            nrnivmodl_path=args.nrnivmodl,
-            options=Options(incflags=args.incflags, loadflags=args.loadflags),
-            load=False,
-        )
-    except (ModCompilationError, libsonata.SonataError, OSError, RuntimeError) as e:
-        logger.error("%s", e)
-        return 1
-    print(libnrnmech)  # noqa: T201
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

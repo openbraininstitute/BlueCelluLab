@@ -14,6 +14,7 @@
 import json
 
 import numpy as np
+import pytest
 from bluecellulab.utils import CaptureOutput, NoDaemonProcess, NumpyEncoder, run_once
 
 
@@ -45,6 +46,37 @@ def test_run_once_execution():
     assert counter[0] == 1
 
     assert increment_counter(counter) is None
+
+
+@pytest.mark.parametrize("error", [RuntimeError, KeyboardInterrupt])
+def test_run_once_retries_after_failure(error):
+    attempts = []
+
+    @run_once
+    def initialize():
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise error("initialization failed")
+        return "ready"
+
+    with pytest.raises(error):
+        initialize()
+    assert initialize.has_run is False
+    assert initialize() == "ready"
+    assert initialize() is None
+    assert len(attempts) == 2
+
+
+def test_run_once_suppresses_reentry():
+    calls = []
+
+    @run_once
+    def initialize():
+        calls.append(1)
+        initialize()
+
+    initialize()
+    assert calls == [1]
 
 
 def test_capture_output():

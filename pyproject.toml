@@ -48,7 +48,7 @@ dependencies = [
 requires-python = ">=3.10"
 
 [project.scripts]
-bcl-compile-mods = "bcl_compile_mods:main"
+bluecellulab = "bluecellulab.cli:main"
 
 [project.optional-dependencies]
 examples = [
@@ -62,9 +62,6 @@ Documentation = "https://bluecellulab.readthedocs.io/"
 [tool.setuptools_scm]
 version_scheme = "python-simplified-semver"
 local_scheme = "no-local-version"
-
-[tool.setuptools]
-py-modules = ["bcl_compile_mods"]
 
 [tool.setuptools.packages.find]
 include = ["bluecellulab"]

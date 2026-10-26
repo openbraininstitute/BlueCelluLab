@@ -20,15 +20,17 @@ import os
 from pathlib import Path
 import re
 import string
-from typing import NamedTuple, Optional
+from typing import TYPE_CHECKING, NamedTuple, Optional
 import uuid
 
 import neuron
 
 from bluecellulab.cell.morphio_wrapper import is_h5_container_path, resolve_case_insensitive_path, split_morphology_path
-from bluecellulab.circuit import EmodelProperties
 from bluecellulab.exceptions import BluecellulabError
 from bluecellulab.type_aliases import HocObjectType
+
+if TYPE_CHECKING:
+    from bluecellulab.circuit import EmodelProperties
 
 import logging
 

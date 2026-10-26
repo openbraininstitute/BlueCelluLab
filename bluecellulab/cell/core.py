@@ -19,7 +19,7 @@ import logging
 
 from pathlib import Path
 import queue
-from typing import Iterable, List, Optional, Tuple
+from typing import TYPE_CHECKING, Iterable, List, Optional, Tuple
 from typing_extensions import deprecated
 
 import neuron
@@ -36,7 +36,7 @@ from bluecellulab.cell.section_distance import EuclideanSectionDistance
 from bluecellulab.cell.sonata_proxy import SonataProxy
 from bluecellulab.cell.template import NeuronTemplate, TemplateParams, public_hoc_cell
 from bluecellulab.circuit.config.sections import Conditions
-from bluecellulab.circuit import EmodelProperties, SynapseProperty
+from bluecellulab.circuit.synapse_properties import SynapseProperty
 from bluecellulab.circuit.node_id import CellId
 from bluecellulab.circuit.simulation_access import get_synapse_replay_spikes
 from bluecellulab.exceptions import BluecellulabError
@@ -52,6 +52,9 @@ from bluecellulab.synapse import SynapseFactory, Synapse
 from bluecellulab.synapse.synapse_types import SynapseID
 from bluecellulab.type_aliases import HocObjectType, NeuronSection, ReportSite, SectionMapping
 from bluecellulab.cell.section_tools import currents_vars, section_to_variable_recording_str
+
+if TYPE_CHECKING:
+    from bluecellulab.circuit import EmodelProperties
 
 logger = logging.getLogger(__name__)
 
@@ -254,7 +257,7 @@ class Cell(InjectableMixin, PlottableMixin):
             raise BluecellulabError(
                 "TTX cannot be applied: the TTXDynamicsSwitch mechanism is not"
                 " available in NEURON. Compile the model's mechanisms with"
-                " `bcl-compile-mods`, which includes it (a copy ships"
+                " `bluecellulab compile-mods`, which includes it (a copy ships"
                 f" in {internal_mods_path()})."
             )
 

@@ -124,7 +124,7 @@ class TestCheckCircuitMechanisms:
             with caplog.at_level(logging.WARNING):
                 importer.check_circuit_mechanisms([d])
         assert "Chan" in caplog.text
-        assert "bcl-compile-mods" in caplog.text
+        assert "bluecellulab compile-mods" in caplog.text
 
     def test_silent_when_loaded(self, tmp_path, caplog):
         d = self._circuit_dir(tmp_path)
@@ -205,6 +205,16 @@ class TestLoadModFilesForCircuit:
         check.assert_called_with(dirs)
 
 
+def test_load_mod_files_retries_after_library_failure(monkeypatch):
+    monkeypatch.setattr(importer._load_mod_files, "has_run", False)
+    with patch.object(importer, "import_mod_lib", side_effect=[RuntimeError("failed"), "lib"]) as load:
+        with pytest.raises(RuntimeError, match="failed"):
+            importer._load_mod_files()
+        importer._load_mod_files()
+        importer._load_mod_files()
+    assert load.call_count == 2
+
+
 class TestLegacyMorphioWrapperAlias:
     """``importer._register_legacy_morphio_wrapper_alias``.
 
@@ -221,12 +231,13 @@ class TestLegacyMorphioWrapperAlias:
 
         from bluecellulab.cell import morphio_wrapper
 
-        # importing bluecellulab (done at module import) runs import_hoc,
-        # which registers the alias
+        # initialize_neuron() runs import_hoc, which registers the alias
+        importer.initialize_neuron()
         assert sys.modules["morphio_wrapper"] is morphio_wrapper
 
     def test_bare_import_works(self):
         """This is exactly what the hoc template's nrnpython call does."""
+        importer.initialize_neuron()
         from morphio_wrapper import MorphIOWrapper  # NOQA
 
         assert MorphIOWrapper.__module__ == "bluecellulab.cell.morphio_wrapper"
