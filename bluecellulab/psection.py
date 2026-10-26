@@ -17,6 +17,7 @@ import re
 import neuron
 
 import bluecellulab
+from bluecellulab.cell.serialized_sections import SerializedSections
 from bluecellulab.psegment import PSegment
 from bluecellulab.type_aliases import HocObjectType, NeuronSection
 
@@ -35,8 +36,6 @@ def init_psections(
         secname = neuron.h.secname(sec=sec)
         secname_to_psection[secname] = PSection(sec)
 
-    # Imported here: at module level it closes a psection <-> cell cycle.
-    from bluecellulab.cell.serialized_sections import SerializedSections
     serial_sections = SerializedSections(hoc_cell)
     for isec, val in serial_sections.isec2sec.items():
         hsection: NeuronSection = val.sec

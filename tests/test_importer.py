@@ -231,13 +231,12 @@ class TestLegacyMorphioWrapperAlias:
 
         from bluecellulab.cell import morphio_wrapper
 
-        # initialize_neuron() runs import_hoc, which registers the alias
-        importer.initialize_neuron()
+        # importing bluecellulab (done at module import) runs import_hoc,
+        # which registers the alias
         assert sys.modules["morphio_wrapper"] is morphio_wrapper
 
     def test_bare_import_works(self):
         """This is exactly what the hoc template's nrnpython call does."""
-        importer.initialize_neuron()
         from morphio_wrapper import MorphIOWrapper  # NOQA
 
         assert MorphIOWrapper.__module__ == "bluecellulab.cell.morphio_wrapper"

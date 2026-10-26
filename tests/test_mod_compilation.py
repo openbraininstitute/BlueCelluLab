@@ -902,11 +902,13 @@ def test_changed_mod_files_ignores_corrupt_metadata(tmp_path):
     assert mc.changed_mod_files(tmp_path) == []
 
 
-def test_cli_module_does_not_import_bluecellulab_or_neuron():
-    """``bluecellulab compile-mods`` must not auto-load an existing ./<arch> build."""
+def test_cli_imports_neuron_like_the_package():
+    """``bluecellulab compile-mods`` imports NEURON along with the package, the
+    same as ``neurodamus-compile-mods``; a stale ``./<arch>`` build is unlinked
+    before ``nrnivmodl`` replaces it."""
     code = (
         "import bluecellulab.cli, sys;"
-        "assert 'neuron' not in sys.modules"
+        "assert 'neuron' in sys.modules"
     )
     res = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, check=False

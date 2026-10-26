@@ -173,21 +173,6 @@ def print_header(neuron: ModuleType, mod_lib_path: str) -> None:
 
 
 @run_once
-def initialize_hoc() -> None:
-    """Load hoc dependencies once, shared by direct and lazy API access."""
-    logger.debug("Loading the hoc files.")
-    import_hoc(neuron)
-
-
-@run_once
-def initialize_neuron() -> None:
-    """Initialize hoc dependencies and globals on first simulation use."""
-    initialize_hoc()
-    from bluecellulab.simulation.neuron_globals import NeuronGlobals
-    NeuronGlobals.get_instance()  # initiate the singleton
-
-
-@run_once
 def _load_mod_files() -> None:
     """Import hoc and mod files.
 
@@ -195,7 +180,6 @@ def _load_mod_files() -> None:
     guarded with `run_once`: only the first call actually loads anything.
     """
     logger.debug("Loading the mod files.")
-    initialize_neuron()
     mod_lib_paths = import_mod_lib(neuron)
     print_header(neuron, mod_lib_paths)
 

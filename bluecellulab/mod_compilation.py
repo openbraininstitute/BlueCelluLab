@@ -480,6 +480,11 @@ def _build_mod_files(
     mod_dir = _place_mod_files(output_dir, mod_files.keys())
     cmd.append(str(mod_dir))
 
+    # An older build may have been auto-loaded by `import neuron` in this
+    # process; unlink it before nrnivmodl replaces it, since overwriting a
+    # memory-mapped library is undefined.
+    shutil.rmtree(output_dir / platform.machine(), ignore_errors=True)
+
     logger.info("Compiling %d mod file(s) with: %s", len(mod_files), " ".join(cmd))
     # Output is captured rather than inherited: under Jupyter, `sys.stdout`
     # and `sys.stderr` are ipykernel streams with no usable file

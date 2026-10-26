@@ -30,10 +30,13 @@ MOD file it rebuilds. Use ``--output-dir`` to build elsewhere, and
 ``--no-with-internal-mods`` to leave out the bundled files. ``./mod_files`` is emptied on every
 build, so it cannot also be one of the source directories; this is refused with an error.
 
-The command does not import NEURON (importing ``bluecellulab`` itself is lazy and does not import
-NEURON either), so it neither loads the GUI nor auto-loads an existing ``./<arch>`` build. It asks
-the compiler's ``nrniv`` for the NEURON version that goes into the cache key (falling back to pip
-metadata, then a warning).
+Importing ``bluecellulab`` loads NEURON, which auto-loads an existing ``./<arch>`` build from the
+current directory. That is fine: a stale build is unlinked before ``nrnivmodl`` replaces it, and
+the NEURON version baked into the cache key is read from the compiler's ``nrniv`` (falling back to
+pip metadata, then a warning), so a build made by a different NEURON is rebuilt rather than reused.
+If NEURON itself was upgraded and the old library no longer loads, delete ``./<arch>`` first or use
+``--output-dir``. On headless runs, set ``NEURON_MODULE_OPTIONS=-nogui`` to avoid the GUI import
+error.
 
 Compile once, before starting the simulation. Under MPI, run ``bluecellulab compile-mods`` before
 ``mpiexec`` rather than from every rank, since concurrent builds into the same directory collide.
@@ -204,19 +207,16 @@ have to include the bundled technical files and avoid duplicate mechanisms yours
 Importance of the Working Directory
 -----------------------------------
 
-NEURON automatically loads the mechanism library in the current working directory when it is imported. Plain ``import bluecellulab`` is lazy and does not import NEURON; first access to a NEURON-backed public name or construction of a simulation object does.
+Importing ``bluecellulab`` imports NEURON, which automatically loads the mechanism library in the current working directory.
 
-Choose the working directory before importing NEURON or using BlueCelluLab's simulation API:
+Choose the working directory before importing NEURON or BlueCelluLab:
 
 - Navigate (``cd``) into the directory containing your compiled ``arm64`` or ``x86_64`` folder.
 - Do not change directories to switch libraries after NEURON has been imported; start a new process instead.
 
 .. code-block:: python
 
-   import bluecellulab  # does not load NEURON
-   cell_class = bluecellulab.Cell  # initializes NEURON and hoc dependencies
-
-Direct ``NeuronGlobals.get_instance()`` access also initializes hoc dependencies before setting default globals. Initialization happens once; later accesses preserve configured globals. If initialization raises, fix the underlying problem and retry.
+   import bluecellulab  # imports NEURON and auto-loads ./<arch> if present
 
 Compile Mechanisms Using nrnivmodl
 ----------------------------------

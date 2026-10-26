@@ -14,11 +14,9 @@
 """BlueCelluLab command line interface.
 
 Subcommands are grouped under the single ``bluecellulab`` command so that the
-name on PATH always makes the package it belongs to clear. This module must
-stay free of NEURON-importing modules: ``compile-mods`` deliberately runs
-before NEURON is loaded, and the lazy ``bluecellulab`` package initialisation
-keeps it that way. Subcommands that do need NEURON should import what they
-need inside their handler, not here.
+name on PATH always makes the package it belongs to clear. Subcommands
+should import only what they need; importing the package itself already
+loads NEURON, as in neurodamus.
 """
 
 import argparse

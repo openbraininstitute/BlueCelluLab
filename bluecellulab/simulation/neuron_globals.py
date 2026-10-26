@@ -107,16 +107,12 @@ class NeuronGlobals:
     @classmethod
     def get_instance(cls):
         if cls._instance is None:
-            from bluecellulab.importer import initialize_hoc
-
-            initialize_hoc()
-            instance = cls.__new__(cls)
+            cls._instance = cls.__new__(cls)
             # Initialize default values
-            instance._temperature = 34.0  # Default temperature
-            instance.v_init = neuron.h.v_init
+            cls._instance._temperature = 34.0  # Default temperature
+            cls._instance.v_init = neuron.h.v_init
             # Set the default values in NEURON
-            neuron.h.celsius = instance._temperature
-            cls._instance = instance
+            neuron.h.celsius = cls._instance._temperature
         return cls._instance
 
     @property

@@ -20,6 +20,7 @@ import logging
 import matplotlib.pyplot as plt
 import neuron
 import numpy as np
+from bluecellulab.cell.stimuli_generator import get_relative_shotnoise_params
 from bluecellulab.exceptions import BluecellulabError
 
 logger = logging.getLogger(__name__)
@@ -744,10 +745,6 @@ class ShotNoise(Stimulus):
         """
         _mean = mean_percent / 100 * threshold_current
         sd = sigma_percent / 100 * threshold_current
-
-        # Imported here: at module level it pulls the cell package into the
-        # circuit config import chain, closing an import cycle.
-        from bluecellulab.cell.stimuli_generator import get_relative_shotnoise_params
 
         rate, mean, sigma = get_relative_shotnoise_params(
             _mean, sd, decay_time, rise_time, relative_skew

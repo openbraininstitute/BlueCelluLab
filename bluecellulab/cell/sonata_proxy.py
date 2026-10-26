@@ -13,15 +13,11 @@
 # limitations under the License.
 """Interfacing the cell object with SONATA properties."""
 
-from __future__ import annotations
-
 from functools import partialmethod
-from typing import TYPE_CHECKING, Any
+from typing import Any
+from bluecellulab.circuit import CircuitAccess
 from bluecellulab.circuit.node_id import CellId
 from bluecellulab.exceptions import MissingSonataPropertyError
-
-if TYPE_CHECKING:
-    from bluecellulab.circuit import CircuitAccess
 
 
 class SonataProxy:
