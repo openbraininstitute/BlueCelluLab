@@ -54,7 +54,7 @@ The mechanisms for these tests have been merged into the [tests/mechanisms/](./.
 - *`TC_iL.mod`
 - *`TC_kir_Con15.mod`
 - `TTXDynamicsSwitch.mod`
-- `VecStim.mod`
+- `VecStim.mod` (now supplied by BlueCelluLab as `vecevent.mod`, compiled in by `bluecellulab compile-mods`)
 - `gap.mod`
 - *`ican.mod`
-- `netstim_inhpoisson.mod`
+- `netstim_inhpoisson.mod` (now supplied by BlueCelluLab as `InhPoissonStim.mod`, compiled in by `bluecellulab compile-mods`)

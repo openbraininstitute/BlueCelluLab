@@ -11,25 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Validation framework for electrophysiology simulations."""
+"""Validation framework for electrophysiology simulations.
 
-from bluecellulab.validation.base import TestResult, ValidationTest
-from bluecellulab.validation.criterion import Criterion, EqualTo, GreaterThan, IsFalse
-from bluecellulab.validation.measurement import EfelMeasurement, Measurement
-from bluecellulab.validation.parametric_validation import ParametricValidation
-from bluecellulab.validation.protocol import Protocol, SequenceProtocol, StepProtocol
-
-__all__ = [
-    "Criterion",
-    "EfelMeasurement",
-    "EqualTo",
-    "GreaterThan",
-    "IsFalse",
-    "Measurement",
-    "ParametricValidation",
-    "Protocol",
-    "SequenceProtocol",
-    "StepProtocol",
-    "TestResult",
-    "ValidationTest",
-]
+Import classes from their submodules (for example
+``bluecellulab.validation.parametric_validation``), so importing one does
+not pull in the whole framework.
+"""

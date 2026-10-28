@@ -33,3 +33,8 @@ ex2_sonatagraph.pdf
 .venv
 bad_dendritic_fit.png
 /build
+examples/2-sonata-network/run_circuit_mpi/logs/
+examples/2-sonata-network/run_circuit_mpi/output_container/
+mod_files/
+modules.json
+memodel_validation_figures/

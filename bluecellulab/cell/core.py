@@ -41,6 +41,10 @@ from bluecellulab.circuit.node_id import CellId
 from bluecellulab.circuit.simulation_access import get_synapse_replay_spikes
 from bluecellulab.exceptions import BluecellulabError
 from bluecellulab.importer import load_mod_files
+from bluecellulab.mod_compilation import (
+    internal_mods_path,
+    registered_mechanisms,
+)
 from bluecellulab.neuron_interpreter import eval_neuron
 from bluecellulab.rngsettings import RNGSettings
 from bluecellulab.stimulus.circuit_stimulus_definitions import SynapseReplay
@@ -239,12 +243,32 @@ class Cell(InjectableMixin, PlottableMixin):
                     neuron.h('uninsert %s' % mech_name, sec=section)
         self.is_made_passive = True
 
+    @staticmethod
+    def _check_ttx_available() -> None:
+        """Refuse to touch TTX when the TTXDynamicsSwitch mechanism is missing.
+
+        Raises:
+            BluecellulabError: if TTXDynamicsSwitch is not available in NEURON.
+        """
+        if "TTXDynamicsSwitch" not in registered_mechanisms():
+            raise BluecellulabError(
+                "TTX cannot be applied: the TTXDynamicsSwitch mechanism is not"
+                " available in NEURON. Compile the model's mechanisms with"
+                " `bluecellulab compile-mods`, which includes it (a copy ships"
+                f" in {internal_mods_path()})."
+            )
+
     def enable_ttx(self) -> None:
         """Add TTX to the environment (i.e. block the Na channels).
 
         Enable TTX by inserting TTXDynamicsSwitch and setting ttxo to
         1.0
+
+        Raises:
+            BluecellulabError: if TTX cannot take effect; see
+                `_check_ttx_available`.
         """
+        self._check_ttx_available()
         if hasattr(public_hoc_cell(self.cell), 'enable_ttx'):
             public_hoc_cell(self.cell).enable_ttx()
         else:
@@ -255,7 +279,12 @@ class Cell(InjectableMixin, PlottableMixin):
 
         Disable TTX by inserting TTXDynamicsSwitch and setting ttxo to
         1e-14
+
+        Raises:
+            BluecellulabError: if TTX cannot take effect; see
+                `_check_ttx_available`.
         """
+        self._check_ttx_available()
         if hasattr(public_hoc_cell(self.cell), 'disable_ttx'):
             public_hoc_cell(self.cell).disable_ttx()
         else:
@@ -268,14 +297,14 @@ class Cell(InjectableMixin, PlottableMixin):
     def _default_enable_ttx(self) -> None:
         """Default enable_ttx implementation."""
         for section in self.sections.values():
-            if not neuron.h.ismembrane("TTXDynamicsSwitch"):
+            if not neuron.h.ismembrane("TTXDynamicsSwitch", sec=section):
                 section.insert('TTXDynamicsSwitch')
             section.ttxo_level_TTXDynamicsSwitch = 1.0
 
     def _default_disable_ttx(self) -> None:
         """Default disable_ttx implementation."""
         for section in self.sections.values():
-            if not neuron.h.ismembrane("TTXDynamicsSwitch"):
+            if not neuron.h.ismembrane("TTXDynamicsSwitch", sec=section):
                 section.insert('TTXDynamicsSwitch')
             section.ttxo_level_TTXDynamicsSwitch = 1e-14
 

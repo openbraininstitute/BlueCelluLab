@@ -35,6 +35,7 @@ from bluecellulab.circuit.config import SimulationConfig
 from bluecellulab.circuit.synapse_properties import SynapseProperties
 from bluecellulab.circuit.config import SonataSimulationConfig
 from bluecellulab.exceptions import BluecellulabError
+from bluecellulab.mod_compilation import extract_mechanisms_dir
 from bluecellulab.circuit.synapse_properties import (
     properties_from_snap,
     properties_to_snap,
@@ -63,8 +64,9 @@ class SonataCircuitAccess(CircuitAccess):
             self.config = simulation_config
         else:
             self.config = SonataSimulationConfig(simulation_config)
-        circuit_config = self.config.impl.config["network"]
-        self._circuit = SnapCircuit(circuit_config)
+        self.circuit_config_path = self.config.impl.config["network"]
+        self._circuit = SnapCircuit(self.circuit_config_path)
+        self.mechanisms_dirs: list[Path] = extract_mechanisms_dir(self.circuit_config_path)
         self.helper_dirs: tuple[str, ...] = self._circuit_helper_dirs()
         self._warned_edge_populations: set[str] = set()
         self._helper_fields_cache: dict[tuple[str, tuple[str, ...]], list[str]] = {}
@@ -80,20 +82,31 @@ class SonataCircuitAccess(CircuitAccess):
         sonata_simplify filter helpers) place them under ``mechanisms_dir``
         and/or ``biophysical_neuron_models_dir``. These existing directories
         are searched for this circuit only (after ``HOC_LIBRARY_PATH``,
-        before the bundled helpers).
+        before the bundled helpers). Every ``mechanisms_dir`` that is compiled
+        and checked (`mechanisms_dirs`), edge populations included, is searched.
+
+        Search order: ``components``, then each node population — each config's
+        ``mechanisms_dir`` before its ``biophysical_neuron_models_dir`` — and
+        finally any ``mechanisms_dir`` only declared on edge populations.
         """
-        dirs: list[str] = []
         components = self._circuit.config.get("components", {}) or {}
         configs = [components] + [
             self._circuit.nodes[pop_name].config or {}
             for pop_name in self._circuit.nodes
         ]
+        candidates: list[str] = []
         for cfg in configs:
             for key in ("mechanisms_dir", "biophysical_neuron_models_dir"):
-                path = cfg.get(key)
-                if path and Path(path).is_dir() and str(path) not in dirs:
-                    dirs.append(str(path))
-        return tuple(dirs)
+                if path := cfg.get(key):
+                    candidates.append(str(path))
+        candidates.extend(str(d) for d in self.mechanisms_dirs)
+        # The same folder can come as differently spelled paths (SNAP config
+        # vs libsonata), so deduplicate on the resolved path.
+        dirs: dict[Path, str] = {}
+        for path in candidates:
+            if Path(path).is_dir():
+                dirs.setdefault(Path(path).resolve(), path)
+        return tuple(dirs.values())
 
     @property
     def available_cell_properties(self) -> set:

@@ -47,12 +47,16 @@ def efel_settings(settings: dict | None = None):
 
 
 def run_once(func):
-    """A decorator to ensure a function is only called once."""
+    """Run once successfully; allow retries after exceptions."""
 
     def wrapper(*args, **kwargs):
         if not wrapper.has_run:
             wrapper.has_run = True
-            return func(*args, **kwargs)
+            try:
+                return func(*args, **kwargs)
+            except BaseException:
+                wrapper.has_run = False
+                raise
 
     wrapper.has_run = False
     return wrapper
