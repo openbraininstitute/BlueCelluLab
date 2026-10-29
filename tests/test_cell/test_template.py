@@ -19,7 +19,7 @@ import uuid
 
 import pytest
 
-from bluecellulab.cell.template import NeuronTemplate, public_hoc_cell
+from bluecellulab.cell.template import NeuronTemplate, public_hoc_cell, read_template_globals, template_operating_point
 from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.exceptions import BluecellulabError
 
@@ -114,3 +114,59 @@ def test_load_bpo_template():
     neuron_template = NeuronTemplate(hoc_path, morph_path, "bluepyopt", None)
     cell = neuron_template.get_cell(None)
     assert len(cell.soma[0].children()) == 11
+
+
+def test_read_template_globals_from_check_simulator():
+    """check_parameter calls in check_simulator() give the fitted globals."""
+    assert read_template_globals(hipp_hoc_path) == {"celsius": 34.0, "v_init": -80.0}
+    ca1_hoc_path = (
+        examples_dir / "circuit_hipp_mooc_most_central_10_SP_PC" / "components" / "hoc"
+        / "CA1_pyr_cACpyr_oh140807_A0_idJ_2019032814272.hoc"
+    )
+    assert read_template_globals(ca1_hoc_path) == {"celsius": 34.0, "v_init": -70.0}
+
+
+def test_read_template_globals_both_forms_and_exponents(tmp_path):
+    """check_parameter calls and the ignored-globals comment block add up."""
+    hoc_path = tmp_path / "cell.hoc"
+    hoc_path.write_text(
+        "proc check_parameter(/* name, expected_value, value */){\n}\n"
+        "proc check_simulator() {\n"
+        '  check_parameter("celsius", 6.3, celsius)\n'
+        '  // check_parameter("celsius", 99, celsius)\n'
+        '  check_parameter("ena", 5e+1, ena)\n'
+        "}\n"
+        "/* The following global parameters were set in BluePyOpt\n"
+        " * v_init = -65\n"
+        " */\n"
+    )
+    assert read_template_globals(hoc_path) == {"celsius": 6.3, "ena": 50.0, "v_init": -65.0}
+
+
+def test_read_template_globals_none_declared(tmp_path):
+    hoc_path = tmp_path / "cell.hoc"
+    hoc_path.write_text("/*\nCreated by BluePyOpt(1.14.25)\n*/\nbegintemplate cell\nendtemplate cell\n")
+    assert read_template_globals(hoc_path) == {}
+
+
+def test_template_operating_point_passed_values_win():
+    assert template_operating_point("does-not-exist.hoc", 25.0, -70.0) == (25.0, -70.0)
+
+
+def test_template_operating_point_fills_missing_values_from_the_template(tmp_path):
+    hoc_path = tmp_path / "cell.hoc"
+    hoc_path.write_text(
+        'proc check_simulator() {\n'
+        '  check_parameter("celsius", 25, celsius)\n'
+        '  check_parameter("v_init", -70, v_init)\n'
+        '}\n'
+    )
+    assert template_operating_point(hoc_path) == (25.0, -70.0)
+    assert template_operating_point(hoc_path, celsius=30.0) == (30.0, -70.0)
+
+
+def test_template_operating_point_warns_and_defaults_when_undeclared(tmp_path, caplog):
+    hoc_path = tmp_path / "cell.hoc"
+    hoc_path.write_text('proc check_simulator() {\n  check_parameter("celsius", 25, celsius)\n}\n')
+    assert template_operating_point(hoc_path) == (25.0, -80.0)
+    assert "declares no v_init" in caplog.text
