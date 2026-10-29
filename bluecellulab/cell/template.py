@@ -358,3 +358,26 @@ def read_template_globals(template_path: str | Path) -> dict[str, float]:
     for block in _IGNORED_GLOBALS_BLOCK.findall(content):
         found.update((name, float(value)) for name, value in _IGNORED_GLOBAL.findall(block))
     return found
+
+
+def template_operating_point(
+    template_path: str | Path,
+    celsius: Optional[float] = None,
+    v_init: Optional[float] = None,
+) -> tuple[float, float]:
+    """Return the celsius and v_init to simulate a hoc template at.
+
+    A value passed in is used as is. A missing one is the value the
+    template declares, or the default (34 C, -80 mV) with a warning if
+    it declares none.
+    """
+    declared = read_template_globals(template_path) if celsius is None or v_init is None else {}
+    resolved = []
+    for name, value, default in (("celsius", celsius, 34.0), ("v_init", v_init, -80.0)):
+        if value is None:
+            value = declared.get(name)
+        if value is None:
+            logger.warning("%s declares no %s, using %s", template_path, name, default)
+            value = default
+        resolved.append(value)
+    return resolved[0], resolved[1]

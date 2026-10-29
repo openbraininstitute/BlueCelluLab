@@ -3,11 +3,17 @@ Changelog
 
 Unreleased
 ----------
+* ``compute_memodel_properties``, ``compute_memodel_properties_v2`` and
+  ``run_validations`` default ``celsius`` and ``v_init`` to the values the hoc
+  template was fitted with, and only fall back to 34 C / -80 mV (with a
+  warning) when the template declares none. Values passed explicitly are used
+  as before. Models fitted at another operating point were calibrated and
+  validated at 34 C / -80 mV.
 * ``bluecellulab.cell.template.read_template_globals`` reads the NEURON globals
-  (``celsius``, ``v_init``, ...) a BluePyOpt hoc template was fitted with, from
-  its ``check_parameter`` calls or its ignored-globals comment, so callers can
-  pass the model's own ``celsius`` and ``v_init`` to
-  ``compute_memodel_properties`` and ``run_validations``.
+  (``celsius``, ``v_init``, ...) a BluePyOpt hoc template declares, from its
+  ``check_parameter`` calls or its ignored-globals comment;
+  ``template_operating_point`` resolves the ``celsius`` and ``v_init`` to
+  simulate it at.
 * Generic ``modoverride`` (Neurodamus-compatible synapse helpers, see
   ``docs/source/synapse-helpers.rst``):
 

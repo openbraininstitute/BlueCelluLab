@@ -491,7 +491,7 @@ def test_run_validations(
     mock_iv.return_value = {"passed": True}
     mock_fi.return_value = {"passed": True}
     mock_thumbnail.return_value = {"passed": True}
-    result = validation.run_validations(cell, "cellname")
+    result = validation.run_validations(cell, "cellname", celsius=34.0, v_init=-80.0)
     assert result["spiking_test"]["passed"] is True
     assert result["depolarization_block_test"]["passed"] is True
     assert result["bpap_test"]["passed"] is True
@@ -507,6 +507,6 @@ def test_run_validations(
     # test no holding and threshold currents
     cell.hypamp = None
     cell.threshold = None
-    result = validation.run_validations(cell, "cellname")
+    result = validation.run_validations(cell, "cellname", celsius=34.0, v_init=-80.0)
     assert result["memodel_properties"]["holding_current"] == 0.0
     assert result["memodel_properties"]["rheobase"] == 0.5

@@ -19,7 +19,7 @@ import uuid
 
 import pytest
 
-from bluecellulab.cell.template import NeuronTemplate, public_hoc_cell, read_template_globals
+from bluecellulab.cell.template import NeuronTemplate, public_hoc_cell, read_template_globals, template_operating_point
 from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.exceptions import BluecellulabError
 
@@ -147,3 +147,26 @@ def test_read_template_globals_none_declared(tmp_path):
     hoc_path = tmp_path / "cell.hoc"
     hoc_path.write_text("/*\nCreated by BluePyOpt(1.14.25)\n*/\nbegintemplate cell\nendtemplate cell\n")
     assert read_template_globals(hoc_path) == {}
+
+
+def test_template_operating_point_passed_values_win():
+    assert template_operating_point("does-not-exist.hoc", 25.0, -70.0) == (25.0, -70.0)
+
+
+def test_template_operating_point_fills_missing_values_from_the_template(tmp_path):
+    hoc_path = tmp_path / "cell.hoc"
+    hoc_path.write_text(
+        'proc check_simulator() {\n'
+        '  check_parameter("celsius", 25, celsius)\n'
+        '  check_parameter("v_init", -70, v_init)\n'
+        '}\n'
+    )
+    assert template_operating_point(hoc_path) == (25.0, -70.0)
+    assert template_operating_point(hoc_path, celsius=30.0) == (30.0, -70.0)
+
+
+def test_template_operating_point_warns_and_defaults_when_undeclared(tmp_path, caplog):
+    hoc_path = tmp_path / "cell.hoc"
+    hoc_path.write_text('proc check_simulator() {\n  check_parameter("celsius", 25, celsius)\n}\n')
+    assert template_operating_point(hoc_path) == (25.0, -80.0)
+    assert "declares no v_init" in caplog.text

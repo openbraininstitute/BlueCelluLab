@@ -25,6 +25,7 @@ from bluecellulab.analysis.analysis import compute_plot_iv_curve
 from bluecellulab.analysis.inject_sequence import run_multirecordings_stimulus
 from bluecellulab.analysis.inject_sequence import run_stimulus
 from bluecellulab.cell.core import Cell
+from bluecellulab.cell.template import template_operating_point
 from bluecellulab.simulation.neuron_globals import set_neuron_globals
 from bluecellulab.stimulus.factory import IDRestTimings
 from bluecellulab.stimulus.factory import StimulusFactory
@@ -516,8 +517,8 @@ def run_validations(
     cell,
     cell_name,
     spike_threshold_voltage=DEFAULT_SPIKE_THRESHOLD_VOLTAGE,
-    v_init=-80.0,
-    celsius=34.0,
+    v_init=None,
+    celsius=None,
     output_dir="./memodel_validation_figures",
     n_processes=None,
 ):
@@ -528,8 +529,8 @@ def run_validations(
         cell_name (str): The name of the cell, used in the output directory.
         spike_threshold_voltage (float): The voltage threshold for spike detection.
             Default value in this module is -40 mV because some cells do not reach -20 mv.
-        v_init: Initial membrane potential. Default is -80.0 mV.
-        celsius: Temperature in Celsius. Default is 34.0.
+        v_init: Initial membrane potential. Default is the template's, else -80.0 mV.
+        celsius: Temperature in Celsius. Default is the template's, else 34.0.
         output_dir (str): The directory to save the validation figures.
         n_processes (int, optional): The number of processes to use for parallel execution
             in IV and FI curves computation. If None or higher than the number of steps,
@@ -538,7 +539,9 @@ def run_validations(
     out_dir = pathlib.Path(output_dir) / cell_name
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # set initial voltage and temperature
+    celsius, v_init = template_operating_point(
+        cell.template_params.template_filepath, celsius, v_init
+    )
     set_neuron_globals(temperature=celsius, v_init=v_init)
 
     # get me-model properties
