@@ -2,6 +2,7 @@
 
 import itertools
 import efel
+import neuron
 import pytest
 from unittest.mock import MagicMock, patch
 import pathlib
@@ -472,7 +473,10 @@ def test_run_validations(
     mock_rheo_calc,
 ):
     template_params = MagicMock()
-    template_params.template_filepath = "template.hoc"
+    template_params.template_filepath = (
+        pathlib.Path(__file__).parent.parent / "examples" / "circuit_hipp_mooc_most_central_10_SP_PC"
+        / "components" / "hoc" / "CA1_pyr_cACpyr_oh140807_A0_idJ_2019032814272.hoc"
+    )
     template_params.morph_filepath = "morph.asc"
     template_params.template_format = "v6"
     template_params.emodel_properties = MagicMock()
@@ -491,7 +495,8 @@ def test_run_validations(
     mock_iv.return_value = {"passed": True}
     mock_fi.return_value = {"passed": True}
     mock_thumbnail.return_value = {"passed": True}
-    result = validation.run_validations(cell, "cellname", celsius=34.0, v_init=-80.0)
+    result = validation.run_validations(cell, "cellname")
+    assert (neuron.h.celsius, neuron.h.v_init) == (34.0, -70.0)
     assert result["spiking_test"]["passed"] is True
     assert result["depolarization_block_test"]["passed"] is True
     assert result["bpap_test"]["passed"] is True
@@ -507,6 +512,7 @@ def test_run_validations(
     # test no holding and threshold currents
     cell.hypamp = None
     cell.threshold = None
-    result = validation.run_validations(cell, "cellname", celsius=34.0, v_init=-80.0)
+    result = validation.run_validations(cell, "cellname", celsius=25.0, v_init=-80.0)
+    assert (neuron.h.celsius, neuron.h.v_init) == (25.0, -80.0)
     assert result["memodel_properties"]["holding_current"] == 0.0
     assert result["memodel_properties"]["rheobase"] == 0.5
