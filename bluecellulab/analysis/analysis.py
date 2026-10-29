@@ -73,8 +73,7 @@ def compute_plot_iv_curve(cell,
             (in ms). Default is 100.0 ms.
         threshold_voltage (float, optional): The voltage threshold (in mV) for detecting a steady-state
             response. Default is -20 mV.
-        nb_bins (int, optional): The number of discrete current levels between 0 and the maximum current.
-            Default is 11.
+        nb_bins (int, optional): The number of discrete current levels in the sweep. Default is 11.
         rheobase (float, optional): The rheobase current (in nA) for the cell. If not provided, it will
             be calculated using the `calculate_rheobase` function.
         show_figure (bool): Whether to display the figure. Default is True.
@@ -100,7 +99,8 @@ def compute_plot_iv_curve(cell,
     if rheobase is None:
         rheobase = calculate_rheobase(cell=cell, section=injecting_section, segx=injecting_segment)
 
-    list_amp = np.linspace(rheobase - 2, rheobase - 0.1, nb_bins)  # [nA]
+    # Scale the hyperpolarizing sweep to the cell's rheobase.
+    list_amp = np.linspace(rheobase - 2 * abs(rheobase), rheobase - 0.1 * abs(rheobase), nb_bins)  # [nA]
 
     # inject step current and record voltage response
     stim_factory = StimulusFactory(dt=0.1)

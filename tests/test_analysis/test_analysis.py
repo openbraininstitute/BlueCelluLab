@@ -126,6 +126,38 @@ def test_plot_iv_curve(
         )
 
 
+def test_iv_curve_current_range_scales_with_rheobase(
+    monkeypatch,
+    mock_cell,
+    mock_search_threshold_current,
+    mock_efel
+):
+    """The IV sweep must scale with rheobase, not use a fixed offset.
+
+    Regression for a small-rheobase cell: a fixed ``rheobase - 2`` lower bound
+    injects currents orders of magnitude above rheobase and drives nonphysical
+    steady-state voltages. The range must scale with rheobase instead.
+    """
+    monkeypatch.setattr("bluecellulab.analysis.analysis.run_stimulus", mock_run_stimulus)
+    with patch('bluecellulab.cell.core', mock_cell), \
+         patch('bluecellulab.tools.search_threshold_current', mock_search_threshold_current), \
+         patch('bluecellulab.analysis.analysis.efel', mock_efel), \
+         patch('bluecellulab.analysis.analysis.calculate_rheobase') as mock_rheobase:
+
+        # A cell with a small rheobase.
+        mock_rheobase.return_value = 0.02
+
+        # The sweep must scale with rheobase, NOT use a fixed ~ -2 nA offset.
+        # The old `rheobase - 2` would put the floor near -1.98 nA (~100x rheobase).
+        list_amp, _ = compute_plot_iv_curve(mock_cell, nb_bins=5, show_figure=False)
+        assert list_amp.min() > -1.0, (
+            f"IV sweep floor {list_amp.min()} nA is far below a rheobase of 0.02 nA; "
+            "the range is not scaling with rheobase."
+        )
+        # The sweep stays at or below rheobase (it probes around/below threshold).
+        assert list_amp.max() <= 0.02
+
+
 def test_plot_fi_curve(mock_cell, mock_search_threshold_current):
     """Test the compute_plot_fi_curve function."""
     with patch('bluecellulab.cell.Cell', mock_cell), \
