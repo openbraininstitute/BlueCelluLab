@@ -329,7 +329,9 @@ def get_neuron_compliant_template_name(name: str) -> str:
 
 
 _NUMBER = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
-_CHECKED_GLOBAL = re.compile(rf'check_parameter\(\s*"(\w+)"\s*,\s*({_NUMBER})\s*,\s*\1\s*\)')
+_CHECKED_GLOBAL = re.compile(
+    rf'^\s*check_parameter\(\s*"(\w+)"\s*,\s*({_NUMBER})\s*,\s*\1\s*\)', re.MULTILINE
+)
 _IGNORED_GLOBALS_BLOCK = re.compile(
     r"The following global parameters were set in BluePyOpt(.*?)\*/", re.DOTALL
 )

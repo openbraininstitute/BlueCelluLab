@@ -133,6 +133,7 @@ def test_read_template_globals_both_forms_and_exponents(tmp_path):
         "proc check_parameter(/* name, expected_value, value */){\n}\n"
         "proc check_simulator() {\n"
         '  check_parameter("celsius", 6.3, celsius)\n'
+        '  // check_parameter("celsius", 99, celsius)\n'
         '  check_parameter("ena", 5e+1, ena)\n'
         "}\n"
         "/* The following global parameters were set in BluePyOpt\n"
