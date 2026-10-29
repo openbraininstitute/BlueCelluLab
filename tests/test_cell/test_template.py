@@ -119,24 +119,15 @@ def test_load_bpo_template():
 def test_read_template_globals_from_check_simulator():
     """check_parameter calls in check_simulator() give the fitted globals."""
     assert read_template_globals(hipp_hoc_path) == {"celsius": 34.0, "v_init": -80.0}
-    assert read_template_globals(v6_hoc_path) == {"v_init": -80.0, "celsius": 34.0}
-
-
-def test_read_template_globals_from_ignored_globals_comment(tmp_path):
-    """Globals BluePyOpt was told to ignore are read from its comment block."""
-    hoc_path = tmp_path / "cell.hoc"
-    hoc_path.write_text(
-        "/*\nCreated by BluePyOpt(1.14.25)\n*/\n"
-        "/* The following global parameters were set in BluePyOpt\n"
-        " * celsius = 25\n"
-        " * v_init = -70.5\n"
-        " */\n"
-        "begintemplate cell\nendtemplate cell\n"
+    ca1_hoc_path = (
+        examples_dir / "circuit_hipp_mooc_most_central_10_SP_PC" / "components" / "hoc"
+        / "CA1_pyr_cACpyr_oh140807_A0_idJ_2019032814272.hoc"
     )
-    assert read_template_globals(hoc_path) == {"celsius": 25.0, "v_init": -70.5}
+    assert read_template_globals(ca1_hoc_path) == {"celsius": 34.0, "v_init": -70.0}
 
 
 def test_read_template_globals_both_forms_and_exponents(tmp_path):
+    """check_parameter calls and the ignored-globals comment block add up."""
     hoc_path = tmp_path / "cell.hoc"
     hoc_path.write_text(
         "proc check_parameter(/* name, expected_value, value */){\n}\n"
@@ -145,7 +136,7 @@ def test_read_template_globals_both_forms_and_exponents(tmp_path):
         '  check_parameter("ena", 5e+1, ena)\n'
         "}\n"
         "/* The following global parameters were set in BluePyOpt\n"
-        " * v_init = -65.0\n"
+        " * v_init = -65\n"
         " */\n"
     )
     assert read_template_globals(hoc_path) == {"celsius": 6.3, "ena": 50.0, "v_init": -65.0}
