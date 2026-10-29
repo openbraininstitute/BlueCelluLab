@@ -19,7 +19,7 @@ import uuid
 
 import pytest
 
-from bluecellulab.cell.template import NeuronTemplate, public_hoc_cell
+from bluecellulab.cell.template import NeuronTemplate, public_hoc_cell, read_template_globals
 from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.exceptions import BluecellulabError
 
@@ -114,3 +114,44 @@ def test_load_bpo_template():
     neuron_template = NeuronTemplate(hoc_path, morph_path, "bluepyopt", None)
     cell = neuron_template.get_cell(None)
     assert len(cell.soma[0].children()) == 11
+
+
+def test_read_template_globals_from_check_simulator():
+    """check_parameter calls in check_simulator() give the fitted globals."""
+    assert read_template_globals(hipp_hoc_path) == {"celsius": 34.0, "v_init": -80.0}
+    assert read_template_globals(v6_hoc_path) == {"v_init": -80.0, "celsius": 34.0}
+
+
+def test_read_template_globals_from_ignored_globals_comment(tmp_path):
+    """Globals BluePyOpt was told to ignore are read from its comment block."""
+    hoc_path = tmp_path / "cell.hoc"
+    hoc_path.write_text(
+        "/*\nCreated by BluePyOpt(1.14.25)\n*/\n"
+        "/* The following global parameters were set in BluePyOpt\n"
+        " * celsius = 25\n"
+        " * v_init = -70.5\n"
+        " */\n"
+        "begintemplate cell\nendtemplate cell\n"
+    )
+    assert read_template_globals(hoc_path) == {"celsius": 25.0, "v_init": -70.5}
+
+
+def test_read_template_globals_both_forms_and_exponents(tmp_path):
+    hoc_path = tmp_path / "cell.hoc"
+    hoc_path.write_text(
+        "proc check_parameter(/* name, expected_value, value */){\n}\n"
+        "proc check_simulator() {\n"
+        '  check_parameter("celsius", 6.3, celsius)\n'
+        '  check_parameter("ena", 5e+1, ena)\n'
+        "}\n"
+        "/* The following global parameters were set in BluePyOpt\n"
+        " * v_init = -65.0\n"
+        " */\n"
+    )
+    assert read_template_globals(hoc_path) == {"celsius": 6.3, "ena": 50.0, "v_init": -65.0}
+
+
+def test_read_template_globals_none_declared(tmp_path):
+    hoc_path = tmp_path / "cell.hoc"
+    hoc_path.write_text("/*\nCreated by BluePyOpt(1.14.25)\n*/\nbegintemplate cell\nendtemplate cell\n")
+    assert read_template_globals(hoc_path) == {}

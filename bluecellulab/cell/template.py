@@ -326,3 +326,33 @@ def get_neuron_compliant_template_name(name: str) -> str:
         logger.debug("Converted template name %s to %s to make it "
                      "NEURON compliant" % (name, template_name))
     return template_name
+
+
+_NUMBER = r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
+_CHECKED_GLOBAL = re.compile(rf'check_parameter\(\s*"(\w+)"\s*,\s*({_NUMBER})\s*,\s*\1\s*\)')
+_IGNORED_GLOBALS_BLOCK = re.compile(
+    r"The following global parameters were set in BluePyOpt(.*?)\*/", re.DOTALL
+)
+_IGNORED_GLOBAL = re.compile(rf"^\s*\*\s*(\w+)\s*=\s*({_NUMBER})\s*$", re.MULTILINE)
+
+
+def read_template_globals(template_path: str | Path) -> dict[str, float]:
+    """Read the NEURON globals (e.g. celsius, v_init) a BluePyOpt hoc template
+    was fitted with.
+
+    BluePyOpt writes them either as ``check_parameter("celsius", 34, celsius)``
+    calls in ``check_simulator()`` or, for ignored globals, in a comment block.
+    bluecellulab never runs ``check_simulator()``, so callers that need the
+    model's operating point (e.g. ``compute_memodel_properties``) read it here.
+
+    Args:
+        template_path: Path to the hoc template.
+
+    Returns:
+        The globals found, by name. Empty if the template declares none.
+    """
+    content = Path(template_path).read_text()
+    found = {name: float(value) for name, value in _CHECKED_GLOBAL.findall(content)}
+    for block in _IGNORED_GLOBALS_BLOCK.findall(content):
+        found.update((name, float(value)) for name, value in _IGNORED_GLOBAL.findall(block))
+    return found

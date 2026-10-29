@@ -3,6 +3,11 @@ Changelog
 
 Unreleased
 ----------
+* ``bluecellulab.cell.template.read_template_globals`` reads the NEURON globals
+  (``celsius``, ``v_init``, ...) a BluePyOpt hoc template was fitted with, from
+  its ``check_parameter`` calls or its ignored-globals comment, so callers can
+  pass the model's own operating point to ``compute_memodel_properties`` and
+  ``run_validations``.
 * Generic ``modoverride`` (Neurodamus-compatible synapse helpers, see
   ``docs/source/synapse-helpers.rst``):
 
