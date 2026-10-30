@@ -73,7 +73,8 @@ def compute_plot_iv_curve(cell,
             (in ms). Default is 100.0 ms.
         threshold_voltage (float, optional): The voltage threshold (in mV) for detecting a steady-state
             response. Default is -20 mV.
-        nb_bins (int, optional): The number of discrete current levels in the sweep. Default is 11.
+        nb_bins (int, optional): The number of discrete current levels in the sweep. Must be
+            at least 2 to span a range. Default is 11.
         rheobase (float, optional): The rheobase current (in nA) for the cell. If not provided, it will
             be calculated using the `calculate_rheobase` function.
         show_figure (bool): Whether to display the figure. Default is True.
@@ -96,11 +97,25 @@ def compute_plot_iv_curve(cell,
         ValueError: If the cell object is invalid, the specified sections/segments are not found, or if
             the simulation results are inconsistent.
     """
+    if nb_bins < 2:
+        raise ValueError(
+            f"IV curve requires nb_bins >= 2 to span a current range; got {nb_bins}."
+        )
+
     if rheobase is None:
         rheobase = calculate_rheobase(cell=cell, section=injecting_section, segx=injecting_segment)
 
-    # Scale the hyperpolarizing sweep to the cell's rheobase.
-    list_amp = np.linspace(rheobase - 2 * abs(rheobase), rheobase - 0.1 * abs(rheobase), nb_bins)  # [nA]
+    if not np.isfinite(rheobase) or rheobase <= 0:
+        raise ValueError(
+            f"IV curve requires a finite positive rheobase; got {rheobase} nA. If `rheobase` "
+            "was auto-computed, check the cell's holding current and threshold search "
+            "(e.g. a non-finite input resistance); otherwise pass a finite positive `rheobase`."
+        )
+
+    # Scale the sweep to the cell's rheobase: from -rheobase up to just below
+    # rheobase. This probes the sub-threshold I-V relationship for cells of any
+    # size, instead of a fixed offset that only suited a rheobase of ~1 nA.
+    list_amp = np.linspace(-rheobase, 0.9 * rheobase, nb_bins)  # [nA]
 
     # inject step current and record voltage response
     stim_factory = StimulusFactory(dt=0.1)

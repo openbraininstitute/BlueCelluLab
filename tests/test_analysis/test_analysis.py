@@ -132,11 +132,11 @@ def test_iv_curve_current_range_scales_with_rheobase(
     mock_search_threshold_current,
     mock_efel
 ):
-    """The IV sweep must scale with rheobase, not use a fixed offset.
+    """The IV sweep endpoints must scale with rheobase, not use a fixed offset.
 
     Regression for a small-rheobase cell: a fixed ``rheobase - 2`` lower bound
     injects currents orders of magnitude above rheobase and drives nonphysical
-    steady-state voltages. The range must scale with rheobase instead.
+    steady-state voltages. The range must span ``-rheobase`` to ``0.9*rheobase``.
     """
     monkeypatch.setattr("bluecellulab.analysis.analysis.run_stimulus", mock_run_stimulus)
     with patch('bluecellulab.cell.core', mock_cell), \
@@ -144,18 +144,80 @@ def test_iv_curve_current_range_scales_with_rheobase(
          patch('bluecellulab.analysis.analysis.efel', mock_efel), \
          patch('bluecellulab.analysis.analysis.calculate_rheobase') as mock_rheobase:
 
-        # A cell with a small rheobase.
         mock_rheobase.return_value = 0.02
 
-        # The sweep must scale with rheobase, NOT use a fixed ~ -2 nA offset.
-        # The old `rheobase - 2` would put the floor near -1.98 nA (~100x rheobase).
         list_amp, _ = compute_plot_iv_curve(mock_cell, nb_bins=5, show_figure=False)
-        assert list_amp.min() > -1.0, (
-            f"IV sweep floor {list_amp.min()} nA is far below a rheobase of 0.02 nA; "
-            "the range is not scaling with rheobase."
-        )
-        # The sweep stays at or below rheobase (it probes around/below threshold).
-        assert list_amp.max() <= 0.02
+        np.testing.assert_allclose([list_amp[0], list_amp[-1]], [-0.02, 0.018])
+        # The sweep must ascend from the hyperpolarizing floor to just below rheobase.
+        assert np.all(np.diff(list_amp) > 0)
+
+
+def test_iv_curve_current_range_scales_for_large_rheobase(
+    monkeypatch,
+    mock_cell,
+    mock_search_threshold_current,
+    mock_efel
+):
+    """A large rheobase must also scale, catching any leftover fixed offset.
+
+    A regression that only fixed the small-rheobase case (or left a fixed
+    offset in place) would still pass the small-rheobase test but fail here.
+    """
+    monkeypatch.setattr("bluecellulab.analysis.analysis.run_stimulus", mock_run_stimulus)
+    with patch('bluecellulab.cell.core', mock_cell), \
+         patch('bluecellulab.tools.search_threshold_current', mock_search_threshold_current), \
+         patch('bluecellulab.analysis.analysis.efel', mock_efel), \
+         patch('bluecellulab.analysis.analysis.calculate_rheobase') as mock_rheobase:
+
+        mock_rheobase.return_value = 1.0
+
+        list_amp, _ = compute_plot_iv_curve(mock_cell, nb_bins=5, show_figure=False)
+        np.testing.assert_allclose([list_amp[0], list_amp[-1]], [-1.0, 0.9])
+        assert np.all(np.diff(list_amp) > 0)
+
+
+def test_iv_curve_rejects_nonpositive_rheobase(
+    monkeypatch,
+    mock_cell,
+    mock_search_threshold_current,
+    mock_efel
+):
+    """A non-finite or non-positive rheobase must fail loudly, not produce garbage.
+
+    A NaN rheobase is the subtle case: ``nan <= 0`` is ``False``, so a bare sign
+    check would let it through and yield an all-NaN sweep, the exact silent
+    nonphysical output this protocol exists to prevent.
+    """
+    monkeypatch.setattr("bluecellulab.analysis.analysis.run_stimulus", mock_run_stimulus)
+    with patch('bluecellulab.cell.core', mock_cell), \
+         patch('bluecellulab.tools.search_threshold_current', mock_search_threshold_current), \
+         patch('bluecellulab.analysis.analysis.efel', mock_efel), \
+         patch('bluecellulab.analysis.analysis.calculate_rheobase') as mock_rheobase:
+
+        for bad_rheobase in (0.0, -0.3, float("nan")):
+            mock_rheobase.return_value = bad_rheobase
+            with pytest.raises(ValueError, match="finite positive rheobase"):
+                compute_plot_iv_curve(mock_cell, nb_bins=5, show_figure=False)
+
+
+def test_iv_curve_rejects_degenerate_nb_bins(
+    monkeypatch,
+    mock_cell,
+    mock_search_threshold_current,
+    mock_efel
+):
+    """nb_bins < 2 cannot span a current range and must be rejected."""
+    monkeypatch.setattr("bluecellulab.analysis.analysis.run_stimulus", mock_run_stimulus)
+    with patch('bluecellulab.cell.core', mock_cell), \
+         patch('bluecellulab.tools.search_threshold_current', mock_search_threshold_current), \
+         patch('bluecellulab.analysis.analysis.efel', mock_efel), \
+         patch('bluecellulab.analysis.analysis.calculate_rheobase') as mock_rheobase:
+
+        mock_rheobase.return_value = 0.2
+
+        for bad_bins in (0, 1):
+            with pytest.raises(ValueError, match="nb_bins >= 2"):
+                compute_plot_iv_curve(mock_cell, nb_bins=bad_bins, show_figure=False)
 
 
 def test_plot_fi_curve(mock_cell, mock_search_threshold_current):
