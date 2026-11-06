@@ -132,7 +132,8 @@ def compute_plot_iv_curve(cell,
     if not (np.isfinite(lower) and np.isfinite(upper)) or lower >= upper:
         raise ValueError(
             f"IV curve requires finite bounds with min_amp < max_amp; got "
-            f"min_amp={lower} nA, max_amp={upper} nA."
+            f"min_amp={lower} nA, max_amp={upper} nA. When the bounds are derived from "
+            f"rheobase ({rheobase} nA), a rheobase of zero collapses them to a single point."
         )
     list_amp = np.linspace(lower, upper, nb_bins)  # [nA]
 

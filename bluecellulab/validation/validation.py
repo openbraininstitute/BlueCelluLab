@@ -395,9 +395,14 @@ def iv_test(
     name = "Simulatable Neuron IV Curve Validation"
     outpath = pathlib.Path(out_dir) / "iv_curve.pdf"
     try:
+        # Pin the sweep to the rheobase-scaled range here rather than inheriting
+        # the library default, so the validation output does not move if that
+        # default changes.
         amps, steady_states = compute_plot_iv_curve(
             Cell.from_template_parameters(template_params),
             rheobase=rheobase,
+            min_amp=-rheobase,
+            max_amp=0.9 * rheobase,
             threshold_voltage=spike_threshold_voltage,
             nb_bins=5,
             show_figure=False,
