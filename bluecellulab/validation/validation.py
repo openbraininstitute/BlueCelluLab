@@ -393,21 +393,35 @@ def iv_test(
 ):
     """IV curve should have a positive slope."""
     name = "Simulatable Neuron IV Curve Validation"
-    amps, steady_states = compute_plot_iv_curve(
-        Cell.from_template_parameters(template_params),
-        rheobase=rheobase,
-        threshold_voltage=spike_threshold_voltage,
-        nb_bins=5,
-        show_figure=False,
-        save_figure=True,
-        output_dir=out_dir,
-        output_fname="iv_curve.pdf",
-        n_processes=n_processes,
-        celsius=celsius,
-        v_init=v_init,
-    )
-
     outpath = pathlib.Path(out_dir) / "iv_curve.pdf"
+    try:
+        # Pin the sweep to the rheobase-scaled range here rather than inheriting
+        # the library default, so the validation output does not move if that
+        # default changes.
+        amps, steady_states = compute_plot_iv_curve(
+            Cell.from_template_parameters(template_params),
+            rheobase=rheobase,
+            min_amp=-rheobase,
+            max_amp=0.9 * rheobase,
+            threshold_voltage=spike_threshold_voltage,
+            nb_bins=5,
+            show_figure=False,
+            save_figure=True,
+            output_dir=out_dir,
+            output_fname="iv_curve.pdf",
+            n_processes=n_processes,
+            celsius=celsius,
+            v_init=v_init,
+        )
+    except ValueError as error:
+        # A rheobase <= 0 (e.g. a cell firing at rest) cannot define a sweep
+        # scaled to rheobase. Fail this test rather than aborting the whole run.
+        return {
+            "name": name,
+            "passed": False,
+            "validation_details": f"Validation failed: {error}",
+            "figures": [],
+        }
 
     # Check for positive slope
     if len(amps) < 2 or len(steady_states) < 2:

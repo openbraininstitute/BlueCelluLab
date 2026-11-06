@@ -126,6 +126,87 @@ def test_plot_iv_curve(
         )
 
 
+@pytest.fixture
+def iv_curve_env(monkeypatch, mock_cell, mock_search_threshold_current, mock_efel):
+    """Patch the IV-curve dependencies and yield (cell, calculate_rheobase mock).
+
+    Every IV-curve test needs the same four patches (run_stimulus, Cell, the
+    threshold search, efel) plus control over the rheobase; this centralizes
+    that setup so each test only states its own inputs and assertions.
+    """
+    monkeypatch.setattr("bluecellulab.analysis.analysis.run_stimulus", mock_run_stimulus)
+    with patch("bluecellulab.cell.core", mock_cell), \
+         patch("bluecellulab.tools.search_threshold_current", mock_search_threshold_current), \
+         patch("bluecellulab.analysis.analysis.efel", mock_efel), \
+         patch("bluecellulab.analysis.analysis.calculate_rheobase") as mock_rheobase:
+        yield mock_cell, mock_rheobase
+
+
+@pytest.mark.parametrize(
+    ("rheobase", "expected_endpoints"),
+    [
+        (0.02, [-0.02, 0.018]),  # small rheobase: a fixed -2 offset would be nonphysical
+        (1.0, [-1.0, 0.9]),      # large rheobase: catches any leftover fixed offset
+    ],
+)
+def test_iv_curve_current_range_scales_with_rheobase(iv_curve_env, rheobase, expected_endpoints):
+    """The IV sweep endpoints scale with rheobase, spanning -rheobase to 0.9*rheobase."""
+    cell, mock_rheobase = iv_curve_env
+    mock_rheobase.return_value = rheobase
+    list_amp, _ = compute_plot_iv_curve(cell, nb_bins=5, show_figure=False)
+    np.testing.assert_allclose([list_amp[0], list_amp[-1]], expected_endpoints)
+    # The sweep must ascend from the hyperpolarizing floor to just below rheobase.
+    assert np.all(np.diff(list_amp) > 0)
+
+
+def test_iv_curve_rejects_nonpositive_rheobase(iv_curve_env):
+    """A non-finite or non-positive rheobase must fail loudly, not produce garbage.
+
+    A NaN rheobase is the subtle case: ``nan <= 0`` is ``False``, so a bare sign
+    check would let it through and yield an all-NaN sweep, the exact silent
+    nonphysical output this protocol exists to prevent.
+    """
+    cell, mock_rheobase = iv_curve_env
+    for bad_rheobase in (0.0, -0.3, float("nan")):
+        mock_rheobase.return_value = bad_rheobase
+        with pytest.raises(ValueError, match="finite positive rheobase"):
+            compute_plot_iv_curve(cell, nb_bins=5, show_figure=False)
+
+
+def test_iv_curve_rejects_degenerate_nb_bins(iv_curve_env):
+    """nb_bins < 2 cannot span a current range and must be rejected."""
+    cell, mock_rheobase = iv_curve_env
+    mock_rheobase.return_value = 0.2
+    for bad_bins in (0, 1):
+        with pytest.raises(ValueError, match="nb_bins >= 2"):
+            compute_plot_iv_curve(cell, nb_bins=bad_bins, show_figure=False)
+
+
+def test_iv_curve_explicit_bounds_override_rheobase(iv_curve_env):
+    """Explicit min_amp/max_amp set the sweep directly and skip rheobase entirely.
+
+    This is the fixed-absolute-sweep use case (e.g. a wide hyperpolarizing
+    range), where rheobase is irrelevant and must not be computed.
+    """
+    cell, mock_rheobase = iv_curve_env
+    list_amp, _ = compute_plot_iv_curve(
+        cell, nb_bins=5, min_amp=-2.0, max_amp=0.5, show_figure=False
+    )
+    np.testing.assert_allclose([list_amp[0], list_amp[-1]], [-2.0, 0.5])
+    assert np.all(np.diff(list_amp) > 0)
+    mock_rheobase.assert_not_called()
+
+
+def test_iv_curve_rejects_inverted_bounds(iv_curve_env):
+    """min_amp must be strictly below max_amp."""
+    cell, mock_rheobase = iv_curve_env
+    mock_rheobase.return_value = 0.2
+    with pytest.raises(ValueError, match="min_amp < max_amp"):
+        compute_plot_iv_curve(
+            cell, nb_bins=5, min_amp=0.5, max_amp=-0.5, show_figure=False
+        )
+
+
 def test_plot_fi_curve(mock_cell, mock_search_threshold_current):
     """Test the compute_plot_fi_curve function."""
     with patch('bluecellulab.cell.Cell', mock_cell), \

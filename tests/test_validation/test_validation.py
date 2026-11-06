@@ -378,6 +378,15 @@ def test_iv_test(mock_Cell, mock_compute, dummy_template_params, dummy_out_dir):
         == "Validation failed: Not enough data points to determine slope."
     )
 
+    # rheobase <= 0 case: compute_plot_iv_curve raises, the test fails without
+    # aborting the surrounding run_validations call.
+    mock_compute.side_effect = ValueError("IV curve requires a finite positive rheobase")
+    result = validation.iv_test(dummy_template_params, 0.0, dummy_out_dir)
+    assert result["passed"] is False
+    assert result["name"] == "Simulatable Neuron IV Curve Validation"
+    assert "finite positive rheobase" in result["validation_details"]
+    assert result["figures"] == []
+
 
 @patch("bluecellulab.validation.validation.compute_plot_fi_curve")
 @patch("bluecellulab.validation.validation.Cell")

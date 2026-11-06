@@ -43,6 +43,8 @@ def compute_plot_iv_curve(cell,
                           threshold_voltage=-20,
                           nb_bins=11,
                           rheobase=None,
+                          min_amp=None,
+                          max_amp=None,
                           show_figure=True,
                           save_figure=False,
                           output_dir="./",
@@ -73,10 +75,15 @@ def compute_plot_iv_curve(cell,
             (in ms). Default is 100.0 ms.
         threshold_voltage (float, optional): The voltage threshold (in mV) for detecting a steady-state
             response. Default is -20 mV.
-        nb_bins (int, optional): The number of discrete current levels between 0 and the maximum current.
-            Default is 11.
+        nb_bins (int, optional): The number of discrete current levels in the sweep. Must be
+            at least 2 to span a range. Default is 11.
         rheobase (float, optional): The rheobase current (in nA) for the cell. If not provided, it will
-            be calculated using the `calculate_rheobase` function.
+            be calculated using the `calculate_rheobase` function. Only needed when `min_amp` or
+            `max_amp` is left unset.
+        min_amp (float, optional): The lower bound of the current sweep (in nA). Defaults to
+            `-rheobase` when not provided.
+        max_amp (float, optional): The upper bound of the current sweep (in nA). Defaults to
+            `0.9 * rheobase` (just below threshold) when not provided.
         show_figure (bool): Whether to display the figure. Default is True.
         save_figure (bool): Whether to save the figure. Default is False.
         output_dir (str): The directory to save the figure if save_figure is True. Default is "./".
@@ -97,10 +104,38 @@ def compute_plot_iv_curve(cell,
         ValueError: If the cell object is invalid, the specified sections/segments are not found, or if
             the simulation results are inconsistent.
     """
-    if rheobase is None:
-        rheobase = calculate_rheobase(cell=cell, section=injecting_section, segx=injecting_segment)
+    if nb_bins < 2:
+        raise ValueError(
+            f"IV curve requires nb_bins >= 2 to span a current range; got {nb_bins}."
+        )
 
-    list_amp = np.linspace(rheobase - 2, rheobase - 0.1, nb_bins)  # [nA]
+    # rheobase is only needed to derive a bound the caller did not supply.
+    if min_amp is None or max_amp is None:
+        if rheobase is None:
+            rheobase = calculate_rheobase(
+                cell=cell, section=injecting_section, segx=injecting_segment
+            )
+        if not np.isfinite(rheobase) or rheobase <= 0:
+            raise ValueError(
+                f"IV curve requires a finite positive rheobase; got {rheobase} nA. If `rheobase` "
+                "was auto-computed, check the cell's holding current and threshold search "
+                "(e.g. a non-finite input resistance); otherwise pass a finite positive `rheobase`, "
+                "or set both `min_amp` and `max_amp` explicitly."
+            )
+
+    # Default the sweep to the cell's rheobase: from -rheobase up to just below
+    # rheobase. This probes the sub-threshold I-V relationship for cells of any
+    # size, instead of a fixed offset that only suited a rheobase of ~1 nA.
+    # Callers can override either bound to run a fixed absolute sweep.
+    lower = -rheobase if min_amp is None else min_amp
+    upper = 0.9 * rheobase if max_amp is None else max_amp
+    if not (np.isfinite(lower) and np.isfinite(upper)) or lower >= upper:
+        raise ValueError(
+            f"IV curve requires finite bounds with min_amp < max_amp; got "
+            f"min_amp={lower} nA, max_amp={upper} nA. When the bounds are derived from "
+            f"rheobase ({rheobase} nA), a rheobase of zero collapses them to a single point."
+        )
+    list_amp = np.linspace(lower, upper, nb_bins)  # [nA]
 
     # inject step current and record voltage response
     stim_factory = StimulusFactory(dt=0.1)
