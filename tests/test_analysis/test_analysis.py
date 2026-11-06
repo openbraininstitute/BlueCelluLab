@@ -220,6 +220,51 @@ def test_iv_curve_rejects_degenerate_nb_bins(
                 compute_plot_iv_curve(mock_cell, nb_bins=bad_bins, show_figure=False)
 
 
+def test_iv_curve_explicit_bounds_override_rheobase(
+    monkeypatch,
+    mock_cell,
+    mock_search_threshold_current,
+    mock_efel
+):
+    """Explicit min_amp/max_amp set the sweep directly and skip rheobase entirely.
+
+    This is the fixed-absolute-sweep use case (e.g. a wide hyperpolarizing
+    range), where rheobase is irrelevant and must not be computed.
+    """
+    monkeypatch.setattr("bluecellulab.analysis.analysis.run_stimulus", mock_run_stimulus)
+    with patch('bluecellulab.cell.core', mock_cell), \
+         patch('bluecellulab.tools.search_threshold_current', mock_search_threshold_current), \
+         patch('bluecellulab.analysis.analysis.efel', mock_efel), \
+         patch('bluecellulab.analysis.analysis.calculate_rheobase') as mock_rheobase:
+
+        list_amp, _ = compute_plot_iv_curve(
+            mock_cell, nb_bins=5, min_amp=-2.0, max_amp=0.5, show_figure=False
+        )
+        np.testing.assert_allclose([list_amp[0], list_amp[-1]], [-2.0, 0.5])
+        assert np.all(np.diff(list_amp) > 0)
+        mock_rheobase.assert_not_called()
+
+
+def test_iv_curve_rejects_inverted_bounds(
+    monkeypatch,
+    mock_cell,
+    mock_search_threshold_current,
+    mock_efel
+):
+    """min_amp must be strictly below max_amp."""
+    monkeypatch.setattr("bluecellulab.analysis.analysis.run_stimulus", mock_run_stimulus)
+    with patch('bluecellulab.cell.core', mock_cell), \
+         patch('bluecellulab.tools.search_threshold_current', mock_search_threshold_current), \
+         patch('bluecellulab.analysis.analysis.efel', mock_efel), \
+         patch('bluecellulab.analysis.analysis.calculate_rheobase') as mock_rheobase:
+
+        mock_rheobase.return_value = 0.2
+        with pytest.raises(ValueError, match="min_amp < max_amp"):
+            compute_plot_iv_curve(
+                mock_cell, nb_bins=5, min_amp=0.5, max_amp=-0.5, show_figure=False
+            )
+
+
 def test_plot_fi_curve(mock_cell, mock_search_threshold_current):
     """Test the compute_plot_fi_curve function."""
     with patch('bluecellulab.cell.Cell', mock_cell), \
