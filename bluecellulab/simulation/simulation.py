@@ -154,7 +154,13 @@ class Simulation:
                 neuron.h.t = forward_skip_value
 
         try:
-            neuron.h.continuerun(neuron.h.tstop)
+            if self.pc is not None:
+                # Parallel run: psolve drives the MPI-aware stepper which
+                # performs the source_var/target_var transfers (gap
+                # junctions, continuous connections) and spike exchange.
+                self.pc.psolve(neuron.h.tstop)
+            else:
+                neuron.h.continuerun(neuron.h.tstop)
         except Exception as exception:
             stream_handler = logging.StreamHandler(sys.stderr)
             logger.addHandler(stream_handler)
