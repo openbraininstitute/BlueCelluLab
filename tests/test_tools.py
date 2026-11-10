@@ -25,7 +25,7 @@ from bluecellulab.cell.ballstick import create_ball_stick
 from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.circuit.node_id import create_cell_id
 from bluecellulab.exceptions import UnsteadyCellError
-from bluecellulab.tools import calculate_SS_voltage, calculate_SS_voltage_subprocess, calculate_input_resistance, detect_hyp_current, detect_spike, detect_spike_step, detect_spike_step_subprocess, holding_current, holding_current_subprocess, search_threshold_current, template_accepts_cvode, check_empty_topology, calculate_max_thresh_current, calculate_rheobase, validate_section_and_segment, compute_memodel_properties_v2
+from bluecellulab.tools import calculate_SS_voltage, calculate_SS_voltage_subprocess, calculate_input_resistance, detect_hyp_current, detect_spike, detect_spike_step, detect_spike_step_subprocess, holding_current, holding_current_subprocess, search_threshold_current, template_accepts_cvode, check_empty_topology, calculate_max_thresh_current, calculate_rheobase, validate_section_and_segment, compute_memodel_properties, compute_memodel_properties_v2
 from bluecellulab.cell.section_tools import currents_vars, mechs_vars
 
 
@@ -428,3 +428,20 @@ def test_mechs_vars():
     assert sorted(result_with_point["point"]["ExpSyn"]) == ["g", "i"]
     assert "AlphaSyn" in result_with_point["point"]
     assert sorted(result_with_point["point"]["AlphaSyn"]) == ["g"]
+
+
+@patch("bluecellulab.tools.calculate_input_resistance", return_value=100.0)
+@patch("bluecellulab.tools.calculate_rheobase", return_value=0.5)
+@patch("bluecellulab.tools.set_neuron_globals")
+def test_compute_memodel_properties_defaults_to_the_template_operating_point(mock_globals, _rheobase, _rin):
+    cell = MagicMock(hypamp=None)
+    cell.template_params.template_filepath = (
+        script_dir / "examples/circuit_hipp_mooc_most_central_10_SP_PC/components/hoc"
+        / "CA1_pyr_cACpyr_oh140807_A0_idJ_2019032814272.hoc"
+    )
+
+    compute_memodel_properties(cell)
+    mock_globals.assert_called_with(temperature=34.0, v_init=-70.0)
+
+    compute_memodel_properties(cell, celsius=25.0)
+    mock_globals.assert_called_with(temperature=25.0, v_init=-70.0)

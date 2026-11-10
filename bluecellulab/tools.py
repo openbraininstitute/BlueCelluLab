@@ -24,6 +24,7 @@ import numpy as np
 
 import bluecellulab
 from bluecellulab.cell import Cell
+from bluecellulab.cell.template import template_operating_point
 from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.exceptions import UnsteadyCellError
 from bluecellulab.simulation.neuron_globals import set_neuron_globals
@@ -533,18 +534,20 @@ def resolve_source_nodes(source, report_type, cells, population):
 def compute_memodel_properties(
     cell,
     spike_threshold_voltage=-30,
-    v_init=-80.0,
-    celsius=34.0,
+    v_init=None,
+    celsius=None,
 ):
     """Compute the threshold current and the input resistance of the cell.
 
     Args:
         cell (bluecellulab.cell.Cell): The cell model to compute properties for.
         spike_threshold_voltage (float, optional): Voltage threshold for spike detection. Default is -30 mV.
-        v_init (float, optional): Initial membrane potential. Default is -80 mV.
-        celsius (float, optional): Temperature in Celsius. Default is 34.0 C.
+        v_init (float, optional): Initial membrane potential. Default is the template's, else -80 mV.
+        celsius (float, optional): Temperature in Celsius. Default is the template's, else 34.0 C.
     """
-    # set initial voltage and temperature
+    celsius, v_init = template_operating_point(
+        cell.template_params.template_filepath, celsius, v_init
+    )
     set_neuron_globals(temperature=celsius, v_init=v_init)
 
     # get me-model properties
@@ -569,12 +572,15 @@ def compute_memodel_properties_v2(
     holding_voltage,
     emodel_properties,
     spike_threshold_voltage=-30,
-    v_init=-80.0,
-    celsius=34.0,
+    v_init=None,
+    celsius=None,
 ):
     """Compute holding and threshold currents, resting membrane potential, and
-    input resistance."""
-    # set initial voltage and temperature
+    input resistance.
+
+    celsius and v_init default to the template's, else 34 C and -80 mV.
+    """
+    celsius, v_init = template_operating_point(template_path, celsius, v_init)
     set_neuron_globals(temperature=celsius, v_init=v_init)
 
     cell_kwargs = {
