@@ -25,7 +25,7 @@ from bluecellulab.cell.ballstick import create_ball_stick
 from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.circuit.node_id import create_cell_id
 from bluecellulab.exceptions import UnsteadyCellError
-from bluecellulab.tools import calculate_SS_voltage, calculate_SS_voltage_subprocess, calculate_input_resistance, detect_hyp_current, detect_spike, detect_spike_step, detect_spike_step_subprocess, holding_current, holding_current_subprocess, search_threshold_current, template_accepts_cvode, check_empty_topology, calculate_max_thresh_current, calculate_rheobase, validate_section_and_segment, compute_memodel_properties, compute_memodel_properties_v2
+from bluecellulab.tools import calculate_SS_voltage, calculate_SS_voltage_subprocess, calculate_input_resistance, detect_hyp_current, detect_spike, detect_spike_step, detect_spike_step_subprocess, holding_current, holding_current_subprocess, search_threshold_current, template_accepts_cvode, check_empty_topology, calculate_max_thresh_current, calculate_rheobase, validate_section_and_segment, compute_memodel_properties, compute_memodel_properties_subprocess, compute_memodel_properties_v2
 from bluecellulab.cell.section_tools import currents_vars, mechs_vars
 
 
@@ -267,6 +267,20 @@ class TestOnSonataCell:
         assert resp_dict["rheobase"] == pytest.approx(0.13921147797816324)
         assert resp_dict["rin"] == pytest.approx(334.1378411934045)
 
+    def test_compute_memodel_properties_subprocess(self):
+        """Cover compute_memodel_properties_subprocess in-process (IsolatedProcess is not measured)."""
+        cell_kwargs = {
+            "template_path": self.template_name,
+            "morphology_path": self.morphology_path,
+            "template_format": self.template_format,
+            "emodel_properties": self.emodel_properties,
+        }
+        rheobase, rin = compute_memodel_properties_subprocess(
+            cell_kwargs, holding_current=-0.11, spike_threshold_voltage=-30
+        )
+        assert rheobase == pytest.approx(0.1392, abs=1e-4)
+        assert rin == pytest.approx(334.14, abs=0.1)
+
     def test_compute_memodel_properties_v2(self):
         """Unit test compute_memodel_properties_v2."""
         resp_dict = compute_memodel_properties_v2(
@@ -320,6 +334,15 @@ def test_check_empty_topology():
     assert check_empty_topology() is True
     cell = create_ball_stick()
     assert check_empty_topology() is False
+
+
+def test_compute_memodel_properties_requires_emodel_properties():
+    """compute_memodel_properties rejects cells without emodel_properties."""
+    cell = MagicMock()
+    cell.hypamp = None
+    cell.template_params.emodel_properties = None
+    with pytest.raises(ValueError, match="emodel_properties cannot be None"):
+        compute_memodel_properties(cell)
 
 
 def test_calculate_max_thresh_current(mock_cell, mock_calculate_SS_voltage, mock_calculate_input_resistance):
