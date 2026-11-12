@@ -530,6 +530,62 @@ def resolve_source_nodes(source, report_type, cells, population):
     return node_ids, compartment_nodes
 
 
+def compute_memodel_properties_subprocess(
+    cell_kwargs: dict,
+    holding_current: float,
+    spike_threshold_voltage: float,
+) -> Tuple[float, float]:
+    """Compute rheobase and Rin in one process, reusing a single Cell."""
+    section, segx = "soma[0]", 0.5
+    current_delta = -0.02
+    inj_start, inj_stop = 300.0, 1000.0
+    precision = 0.005
+
+    cell = bluecellulab.Cell(**cell_kwargs)
+    cvode = template_accepts_cvode(cell_kwargs["template_path"])
+
+    def clear_stims() -> None:
+        for stim in cell.persistent:
+            del stim
+        cell.persistent.clear()
+
+    def steady_voltage(amp: float) -> float:
+        clear_stims()
+        sec = cell.get_section(section)
+        cell.add_voltage_recording(cell.sections[section], segx)
+        cell.add_ramp(500, 5000, amp, amp, section=sec, segx=segx)
+        bluecellulab.Simulation().run(1000, cvode=cvode)
+        t = cell.get_time()
+        v = cell.get_voltage_recording(section=sec, segx=segx)
+        return float(np.mean(v[(t <= 1000) & (t > 800)]))
+
+    def spikes(amp: float) -> bool:
+        clear_stims()
+        sec = cell.get_section(section)
+        cell.add_voltage_recording(cell.sections[section], segx)
+        cell.add_ramp(0, 5000, holding_current, holding_current, section=sec, segx=segx)
+        cell.add_ramp(inj_start, inj_stop, amp, amp, section=sec, segx=segx)
+        bluecellulab.Simulation().run(int(inj_stop), cvode=cvode)
+        t = cell.get_time()
+        v = cell.get_voltage_recording(section=sec, segx=segx)
+        return detect_spike(v[(t > inj_start) & (t < inj_stop)], spike_threshold_voltage)
+
+    try:
+        rmp = steady_voltage(0.0)
+        rin = (steady_voltage(current_delta) - rmp) / current_delta
+
+        low, high = holding_current, min((spike_threshold_voltage - rmp) / rin, 2.0)
+        while abs(high - low) >= precision:
+            mid = low + abs(low - high) / 2
+            if spikes(mid):
+                high = mid
+            else:
+                low = mid
+        return high, rin
+    finally:
+        cell.delete()
+
+
 def compute_memodel_properties(
     cell,
     spike_threshold_voltage=-30,
@@ -544,20 +600,24 @@ def compute_memodel_properties(
         v_init (float, optional): Initial membrane potential. Default is -80 mV.
         celsius (float, optional): Temperature in Celsius. Default is 34.0 C.
     """
-    # set initial voltage and temperature
     set_neuron_globals(temperature=celsius, v_init=v_init)
 
-    # get me-model properties
     holding_current = cell.hypamp if cell.hypamp else 0.0
-    rheobase = calculate_rheobase(
-        cell=cell, section="soma[0]", segx=0.5, threshold_voltage=spike_threshold_voltage
-    )
-    rin = calculate_input_resistance(
-        template_path=cell.template_params.template_filepath,
-        morphology_path=cell.template_params.morph_filepath,
-        template_format=cell.template_params.template_format,
-        emodel_properties=cell.template_params.emodel_properties,
-    )
+    params = cell.template_params
+    if params.emodel_properties is None:
+        raise ValueError("emodel_properties cannot be None")
+
+    cell_kwargs = {
+        "template_path": params.template_filepath,
+        "morphology_path": params.morph_filepath,
+        "template_format": params.template_format,
+        "emodel_properties": params.emodel_properties,
+    }
+    with IsolatedProcess() as runner:
+        rheobase, rin = runner.apply(
+            compute_memodel_properties_subprocess,
+            [cell_kwargs, holding_current, spike_threshold_voltage],
+        )
 
     return {"holding_current": holding_current, "rheobase": rheobase, "rin": rin}
 
