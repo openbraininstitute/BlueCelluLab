@@ -365,44 +365,25 @@ def test_compute_memodel_properties_uses_emodel_holding_for_search():
     runner.__enter__.return_value = runner
     runner.__exit__.return_value = False
 
-    with patch("bluecellulab.tools.template_accepts_cvode", return_value=True), patch(
-        "bluecellulab.tools.IsolatedProcess", return_value=runner
-    ), patch("bluecellulab.tools.set_neuron_globals"):
+    with patch("bluecellulab.tools.IsolatedProcess", return_value=runner), patch(
+        "bluecellulab.tools.set_neuron_globals"
+    ):
         result = compute_memodel_properties(cell)
 
+    assert runner.apply.call_args.args[0] is compute_memodel_properties_subprocess
     assert runner.apply.call_args.args[1][1] == -0.05
     assert result == {"holding_current": 0.0, "rheobase": 0.1, "rin": 200.0}
 
 
-def test_compute_memodel_properties_stochkv_uses_legacy_path():
-    """StochKv templates keep the per-probe path for RNG parity with main."""
-    cell = _memodel_cell_mock(hypamp=None, holding_current=-0.05)
-    with patch("bluecellulab.tools.template_accepts_cvode", return_value=False), patch(
-        "bluecellulab.tools.calculate_rheobase", return_value=0.0968
-    ) as rheobase, patch(
-        "bluecellulab.tools.calculate_input_resistance", return_value=241.44
-    ) as rin, patch(
-        "bluecellulab.tools.compute_memodel_properties_subprocess"
-    ) as worker, patch("bluecellulab.tools.set_neuron_globals"):
-        result = compute_memodel_properties(cell)
-
-    rheobase.assert_called_once()
-    rin.assert_called_once()
-    worker.assert_not_called()
-    assert result == {"holding_current": 0.0, "rheobase": 0.0968, "rin": 241.44}
-
-
-def test_compute_memodel_properties_cvode_uses_single_cell_path():
-    """Deterministic templates use the single-Cell worker."""
+def test_compute_memodel_properties_always_uses_single_cell_path():
+    """StochKv and deterministic templates share the single-Cell worker."""
     cell = _memodel_cell_mock(hypamp=-0.11, holding_current=-0.11)
     runner = MagicMock()
     runner.apply.return_value = (0.14, 334.0)
     runner.__enter__.return_value = runner
     runner.__exit__.return_value = False
 
-    with patch("bluecellulab.tools.template_accepts_cvode", return_value=True), patch(
-        "bluecellulab.tools.IsolatedProcess", return_value=runner
-    ), patch(
+    with patch("bluecellulab.tools.IsolatedProcess", return_value=runner), patch(
         "bluecellulab.tools.calculate_rheobase"
     ) as rheobase, patch(
         "bluecellulab.tools.calculate_input_resistance"
