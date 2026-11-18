@@ -534,8 +534,24 @@ def compute_memodel_properties_subprocess(
     cell_kwargs: dict,
     holding_current: float,
     spike_threshold_voltage: float,
-) -> Tuple[float, float, float]:
-    """Compute holding, rheobase and Rin in one process, reusing a single Cell."""
+) -> Tuple[float, float]:
+    """Compute rheobase and Rin in one process, reusing a single Cell."""
+    cell = bluecellulab.Cell(**cell_kwargs)
+    try:
+        return _probe_rheobase_and_rin(
+            cell, holding_current, spike_threshold_voltage, cell_kwargs["template_path"]
+        )
+    finally:
+        cell.delete()
+
+
+def _probe_rheobase_and_rin(
+    cell,
+    holding_current: float,
+    spike_threshold_voltage: float,
+    template_path: str | Path,
+) -> Tuple[float, float]:
+    """Binary-search rheobase and measure Rin on an existing Cell."""
     section, segx = "soma[0]", 0.5
     current_delta = -0.02
     inj_start, inj_stop = 300.0, 1000.0
@@ -545,10 +561,7 @@ def compute_memodel_properties_subprocess(
     # stream on each run (StochKv/StochKv3 do this for Random123 in INITIAL).
     # Templates that seed with MCellRan4 Random objects, or older StochKv3 builds
     # without nrnran123_setseq in INITIAL, would see different noise than main.
-    cell = bluecellulab.Cell(**cell_kwargs)
-    # cell.hypamp can differ from emodel holding for non-v6 templates without getHypAmp().
-    cell_holding = cell.hypamp if cell.hypamp else 0.0
-    cvode = template_accepts_cvode(cell_kwargs["template_path"])
+    cvode = template_accepts_cvode(template_path)
 
     def clear_stims() -> None:
         cell.persistent.clear()
@@ -574,18 +587,33 @@ def compute_memodel_properties_subprocess(
         v = cell.get_voltage_recording(section=sec, segx=segx)
         return detect_spike(v[(t > inj_start) & (t < inj_stop)], spike_threshold_voltage)
 
-    try:
-        rmp = steady_voltage(0.0)
-        rin = (steady_voltage(current_delta) - rmp) / current_delta
+    rmp = steady_voltage(0.0)
+    rin = (steady_voltage(current_delta) - rmp) / current_delta
 
-        low, high = holding_current, min((spike_threshold_voltage - rmp) / rin, 2.0)
-        while abs(high - low) >= precision:
-            mid = low + abs(low - high) / 2
-            if spikes(mid):
-                high = mid
-            else:
-                low = mid
-        return cell_holding, high, rin
+    low, high = holding_current, min((spike_threshold_voltage - rmp) / rin, 2.0)
+    while abs(high - low) >= precision:
+        mid = low + abs(low - high) / 2
+        if spikes(mid):
+            high = mid
+        else:
+            low = mid
+    return high, rin
+
+
+def compute_memodel_properties_from_template_subprocess(
+    cell_kwargs: dict,
+    holding_current: float,
+    spike_threshold_voltage: float,
+) -> Tuple[float, float, float]:
+    """Worker for from_template: holding from Cell, then rheobase and Rin."""
+    cell = bluecellulab.Cell(**cell_kwargs)
+    # cell.hypamp can differ from emodel holding for non-v6 templates without getHypAmp().
+    cell_holding = cell.hypamp if cell.hypamp else 0.0
+    try:
+        rheobase, rin = _probe_rheobase_and_rin(
+            cell, holding_current, spike_threshold_voltage, cell_kwargs["template_path"]
+        )
+        return cell_holding, rheobase, rin
     finally:
         cell.delete()
 
@@ -599,7 +627,8 @@ def compute_memodel_properties_from_template(
     v_init: float = -80.0,
     celsius: float = 34.0,
 ) -> dict:
-    """Compute holding current, rheobase and input resistance from template inputs.
+    """Compute holding current, rheobase and input resistance from template
+    inputs.
 
     Instantiates ``Cell`` only inside an isolated process; callers need not build a cell.
 
@@ -631,7 +660,7 @@ def compute_memodel_properties_from_template(
     }
     with IsolatedProcess() as runner:
         holding_current, rheobase, rin = runner.apply(
-            compute_memodel_properties_subprocess,
+            compute_memodel_properties_from_template_subprocess,
             [cell_kwargs, search_holding, spike_threshold_voltage],
         )
 
@@ -652,22 +681,30 @@ def compute_memodel_properties(
         v_init (float, optional): Initial membrane potential. Default is -80 mV.
         celsius (float, optional): Temperature in Celsius. Default is 34.0 C.
     """
+    set_neuron_globals(temperature=celsius, v_init=v_init)
+
+    holding_current = cell.hypamp if cell.hypamp else 0.0
     params = cell.template_params
     if params.emodel_properties is None:
         raise ValueError("emodel_properties cannot be None")
 
-    result = compute_memodel_properties_from_template(
-        template_path=params.template_filepath,
-        morphology_path=params.morph_filepath,
-        template_format=params.template_format,
-        emodel_properties=params.emodel_properties,
-        spike_threshold_voltage=spike_threshold_voltage,
-        v_init=v_init,
-        celsius=celsius,
-    )
-    # Prefer the caller's cell.hypamp over the worker Cell (same params, same value in practice).
-    result["holding_current"] = cell.hypamp if cell.hypamp else 0.0
-    return result
+    # Match calculate_rheobase: search uses emodel holding, which can differ from
+    # cell.hypamp for non-v6 templates without getHypAmp().
+    search_holding = params.emodel_properties.holding_current
+
+    cell_kwargs = {
+        "template_path": params.template_filepath,
+        "morphology_path": params.morph_filepath,
+        "template_format": params.template_format,
+        "emodel_properties": params.emodel_properties,
+    }
+    with IsolatedProcess() as runner:
+        rheobase, rin = runner.apply(
+            compute_memodel_properties_subprocess,
+            [cell_kwargs, search_holding, spike_threshold_voltage],
+        )
+
+    return {"holding_current": holding_current, "rheobase": rheobase, "rin": rin}
 
 
 def compute_memodel_properties_v2(
