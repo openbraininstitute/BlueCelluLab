@@ -541,6 +541,10 @@ def compute_memodel_properties_subprocess(
     inj_start, inj_stop = 300.0, 1000.0
     precision = 0.005
 
+    # The Cell is reused across probes. Stochastic channels must restart their RNG
+    # stream on each run (StochKv/StochKv3 do this for Random123 in INITIAL).
+    # Templates that seed with MCellRan4 Random objects, or older StochKv3 builds
+    # without nrnran123_setseq in INITIAL, would see different noise than main.
     cell = bluecellulab.Cell(**cell_kwargs)
     cvode = template_accepts_cvode(cell_kwargs["template_path"])
 
