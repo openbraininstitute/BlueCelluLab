@@ -345,6 +345,95 @@ def test_compute_memodel_properties_requires_emodel_properties():
         compute_memodel_properties(cell)
 
 
+def _memodel_cell_mock(hypamp, holding_current, template_path="template.hoc"):
+    cell = MagicMock()
+    cell.hypamp = hypamp
+    cell.template_params.template_filepath = template_path
+    cell.template_params.morph_filepath = "morph.asc"
+    cell.template_params.template_format = "v5"
+    cell.template_params.emodel_properties = EmodelProperties(
+        threshold_current=0.0, holding_current=holding_current
+    )
+    return cell
+
+
+def test_compute_memodel_properties_uses_emodel_holding_for_search():
+    """Search holding comes from emodel_properties; returned holding from hypamp."""
+    cell = _memodel_cell_mock(hypamp=None, holding_current=-0.05)
+    runner = MagicMock()
+    runner.apply.return_value = (0.1, 200.0)
+    runner.__enter__.return_value = runner
+    runner.__exit__.return_value = False
+
+    with patch("bluecellulab.tools.template_accepts_cvode", return_value=True), patch(
+        "bluecellulab.tools.IsolatedProcess", return_value=runner
+    ), patch("bluecellulab.tools.set_neuron_globals"):
+        result = compute_memodel_properties(cell)
+
+    assert runner.apply.call_args.args[1][1] == -0.05
+    assert result == {"holding_current": 0.0, "rheobase": 0.1, "rin": 200.0}
+
+
+def test_compute_memodel_properties_stochkv_uses_legacy_path():
+    """StochKv templates keep the per-probe path for RNG parity with main."""
+    cell = _memodel_cell_mock(hypamp=None, holding_current=-0.05)
+    with patch("bluecellulab.tools.template_accepts_cvode", return_value=False), patch(
+        "bluecellulab.tools.calculate_rheobase", return_value=0.0968
+    ) as rheobase, patch(
+        "bluecellulab.tools.calculate_input_resistance", return_value=241.44
+    ) as rin, patch(
+        "bluecellulab.tools.compute_memodel_properties_subprocess"
+    ) as worker, patch("bluecellulab.tools.set_neuron_globals"):
+        result = compute_memodel_properties(cell)
+
+    rheobase.assert_called_once()
+    rin.assert_called_once()
+    worker.assert_not_called()
+    assert result == {"holding_current": 0.0, "rheobase": 0.0968, "rin": 241.44}
+
+
+def test_compute_memodel_properties_cvode_uses_single_cell_path():
+    """Deterministic templates use the single-Cell worker."""
+    cell = _memodel_cell_mock(hypamp=-0.11, holding_current=-0.11)
+    runner = MagicMock()
+    runner.apply.return_value = (0.14, 334.0)
+    runner.__enter__.return_value = runner
+    runner.__exit__.return_value = False
+
+    with patch("bluecellulab.tools.template_accepts_cvode", return_value=True), patch(
+        "bluecellulab.tools.IsolatedProcess", return_value=runner
+    ), patch(
+        "bluecellulab.tools.calculate_rheobase"
+    ) as rheobase, patch(
+        "bluecellulab.tools.calculate_input_resistance"
+    ) as rin, patch("bluecellulab.tools.set_neuron_globals"):
+        result = compute_memodel_properties(cell)
+
+    rheobase.assert_not_called()
+    rin.assert_not_called()
+    assert runner.apply.call_args.args[0] is compute_memodel_properties_subprocess
+    assert result == {"holding_current": -0.11, "rheobase": 0.14, "rin": 334.0}
+
+
+@pytest.mark.v5
+def test_compute_memodel_properties_v5_cstut():
+    """Golden values from origin/main on cSTUT_7 with emodel holding -0.05 nA."""
+    emodel_properties = EmodelProperties(
+        threshold_current=0.0, holding_current=-0.05
+    )
+    cell = Cell(
+        template_path=script_dir / "examples/cell_example_cstut/cSTUT_7.hoc",
+        morphology_path=script_dir / "examples/cell_example_cstut",
+        template_format="v5",
+        emodel_properties=emodel_properties,
+    )
+    resp_dict = compute_memodel_properties(cell)
+
+    assert resp_dict["holding_current"] == pytest.approx(0.0)
+    assert resp_dict["rheobase"] == pytest.approx(0.0968098129791797)
+    assert resp_dict["rin"] == pytest.approx(241.439121257406)
+
+
 def test_calculate_max_thresh_current(mock_cell, mock_calculate_SS_voltage, mock_calculate_input_resistance):
     """Test the calculate_max_thresh_current function."""
     with patch('bluecellulab.tools.calculate_SS_voltage', mock_calculate_SS_voltage), \

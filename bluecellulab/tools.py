@@ -545,8 +545,6 @@ def compute_memodel_properties_subprocess(
     cvode = template_accepts_cvode(cell_kwargs["template_path"])
 
     def clear_stims() -> None:
-        for stim in cell.persistent:
-            del stim
         cell.persistent.clear()
 
     def steady_voltage(amp: float) -> float:
@@ -607,6 +605,27 @@ def compute_memodel_properties(
     if params.emodel_properties is None:
         raise ValueError("emodel_properties cannot be None")
 
+    # Match calculate_rheobase: search uses emodel holding, which can differ from
+    # cell.hypamp for non-v6 templates without getHypAmp().
+    search_holding = params.emodel_properties.holding_current
+
+    # StochKv templates: keep per-probe IsolatedProcess so MCellRan4 streams
+    # do not carry over between probes (re_init_rng would change unseeded templates).
+    if not template_accepts_cvode(params.template_filepath):
+        rheobase = calculate_rheobase(
+            cell=cell,
+            section="soma[0]",
+            segx=0.5,
+            threshold_voltage=spike_threshold_voltage,
+        )
+        rin = calculate_input_resistance(
+            template_path=params.template_filepath,
+            morphology_path=params.morph_filepath,
+            template_format=params.template_format,
+            emodel_properties=params.emodel_properties,
+        )
+        return {"holding_current": holding_current, "rheobase": rheobase, "rin": rin}
+
     cell_kwargs = {
         "template_path": params.template_filepath,
         "morphology_path": params.morph_filepath,
@@ -616,7 +635,7 @@ def compute_memodel_properties(
     with IsolatedProcess() as runner:
         rheobase, rin = runner.apply(
             compute_memodel_properties_subprocess,
-            [cell_kwargs, holding_current, spike_threshold_voltage],
+            [cell_kwargs, search_holding, spike_threshold_voltage],
         )
 
     return {"holding_current": holding_current, "rheobase": rheobase, "rin": rin}
