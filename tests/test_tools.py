@@ -25,7 +25,7 @@ from bluecellulab.cell.ballstick import create_ball_stick
 from bluecellulab.circuit.circuit_access import EmodelProperties
 from bluecellulab.circuit.node_id import create_cell_id
 from bluecellulab.exceptions import UnsteadyCellError
-from bluecellulab.tools import calculate_SS_voltage, calculate_SS_voltage_subprocess, calculate_input_resistance, detect_hyp_current, detect_spike, detect_spike_step, detect_spike_step_subprocess, holding_current, holding_current_subprocess, search_threshold_current, template_accepts_cvode, check_empty_topology, calculate_max_thresh_current, calculate_rheobase, validate_section_and_segment, compute_memodel_properties, compute_memodel_properties_subprocess, compute_memodel_properties_v2
+from bluecellulab.tools import calculate_SS_voltage, calculate_SS_voltage_subprocess, calculate_input_resistance, detect_hyp_current, detect_spike, detect_spike_step, detect_spike_step_subprocess, holding_current, holding_current_subprocess, search_threshold_current, template_accepts_cvode, check_empty_topology, calculate_max_thresh_current, calculate_rheobase, validate_section_and_segment, compute_memodel_properties, compute_memodel_properties_from_template, compute_memodel_properties_subprocess, compute_memodel_properties_v2
 from bluecellulab.cell.section_tools import currents_vars, mechs_vars
 
 
@@ -267,6 +267,19 @@ class TestOnSonataCell:
         assert resp_dict["rheobase"] == pytest.approx(0.13921147797816324)
         assert resp_dict["rin"] == pytest.approx(334.1378411934045)
 
+    def test_compute_memodel_properties_from_template(self):
+        """Unit test compute_memodel_properties_from_template (no parent Cell)."""
+        resp_dict = compute_memodel_properties_from_template(
+            template_path=self.template_name,
+            morphology_path=self.morphology_path,
+            template_format=self.template_format,
+            emodel_properties=self.emodel_properties,
+        )
+
+        assert resp_dict["holding_current"] == pytest.approx(-0.11)
+        assert resp_dict["rheobase"] == pytest.approx(0.13921147797816324)
+        assert resp_dict["rin"] == pytest.approx(334.1378411934045)
+
     def test_compute_memodel_properties_subprocess(self):
         """Cover compute_memodel_properties_subprocess in-process (IsolatedProcess is not measured)."""
         cell_kwargs = {
@@ -275,9 +288,10 @@ class TestOnSonataCell:
             "template_format": self.template_format,
             "emodel_properties": self.emodel_properties,
         }
-        rheobase, rin = compute_memodel_properties_subprocess(
+        holding, rheobase, rin = compute_memodel_properties_subprocess(
             cell_kwargs, holding_current=-0.11, spike_threshold_voltage=-30
         )
+        assert holding == pytest.approx(-0.11)
         assert rheobase == pytest.approx(0.1392, abs=1e-4)
         assert rin == pytest.approx(334.14, abs=0.1)
 
@@ -345,6 +359,17 @@ def test_compute_memodel_properties_requires_emodel_properties():
         compute_memodel_properties(cell)
 
 
+def test_compute_memodel_properties_from_template_requires_emodel_properties():
+    """compute_memodel_properties_from_template rejects missing emodel_properties."""
+    with pytest.raises(ValueError, match="emodel_properties cannot be None"):
+        compute_memodel_properties_from_template(
+            template_path="template.hoc",
+            morphology_path="morph.asc",
+            template_format="v5",
+            emodel_properties=None,
+        )
+
+
 def _memodel_cell_mock(hypamp, holding_current, template_path="template.hoc"):
     cell = MagicMock()
     cell.hypamp = hypamp
@@ -361,7 +386,7 @@ def test_compute_memodel_properties_uses_emodel_holding_for_search():
     """Search holding comes from emodel_properties; returned holding from hypamp."""
     cell = _memodel_cell_mock(hypamp=None, holding_current=-0.05)
     runner = MagicMock()
-    runner.apply.return_value = (0.1, 200.0)
+    runner.apply.return_value = (0.0, 0.1, 200.0)
     runner.__enter__.return_value = runner
     runner.__exit__.return_value = False
 
@@ -375,11 +400,36 @@ def test_compute_memodel_properties_uses_emodel_holding_for_search():
     assert result == {"holding_current": 0.0, "rheobase": 0.1, "rin": 200.0}
 
 
+def test_compute_memodel_properties_from_template_uses_emodel_holding_for_search():
+    """Path-based API: search holding from emodel; returned holding from worker Cell."""
+    emodel_properties = EmodelProperties(
+        threshold_current=0.0, holding_current=-0.05
+    )
+    runner = MagicMock()
+    runner.apply.return_value = (0.0, 0.1, 200.0)
+    runner.__enter__.return_value = runner
+    runner.__exit__.return_value = False
+
+    with patch("bluecellulab.tools.IsolatedProcess", return_value=runner), patch(
+        "bluecellulab.tools.set_neuron_globals"
+    ):
+        result = compute_memodel_properties_from_template(
+            template_path="template.hoc",
+            morphology_path="morph.asc",
+            template_format="v5",
+            emodel_properties=emodel_properties,
+        )
+
+    assert runner.apply.call_args.args[0] is compute_memodel_properties_subprocess
+    assert runner.apply.call_args.args[1][1] == -0.05
+    assert result == {"holding_current": 0.0, "rheobase": 0.1, "rin": 200.0}
+
+
 def test_compute_memodel_properties_always_uses_single_cell_path():
     """StochKv and deterministic templates share the single-Cell worker."""
     cell = _memodel_cell_mock(hypamp=-0.11, holding_current=-0.11)
     runner = MagicMock()
-    runner.apply.return_value = (0.14, 334.0)
+    runner.apply.return_value = (-0.11, 0.14, 334.0)
     runner.__enter__.return_value = runner
     runner.__exit__.return_value = False
 
@@ -409,6 +459,24 @@ def test_compute_memodel_properties_v5_cstut():
         emodel_properties=emodel_properties,
     )
     resp_dict = compute_memodel_properties(cell)
+
+    assert resp_dict["holding_current"] == pytest.approx(0.0)
+    assert resp_dict["rheobase"] == pytest.approx(0.0968098129791797)
+    assert resp_dict["rin"] == pytest.approx(241.439121257406)
+
+
+@pytest.mark.v5
+def test_compute_memodel_properties_from_template_v5_cstut():
+    """Path-based API golden values on cSTUT_7 with emodel holding -0.05 nA."""
+    emodel_properties = EmodelProperties(
+        threshold_current=0.0, holding_current=-0.05
+    )
+    resp_dict = compute_memodel_properties_from_template(
+        template_path=script_dir / "examples/cell_example_cstut/cSTUT_7.hoc",
+        morphology_path=script_dir / "examples/cell_example_cstut",
+        template_format="v5",
+        emodel_properties=emodel_properties,
+    )
 
     assert resp_dict["holding_current"] == pytest.approx(0.0)
     assert resp_dict["rheobase"] == pytest.approx(0.0968098129791797)
