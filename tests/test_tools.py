@@ -612,6 +612,21 @@ def _probe_worker_setup(extra_cell: bool, gid: int):
     return _probe_rheobase_and_rin(cell, -0.11, -30, kw["template_path"])
 
 
+def test_probe_worker_setup_covered_in_process():
+    """Cover _probe_worker_setup in-process (IsolatedProcess is not measured)."""
+    measured = MagicMock()
+    with patch("bluecellulab.Cell", side_effect=[MagicMock(), measured]) as cell_cls, patch(
+        "tests.test_tools._probe_rheobase_and_rin", return_value=(0.1, 300.0)
+    ) as probe:
+        assert _probe_worker_setup(True, 1) == (0.1, 300.0)
+
+    assert cell_cls.call_count == 2
+    assert cell_cls.call_args_list[0].kwargs["cell_id"].id == 0
+    assert cell_cls.call_args_list[1].kwargs["cell_id"].id == 1
+    probe.assert_called_once()
+    assert probe.call_args.args[0] is measured
+
+
 @pytest.mark.v6
 def test_probe_worker_setups_match_from_template_and_cell_api():
     """Alone-in-worker matches from_template; ghost+ID1 matches compute_memodel_properties.
@@ -671,6 +686,23 @@ def _stochkv_voltage_for_gid(gid: int):
         return cell.get_voltage_recording(section=sec, segx=0.5)
     finally:
         cell.delete()
+
+
+def test_stochkv_voltage_for_gid_covered_in_process():
+    """Cover _stochkv_voltage_for_gid in-process (IsolatedProcess is not measured)."""
+    cell = MagicMock()
+    cell.sections = {"soma[0]": MagicMock()}
+    cell.get_section.return_value = cell.sections["soma[0]"]
+    cell.get_voltage_recording.return_value = np.array([0.0, 1.0])
+    with patch("tests.test_tools.set_neuron_globals"), patch(
+        "bluecellulab.Cell", return_value=cell
+    ) as cell_cls, patch("bluecellulab.Simulation") as sim_cls:
+        assert np.array_equal(_stochkv_voltage_for_gid(0), np.array([0.0, 1.0]))
+
+    assert cell_cls.call_args.kwargs["cell_id"].id == 0
+    cell.re_init_rng.assert_called_once()
+    sim_cls.return_value.run.assert_called_once_with(200, cvode=False)
+    cell.delete.assert_called_once()
 
 
 @pytest.mark.v5

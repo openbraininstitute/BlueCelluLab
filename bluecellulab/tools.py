@@ -629,7 +629,8 @@ def compute_memodel_properties_from_template(
     v_init: float = -80.0,
     celsius: float = 34.0,
 ) -> dict:
-    """Compute holding current, rheobase and input resistance from template inputs.
+    """Compute holding current, rheobase and input resistance from template
+    inputs.
 
     Instantiates ``Cell`` only inside an isolated process; callers need not build a cell.
     Unlike ``compute_memodel_properties(cell)``, there is no parent-process Cell copied into the worker by fork.
