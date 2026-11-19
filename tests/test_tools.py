@@ -19,13 +19,38 @@ import numpy as np
 import pytest
 from unittest.mock import MagicMock, patch
 
+import bluecellulab
 from bluecellulab.cell import Cell
 from bluecellulab import CircuitSimulation
 from bluecellulab.cell.ballstick import create_ball_stick
 from bluecellulab.circuit.circuit_access import EmodelProperties
-from bluecellulab.circuit.node_id import create_cell_id
+from bluecellulab.circuit.node_id import CellId, create_cell_id
 from bluecellulab.exceptions import UnsteadyCellError
-from bluecellulab.tools import calculate_SS_voltage, calculate_SS_voltage_subprocess, calculate_input_resistance, detect_hyp_current, detect_spike, detect_spike_step, detect_spike_step_subprocess, holding_current, holding_current_subprocess, search_threshold_current, template_accepts_cvode, check_empty_topology, calculate_max_thresh_current, calculate_rheobase, validate_section_and_segment, compute_memodel_properties, compute_memodel_properties_from_template, compute_memodel_properties_from_template_subprocess, compute_memodel_properties_subprocess, compute_memodel_properties_v2
+from bluecellulab.simulation.neuron_globals import set_neuron_globals
+from bluecellulab.simulation.parallel import IsolatedProcess
+from bluecellulab.tools import (
+    _probe_rheobase_and_rin,
+    calculate_SS_voltage,
+    calculate_SS_voltage_subprocess,
+    calculate_input_resistance,
+    detect_hyp_current,
+    detect_spike,
+    detect_spike_step,
+    detect_spike_step_subprocess,
+    holding_current,
+    holding_current_subprocess,
+    search_threshold_current,
+    template_accepts_cvode,
+    check_empty_topology,
+    calculate_max_thresh_current,
+    calculate_rheobase,
+    validate_section_and_segment,
+    compute_memodel_properties,
+    compute_memodel_properties_from_template,
+    compute_memodel_properties_from_template_subprocess,
+    compute_memodel_properties_subprocess,
+    compute_memodel_properties_v2,
+)
 from bluecellulab.cell.section_tools import currents_vars, mechs_vars
 
 
@@ -282,7 +307,13 @@ class TestOnSonataCell:
         assert rin == pytest.approx(334.14, abs=0.1)
 
     def test_compute_memodel_properties_from_template(self):
-        """Unit test compute_memodel_properties_from_template (no parent Cell)."""
+        """from_template alone in worker (no parent Cell / gid 0).
+
+        Expected to differ from ``test_compute_memodel_properties`` on this cvode
+        cell: the cell API forks after building a parent Cell, so the worker still
+        has that unused ghost cell and cvode's step sizes change. from_template has
+        no ghost cell and is the more accurate path.
+        """
         resp_dict = compute_memodel_properties_from_template(
             template_path=self.template_name,
             morphology_path=self.morphology_path,
@@ -291,9 +322,11 @@ class TestOnSonataCell:
         )
 
         assert resp_dict["holding_current"] == pytest.approx(-0.11)
-        # Same probe tolerance as compute_memodel_properties_subprocess (no parent Cell).
-        assert resp_dict["rheobase"] == pytest.approx(0.1392, abs=1e-4)
-        assert resp_dict["rin"] == pytest.approx(334.14, abs=0.1)
+        assert resp_dict["rheobase"] == pytest.approx(0.13918982460425472)
+        assert resp_dict["rin"] == pytest.approx(334.1862365049614)
+        # Ghost-cell path golden from test_compute_memodel_properties (same template).
+        assert resp_dict["rheobase"] != pytest.approx(0.13921147797816324)
+        assert resp_dict["rin"] != pytest.approx(334.1378411934045)
 
     def test_compute_memodel_properties_v2(self):
         """Unit test compute_memodel_properties_v2."""
@@ -470,7 +503,7 @@ def test_compute_memodel_properties_v5_cstut():
 
 @pytest.mark.v5
 def test_compute_memodel_properties_from_template_v5_cstut():
-    """Path-based API on cSTUT_7 with emodel holding -0.05 nA."""
+    """Path-based API on cSTUT_7; identical to cell-based (fixed step, unseeded StochKv)."""
     emodel_properties = EmodelProperties(
         threshold_current=0.0, holding_current=-0.05
     )
@@ -482,8 +515,176 @@ def test_compute_memodel_properties_from_template_v5_cstut():
     )
 
     assert resp_dict["holding_current"] == pytest.approx(0.0)
-    assert resp_dict["rheobase"] == pytest.approx(0.0968, abs=1e-4)
-    assert resp_dict["rin"] == pytest.approx(241.44, abs=0.1)
+    assert resp_dict["rheobase"] == pytest.approx(0.0968098129791797)
+    assert resp_dict["rin"] == pytest.approx(241.439121257406)
+
+
+def test_compute_memodel_properties_from_template_pins_cell_id_zero():
+    """Worker constructs Cell with fixed CellId(\"\", 0), not Cell.last_id."""
+    emodel_properties = EmodelProperties(
+        threshold_current=0.0, holding_current=-0.05
+    )
+    cell_kwargs = {
+        "template_path": "template.hoc",
+        "morphology_path": "morph.asc",
+        "template_format": "v5",
+        "emodel_properties": emodel_properties,
+    }
+    cell = MagicMock()
+    cell.hypamp = None
+    with patch("bluecellulab.tools.bluecellulab.Cell", return_value=cell) as cell_cls, patch(
+        "bluecellulab.tools._probe_rheobase_and_rin", return_value=(0.1, 200.0)
+    ):
+        holding, rheobase, rin = compute_memodel_properties_from_template_subprocess(
+            cell_kwargs, holding_current=-0.05, spike_threshold_voltage=-30
+        )
+
+    assert cell_cls.call_args.kwargs["cell_id"].id == 0
+    assert cell_cls.call_args.kwargs["cell_id"].population_name == ""
+    assert (holding, rheobase, rin) == (0.0, 0.1, 200.0)
+    cell.delete.assert_called_once()
+
+
+@pytest.mark.v6
+def test_compute_memodel_properties_from_template_bluepyopt_hippocampus():
+    """Hippocampus: from_template and cell API differ; both locked.
+
+    Expected: different rheobase/Rin. Reason: ``compute_memodel_properties(cell)``
+    forks after the parent Cell exists, so the worker integrates an unused ghost
+    cell and cvode picks different steps. ``from_template`` builds only the measured
+    cell in the worker (more accurate for cvode). Callers switching to from_template
+    will see changed calibration values; that is intentional.
+    """
+    emodel_properties = EmodelProperties(
+        threshold_current=0.1, holding_current=-0.05, AIS_scaler=1.0
+    )
+    kw = dict(
+        template_path=(
+            script_dir
+            / "examples/hippocampus_opt_cell_template/electrophysiology/cell.hoc"
+        ),
+        morphology_path=(
+            script_dir / "examples/hippocampus_opt_cell_template/morphology/cell.asc"
+        ),
+        template_format="bluepyopt",
+        emodel_properties=emodel_properties,
+    )
+    # from_template first so the parent process has no Cell before that fork.
+    from_template = compute_memodel_properties_from_template(**kw)
+    assert from_template["holding_current"] == pytest.approx(0.0)
+    assert from_template["rheobase"] == pytest.approx(0.034891986455173184)
+    assert from_template["rin"] == pytest.approx(1432.9937925617862)
+
+    existing = compute_memodel_properties(Cell(**kw))
+    assert existing["holding_current"] == pytest.approx(0.0)
+    assert existing["rheobase"] == pytest.approx(0.03396649209097065)
+    assert existing["rin"] == pytest.approx(1472.0389690669485)
+    assert from_template["rheobase"] != pytest.approx(existing["rheobase"])
+    assert from_template["rin"] != pytest.approx(existing["rin"])
+
+
+def _cadpyr_memodel_kwargs():
+    return {
+        "template_path": (
+            script_dir
+            / "examples/circuit_sonata_quick_scx/components/hoc/cADpyr_L2TPC.hoc"
+        ),
+        "morphology_path": (
+            script_dir
+            / "examples/circuit_sonata_quick_scx/components/morphologies/asc/"
+            "rr110330_C3_idA.asc"
+        ),
+        "template_format": "v6",
+        "emodel_properties": EmodelProperties(
+            threshold_current=0.1, holding_current=-0.11, AIS_scaler=1.11
+        ),
+    }
+
+
+def _probe_worker_setup(extra_cell: bool, gid: int):
+    """Review repro: alone ID 0/1 vs unused ghost cell + ID 1 in the worker."""
+    kw = _cadpyr_memodel_kwargs()
+    # Keep a reference so the ghost is not GC'd during the probe (cvode sees it).
+    ghost = None
+    if extra_cell:
+        ghost = bluecellulab.Cell(**kw, cell_id=CellId("", 0))
+    cell = bluecellulab.Cell(**kw, cell_id=CellId("", gid))
+    return _probe_rheobase_and_rin(cell, -0.11, -30, kw["template_path"])
+
+
+@pytest.mark.v6
+def test_probe_worker_setups_match_from_template_and_cell_api():
+    """Alone-in-worker matches from_template; ghost+ID1 matches compute_memodel_properties.
+
+    Expected: alone != ghost. Reason: an unused sibling Cell in the NEURON topology
+    changes cvode step sizes; from_template avoids that and is more accurate.
+    Must not create a parent Cell before these forks (inherited state would pollute
+    every worker). Public APIs run after the matrix.
+    """
+    set_neuron_globals(temperature=34.0, v_init=-80.0)
+    alone0 = alone1 = ghost1 = None
+    with IsolatedProcess() as runner:
+        alone0 = runner.apply(_probe_worker_setup, [False, 0])
+    with IsolatedProcess() as runner:
+        alone1 = runner.apply(_probe_worker_setup, [False, 1])
+    with IsolatedProcess() as runner:
+        ghost1 = runner.apply(_probe_worker_setup, [True, 1])
+
+    # Deterministic cvode: gid alone does not change results.
+    assert alone0 == alone1
+    assert alone0[0] == pytest.approx(0.13918982460553736)
+    assert alone0[1] == pytest.approx(334.1862365025271)
+    # Unused ghost cell changes the variable-step solution (expected divergence).
+    assert ghost1[0] == pytest.approx(0.13921147797816324)
+    assert ghost1[1] == pytest.approx(334.1378411934045)
+    assert alone0 != ghost1
+
+    kw = _cadpyr_memodel_kwargs()
+    from_template = compute_memodel_properties_from_template(**kw)
+    assert from_template["rheobase"] == pytest.approx(alone0[0])
+    assert from_template["rin"] == pytest.approx(alone0[1])
+
+    cell = Cell(**kw)
+    existing = compute_memodel_properties(cell)
+    assert existing["rheobase"] == pytest.approx(ghost1[0])
+    assert existing["rin"] == pytest.approx(ghost1[1])
+
+
+def _stochkv_voltage_for_gid(gid: int):
+    """Short fixed-step run after re_init_rng; StochKv MCellRan4 seed uses CellRef.gid."""
+    set_neuron_globals(temperature=34.0, v_init=-80.0)
+    cell = bluecellulab.Cell(
+        template_path=script_dir / "examples/cell_example_cstut/cSTUT_7.hoc",
+        morphology_path=script_dir / "examples/cell_example_cstut",
+        template_format="v5",
+        emodel_properties=EmodelProperties(
+            threshold_current=0.0, holding_current=-0.05
+        ),
+        cell_id=CellId("", gid),
+    )
+    try:
+        cell.re_init_rng()
+        sec = cell.get_section("soma[0]")
+        cell.add_voltage_recording(cell.sections["soma[0]"], 0.5)
+        cell.add_ramp(0, 500, 0.15, 0.15, section=sec, segx=0.5)
+        bluecellulab.Simulation().run(200, cvode=False)
+        return cell.get_voltage_recording(section=sec, segx=0.5)
+    finally:
+        cell.delete()
+
+
+@pytest.mark.v5
+def test_stochkv_noise_depends_on_cell_gid():
+    """When StochKv RNG is seeded, gid 0 and gid 1 produce different voltage traces.
+
+    Explains why from_template pins CellId(\"\", 0): StochKv3/bIR-style models that seed
+    from gid in INITIAL (or via re_init_rng) would otherwise depend on Cell.last_id.
+    """
+    with IsolatedProcess() as runner:
+        v0 = runner.apply(_stochkv_voltage_for_gid, [0])
+    with IsolatedProcess() as runner:
+        v1 = runner.apply(_stochkv_voltage_for_gid, [1])
+    assert not np.allclose(v0, v1)
 
 
 def test_calculate_max_thresh_current(mock_cell, mock_calculate_SS_voltage, mock_calculate_input_resistance):

@@ -25,6 +25,7 @@ import numpy as np
 import bluecellulab
 from bluecellulab.cell import Cell
 from bluecellulab.circuit.circuit_access import EmodelProperties
+from bluecellulab.circuit.node_id import CellId
 from bluecellulab.exceptions import UnsteadyCellError
 from bluecellulab.simulation.neuron_globals import set_neuron_globals
 from bluecellulab.simulation.parallel import IsolatedProcess
@@ -606,7 +607,8 @@ def compute_memodel_properties_from_template_subprocess(
     spike_threshold_voltage: float,
 ) -> Tuple[float, float, float]:
     """Worker for from_template: holding from Cell, then rheobase and Rin."""
-    cell = bluecellulab.Cell(**cell_kwargs)
+    # Pin gid so StochKv/StochKv3 noise does not depend on Cell.last_id.
+    cell = bluecellulab.Cell(**cell_kwargs, cell_id=CellId("", 0))
     # cell.hypamp can differ from emodel holding for non-v6 templates without getHypAmp().
     cell_holding = cell.hypamp if cell.hypamp else 0.0
     try:
@@ -627,10 +629,14 @@ def compute_memodel_properties_from_template(
     v_init: float = -80.0,
     celsius: float = 34.0,
 ) -> dict:
-    """Compute holding current, rheobase and input resistance from template
-    inputs.
+    """Compute holding current, rheobase and input resistance from template inputs.
 
     Instantiates ``Cell`` only inside an isolated process; callers need not build a cell.
+    Unlike ``compute_memodel_properties(cell)``, there is no parent-process Cell copied into the worker by fork.
+    For cvode models that can change rheobase/Rin slightly (this path is typically more accurate).
+    StochKv/StochKv3 noise is seeded with fixed gid 0, not with whatever ``Cell.last_id`` would assign after earlier Cell constructions.
+    Search holding uses ``emodel_properties.holding_current``.
+    Returned ``holding_current`` is the worker cell's ``hypamp`` (or 0.0 when the template has no ``getHypAmp()``).
 
     Args:
         template_path: Path to the hoc template file.
